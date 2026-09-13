@@ -52,16 +52,27 @@ def _processed_path(watch_path: str, file_path: str) -> str:
     return f"{watch_path.rstrip('/')}/processed/{name}"
 
 
-async def _ensure_processed_folder_exists(client: httpx.AsyncClient, watch_path: str) -> None:
-    processed_folder = f"{watch_path.rstrip('/')}/processed"
-    response = await client.put(f"{YANDEX_API_BASE}/resources", params={"path": processed_folder})
+async def _ensure_folder_exists(client: httpx.AsyncClient, path: str) -> None:
+    response = await client.put(f"{YANDEX_API_BASE}/resources", params={"path": path})
     # 409 = already exists, which is the expected steady-state case.
     if response.status_code not in (201, 409):
         logger.warning(
             "yandex_relay_ensure_folder_unexpected_status",
+            path=path,
             status_code=response.status_code,
             body=response.text[:500],
         )
+
+
+async def _ensure_watch_folders_exist(client: httpx.AsyncClient, watch_path: str) -> None:
+    # 1C uploads directly into `watch_path` via WebDAV PUT, which - like most
+    # WebDAV servers - does not auto-create missing parent directories, so
+    # this folder must exist before 1C's first upload. Create the parent
+    # before the "processed" subfolder - creating the child first would 409
+    # for the wrong reason (missing parent, not "already exists").
+    watch_path = watch_path.rstrip("/")
+    await _ensure_folder_exists(client, watch_path)
+    await _ensure_folder_exists(client, f"{watch_path}/processed")
 
 
 async def _list_files(client: httpx.AsyncClient, watch_path: str) -> list[dict]:
@@ -146,7 +157,7 @@ async def poll_once() -> None:
 
     headers = {"Authorization": f"OAuth {settings.yandex_disk_oauth_token}"}
     async with httpx.AsyncClient(headers=headers, timeout=REQUEST_TIMEOUT_SECONDS) as client:
-        await _ensure_processed_folder_exists(client, settings.yandex_disk_watch_path)
+        await _ensure_watch_folders_exist(client, settings.yandex_disk_watch_path)
         try:
             files = await _list_files(client, settings.yandex_disk_watch_path)
         except httpx.HTTPError as exc:
