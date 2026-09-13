@@ -63,42 +63,52 @@ value stays correct if the Postgres service ever changes host/port/creds.
 
 ## Applying Alembic migrations
 
-The tables in Railway's Postgres do not exist yet and must be created by the
-existing Alembic migration(s) - never by hand.
+Tables are created by the existing Alembic migration(s) via a Railway
+**pre-deploy command** (`alembic upgrade head`) - never by hand, and never
+baked into the container's normal start command (`alembic upgrade head &&
+uvicorn ...`), since that would re-run the migration on every restart/replica
+concurrently - harmless once applied, but unnecessary risk for no benefit.
 
-**Do not** bake `alembic upgrade head` into the container's normal start
-command (i.e. don't do `alembic upgrade head && uvicorn ...` as the
-always-run start command). If Railway ever runs more than one instance/
-replica, or restarts the container automatically, every restart would
-re-attempt the migration concurrently - harmless once already applied, but
-unnecessary risk for no benefit.
+**What actually worked, in practice (do this, not the two things below it):**
+the repo's `backend/railway.json` is Railway's older, now-deprecated
+"Config as Code" mechanism - a service created after ~2026-08-28 that never
+used it before cannot enable it, so this file is currently inert for a fresh
+service (kept anyway - harmless, and this may change). The Railway
+dashboard's own `Settings -> Deploy -> Add pre-deploy step` field also
+**silently failed to persist** when tried once (confirmed by pulling the
+live config back down - it came back empty even after saving "successfully"
+in the UI). The mechanism that did work is Railway's **current CLI-based
+IaC** (`railway config`, backed by `.railway/railway.ts` - unrelated to the
+deprecated repo-committed `railway.json`/`railway.toml` files despite the
+similar name):
 
-Two supported ways to run migrations against Railway Postgres once
-`DATABASE_URL` is set on the backend service, **whenever you're ready** (not
-now - there's no connection to Railway yet from this environment):
+```bash
+railway link                      # once, selects this project/service
+railway config pull                # imports live config into .railway/railway.ts
+# edit .railway/railway.ts: add `preDeployCommand: "alembic upgrade head"`
+# to the service's options
+railway config plan                 # preview - should show exactly that one change
+railway config apply --yes
+railway redeploy -s AutoServiceAISolution -y   # re-run the pre-deploy step now
+```
 
-1. **Preferred - Railway's pre-deploy step.** `backend/railway.json` already
-   declares `deploy.preDeployCommand: "alembic upgrade head"`. If your
-   Railway project version supports this field, it runs once per deploy,
-   before the new instance starts serving traffic, separately from the app
-   process - the safe place for migrations. Confirm in the Railway dashboard
-   (Service -> Settings -> Deploy) that a "Pre-Deploy Command" is shown and
-   picked up; if your Railway version doesn't support it, use option 2.
+`.railway/` is gitignored (it can hold decrypted-looking `preserve()`
+placeholders for secrets, never real values, but keep it local regardless).
 
-2. **Manual, always works.** From a machine with the Railway CLI, linked to
-   this project:
-   ```bash
-   railway link            # select this project/service once
-   railway run alembic upgrade head
-   ```
-   `railway run` executes the command locally but with the linked service's
-   real environment variables injected, so it reaches the real
-   `DATABASE_URL` without you ever pasting the credential anywhere. This can
-   also be run from inside the deployed service via the Railway dashboard's
-   "Shell" if available.
+On Windows, `railway config plan/apply` may fail with `This version of
+railway/iac requires Railway CLI X.Y.Z or newer` even when the installed CLI
+is newer - this is a real bug in how the CLI reports its own path to the
+bundled Node evaluator via the `_` env var on Windows. Workaround: invoke the
+actual `railway.exe` by its full path (not the bare `railway` shim on PATH),
+e.g. `"$(npm root -g)/@railway/cli/bin/railway.exe" config plan` - bash then
+sets `_` to that real path itself and the check passes.
 
-Either way, this is a deliberate, explicit step - not something to run
-automatically as part of this task.
+To verify migrations actually ran: check `railway logs -s <service>
+--deployment --lines 100 --latest` for Alembic's `Running upgrade ->
+<revision>` line, or just call the real API (`POST
+/api/v1/import/work-orders`) and confirm it returns `200` instead of a
+"relation does not exist" error - that's the most reliable proof the tables
+exist.
 
 ## Health check
 
@@ -107,6 +117,47 @@ so it is safe to point Railway's health check at it - it reflects only "the
 process is up", not "the database is reachable", which avoids restart loops
 from a transient DB blip. It already matches what `backend/railway.json`
 configures (`healthcheckPath: /health`).
+
+## Optional module: Yandex.Disk relay (firewall fallback)
+
+Some client 1C environments cannot reach this backend's domain directly -
+seen with the Pan Motors / 5Systems hosting, whose outbound firewall blocks
+HTTPS to arbitrary "cloud hosting" IP ranges (confirmed: Railway's own IP is
+blocked, `api.github.com` and Cloudflare's `1.1.1.1` are not - looks like a
+block on cloud/VPS-hosting ASNs specifically, not a strict default-deny
+policy). The first fix to try for that is fronting the backend with a custom
+domain through Cloudflare (widely-allowed CDN IP ranges) - see git history /
+ARCHITECTURE.md for that path. This module is the fallback for when even
+that does not clear the firewall.
+
+Instead of 1C calling this API directly, it uploads its export JSON to a
+folder on Yandex.Disk via WebDAV (`https://webdav.yandex.ru/...`, Basic auth
+with a Yandex account + an **app password**, not the account's real
+password). This backend polls that folder on a timer and imports any new
+file through the exact same `process_work_order_import` path the direct API
+uses - same validation, same idempotent upsert, same `ImportBatch` audit
+trail - then moves the file into a `processed/` subfolder so it is not
+re-imported (re-importing it would be harmless, just wasted work, since the
+upsert is idempotent).
+
+Runs as a plain `asyncio` background task inside the existing backend
+process (started from the FastAPI `lifespan` handler in `app/main.py`) - no
+separate service, queue, or scheduler to deploy. Off by default; only turn it
+on for a client instance that actually needs it.
+
+**Environment variables** (backend service):
+
+| Variable | Value |
+|---|---|
+| `ENABLE_YANDEX_RELAY` | `true` to turn it on |
+| `YANDEX_DISK_OAUTH_TOKEN` | OAuth token for the dedicated Yandex account, scopes `disk:read` + `disk:write` (get one at https://oauth.yandex.ru, or via the quick test-token flow at https://yandex.ru/dev/disk/poligon/) |
+| `YANDEX_DISK_WATCH_PATH` | folder to watch, default `/1c-export` (must match what 1C uploads into) |
+| `YANDEX_POLL_INTERVAL_SECONDS` | default `300` (5 min) |
+
+Use a **dedicated** Yandex account for this, not a personal one - so access
+can be revoked/rotated independently or handed off. 1C authenticates to
+WebDAV with that account's login + an **app password** (Yandex ID -> security
+settings -> "app passwords"), never the account's real password.
 
 ## What stays local
 

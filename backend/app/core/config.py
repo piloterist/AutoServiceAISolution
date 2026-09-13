@@ -32,6 +32,24 @@ class Settings(BaseSettings):
     # CORS - comma separated list of allowed origins
     cors_origins: str = "http://localhost:3000"
 
+    # Optional module: Yandex.Disk relay.
+    #
+    # Fallback ingestion path for environments where 1C's outbound network is
+    # firewalled against reaching this backend directly (seen with the
+    # Pan Motors / 5Systems hosting: outbound HTTPS to arbitrary "cloud
+    # hosting" IP ranges is blocked, but general internet - including
+    # Yandex's own infrastructure - is not). When enabled, 1C uploads its
+    # export JSON to a folder on Yandex.Disk via WebDAV instead of calling
+    # this API directly; this backend polls that folder, imports any new
+    # file through the exact same `process_work_order_import` path as the
+    # direct API, and moves the file to a "processed" subfolder. Disabled by
+    # default - a client whose network reaches this backend directly never
+    # needs it.
+    enable_yandex_relay: bool = False
+    yandex_disk_oauth_token: str | None = None
+    yandex_disk_watch_path: str = "/1c-export"
+    yandex_poll_interval_seconds: int = 300
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
