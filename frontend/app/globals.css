@@ -133,6 +133,23 @@ main {
 
 /* --- Work Orders table --- */
 
+/* Pages that need more than the default 960px content width (data tables
+   with many/wide columns) opt in via this class on their root element. */
+main:has(.wide-page) {
+  max-width: 1400px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+  background: var(--surface);
+  color: var(--text);
+}
+
 .table-meta {
   color: var(--text-muted);
   font-size: 0.85rem;
@@ -150,7 +167,7 @@ main {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
-  white-space: nowrap;
+  table-layout: fixed;
 }
 
 .data-table th,
@@ -158,6 +175,7 @@ main {
   text-align: left;
   padding: 0.6rem 0.9rem;
   border-bottom: 1px solid var(--border);
+  overflow-wrap: break-word;
 }
 
 .data-table th {
@@ -166,6 +184,49 @@ main {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+}
+
+/* Column widths: short fixed-ish fields get just enough room, the long
+   free-text vehicle description gets the rest (table-layout: fixed makes
+   these percentages apply consistently instead of auto-sizing to content,
+   which is what was forcing horizontal scroll before). */
+.data-table th:nth-child(1),
+.data-table td:nth-child(1) {
+  width: 9%;
+}
+.data-table th:nth-child(2),
+.data-table td:nth-child(2) {
+  width: 14%;
+}
+.data-table th:nth-child(3),
+.data-table td:nth-child(3) {
+  width: 42%;
+}
+.data-table th:nth-child(4),
+.data-table td:nth-child(4) {
+  width: 22%;
+}
+.data-table th:nth-child(5),
+.data-table td:nth-child(5) {
+  width: 13%;
+}
+
+.filter-row th {
+  padding: 0.4rem 0.5rem;
+  background: var(--bg);
+}
+
+.filter-row input {
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+  background: var(--surface);
 }
 
 .data-table tbody tr:last-child td {
