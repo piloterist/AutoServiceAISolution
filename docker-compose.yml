@@ -45,6 +45,9 @@ services:
       target: dev
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      # Server-side only - never exposed to the browser (no NEXT_PUBLIC_
+      # prefix). Must match whatever backend NEXT_PUBLIC_API_URL points at.
+      BACKEND_API_TOKEN: ${BACKEND_API_TOKEN:-${API_TOKEN}}
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules

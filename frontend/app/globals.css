@@ -8,6 +8,14 @@
   --accent: #2563eb;
   --ok: #16a34a;
   --down: #dc2626;
+
+  /* Data-viz tokens (see dataviz skill: sequential blue ramp, chart chrome) */
+  --chart-surface: #fcfcfb;
+  --chart-series: #2a78d6; /* sequential hue, step 450 */
+  --chart-gridline: #e1e0d9;
+  --chart-baseline: #c3c2b7;
+  --chart-ink-secondary: #52514e;
+  --chart-ink-muted: #898781;
 }
 
 * {
@@ -116,4 +124,197 @@ main {
 
 .stub-page p {
   color: var(--text-muted);
+}
+
+/* --- Work Orders table --- */
+
+.table-meta {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table td.num,
+.data-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 2rem 1rem;
+}
+
+/* --- Dashboard stat tiles --- */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.stat-tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stat-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: proportional-nums;
+}
+
+/* --- Monthly revenue chart (single sequential series - no legend needed) --- */
+
+.chart-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+.chart-empty {
+  color: var(--text-muted);
+}
+
+.chart-root {
+  background: var(--chart-surface);
+}
+
+.chart-plot {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+}
+
+.chart-gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--chart-gridline);
+}
+
+.chart-gridline:first-child {
+  border-top-color: var(--chart-baseline);
+}
+
+.chart-tick-label {
+  position: absolute;
+  left: 0;
+  top: -0.75rem;
+  font-size: 0.7rem;
+  color: var(--chart-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-bars {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 100%;
+  padding: 0 2px;
+}
+
+.chart-bar-slot {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  height: 100%;
+  padding: 0 2px; /* 2px surface gap between bars */
+}
+
+.chart-bar {
+  width: 100%;
+  max-width: 24px;
+  background: var(--chart-series);
+  border-radius: 4px 4px 0 0; /* 4px rounded data-end, square at baseline */
+  transition: opacity 0.1s ease;
+}
+
+.chart-bar-hovered {
+  opacity: 0.85;
+}
+
+.chart-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.5rem;
+  background: var(--text);
+  color: #fff;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  white-space: nowrap;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.chart-tooltip-muted {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.75rem;
+}
+
+.chart-x-axis {
+  display: flex;
+  padding: 0 2px;
+  margin-top: 0.5rem;
+}
+
+.chart-x-label {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--chart-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
