@@ -22,19 +22,19 @@ type Row = {
   date: string;
   number: string;
   vehicle: string;
-  payer: string;
+  customer: string;
   status: string;
   department: string;
   amount: string;
 };
 
-type ColumnKey = "date" | "number" | "vehicle" | "payer" | "status" | "department" | "amount";
+type ColumnKey = "date" | "number" | "vehicle" | "customer" | "status" | "department" | "amount";
 
 const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "date", label: "Дата" },
   { key: "number", label: "Номер" },
   { key: "vehicle", label: "Автомобиль" },
-  { key: "payer", label: "Плательщик" },
+  { key: "customer", label: "Контрагент" },
   { key: "status", label: "Статус" },
   { key: "department", label: "Подразделение" },
   { key: "amount", label: "Сумма", numeric: true },
@@ -46,7 +46,7 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
     date: "",
     number: "",
     vehicle: "",
-    payer: "",
+    customer: "",
     status: "",
     department: "",
     amount: "",
@@ -59,7 +59,7 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
         date: formatDate(item.document_date),
         number: item.external_number,
         vehicle: item.vehicle_description ?? "",
-        payer: item.payer_name ?? "",
+        customer: item.customer_name ?? "",
         status: item.status ?? "",
         department: item.department ?? "",
         amount: formatAmount(item.amount),
@@ -92,7 +92,7 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
       <input
         type="search"
         className="search-input"
-        placeholder="Поиск по всем полям (номер, ВИН, плательщик, статус, подразделение, сумма...)"
+        placeholder="Поиск по всем полям (номер, ВИН, контрагент, статус, подразделение, сумма...)"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         aria-label="Поиск по всем полям"
@@ -134,7 +134,7 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
                 <td>{row.date}</td>
                 <td>{row.number}</td>
                 <td>{row.vehicle || "—"}</td>
-                <td>{row.payer || "—"}</td>
+                <td>{row.customer || "—"}</td>
                 <td>{row.status || "—"}</td>
                 <td>{row.department || "—"}</td>
                 <td className="num">{row.amount}</td>
