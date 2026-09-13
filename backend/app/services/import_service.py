@@ -8,14 +8,17 @@ per-client branching - that belongs to future configuration-driven layers
 
 from __future__ import annotations
 
+import uuid
+
 import structlog
-from sqlalchemy import func, text
+from sqlalchemy import delete, func, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
-from app.schemas.import_work_order import ImportWorkOrdersRequest
+from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.schemas.import_work_order import ImportWorkOrderRecord, ImportWorkOrdersRequest
 
 logger = structlog.get_logger(__name__)
 
@@ -24,12 +27,15 @@ class ImportProcessingError(Exception):
     """Raised when a batch could not be persisted at all."""
 
 
-def _upsert_work_order(db: Session, source: str, exported_at, record) -> bool:
+def _upsert_work_order(
+    db: Session, source: str, exported_at, record: ImportWorkOrderRecord
+) -> tuple[uuid.UUID, bool]:
     """Insert or update a single WorkOrder by (source_system, external_number).
 
-    Returns True if a new row was inserted, False if an existing row was updated.
-    Uses a real Postgres UPSERT (INSERT ... ON CONFLICT DO UPDATE) so this is
-    safe under concurrent/repeated delivery of the same document.
+    Returns (work_order_id, inserted) - inserted is True if a new row was
+    created, False if an existing row was updated. Uses a real Postgres
+    UPSERT (INSERT ... ON CONFLICT DO UPDATE) so this is safe under
+    concurrent/repeated delivery of the same document.
     """
     values = {
         "external_number": record.number,
@@ -39,6 +45,8 @@ def _upsert_work_order(db: Session, source: str, exported_at, record) -> bool:
         "customer_name": record.customer,
         "payer_name": record.payer,
         "vehicle_description": record.car,
+        "status": record.status,
+        "department": record.department,
         "amount": record.amount,
         "source_updated_at": exported_at,
         "raw_payload": record.model_dump(mode="json"),
@@ -66,7 +74,39 @@ def _upsert_work_order(db: Session, source: str, exported_at, record) -> bool:
     ).returning(table.c.id, text("(xmax = 0) AS inserted"))
 
     row = db.execute(stmt).mappings().first()
-    return bool(row["inserted"])
+    return row["id"], bool(row["inserted"])
+
+
+def _replace_line_items(
+    db: Session, work_order_id: uuid.UUID, record: ImportWorkOrderRecord
+) -> None:
+    """Replace a work order's labor/parts lines wholesale with what the
+    source just sent - 1C is the source of truth for a work order's current
+    lines, not something we merge/diff incrementally.
+    """
+    db.execute(delete(WorkOrderLaborLine).where(WorkOrderLaborLine.work_order_id == work_order_id))
+    db.execute(delete(WorkOrderPartLine).where(WorkOrderPartLine.work_order_id == work_order_id))
+
+    for line in record.labor:
+        db.add(
+            WorkOrderLaborLine(
+                work_order_id=work_order_id,
+                operation_name=line.operation,
+                price=line.price,
+                amount=line.amount,
+            )
+        )
+
+    for line in record.parts:
+        db.add(
+            WorkOrderPartLine(
+                work_order_id=work_order_id,
+                item_name=line.item,
+                quantity=line.quantity,
+                price=line.price,
+                amount=line.amount,
+            )
+        )
 
 
 def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> ImportBatch:
@@ -83,7 +123,11 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
 
     try:
         for record in payload.records:
-            if _upsert_work_order(db, payload.source, payload.exported_at, record):
+            work_order_id, was_inserted = _upsert_work_order(
+                db, payload.source, payload.exported_at, record
+            )
+            _replace_line_items(db, work_order_id, record)
+            if was_inserted:
                 inserted += 1
             else:
                 updated += 1

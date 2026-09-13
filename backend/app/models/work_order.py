@@ -47,6 +47,12 @@ class WorkOrder(Base):
     payer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     vehicle_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # Plain text, whatever the source sends - no hardcoded status/department
+    # values or enums here (client-specific, must stay configuration/data,
+    # never baked into the core - see ARCHITECTURE.md).
+    status: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    department: Mapped[str | None] = mapped_column(String(150), nullable=True, index=True)
+
     # Money is never stored as float - fixed-precision NUMERIC only.
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
 

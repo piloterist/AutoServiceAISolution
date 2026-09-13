@@ -122,3 +122,57 @@ def test_delete_work_order_missing_returns_404(client, auth_headers) -> None:
     )
 
     assert response.status_code == 404
+
+
+def test_list_work_orders_filters_by_department(client, db_session, auth_headers) -> None:
+    db_session.add(_make_work_order(external_number="WO-BODY", department="Кузовной цех"))
+    db_session.add(_make_work_order(external_number="WO-PAINT", department="Малярный цех"))
+    db_session.commit()
+
+    response = client.get(LIST_URL, headers=auth_headers, params={"departments": "Кузовной цех"})
+
+    assert response.status_code == 200
+    numbers = {item["external_number"] for item in response.json()["items"]}
+    assert numbers == {"WO-BODY"}
+
+
+def test_get_departments_returns_distinct_values(client, db_session, auth_headers) -> None:
+    db_session.add(_make_work_order(external_number="WO-A", department="Кузовной цех"))
+    db_session.add(_make_work_order(external_number="WO-B", department="Кузовной цех"))
+    db_session.add(_make_work_order(external_number="WO-C", department="Малярный цех"))
+    db_session.add(_make_work_order(external_number="WO-D", department=None))
+    db_session.commit()
+
+    response = client.get(f"{LIST_URL}/departments", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["departments"] == ["Кузовной цех", "Малярный цех"]
+
+
+def test_department_summary_groups_and_sums(client, db_session, auth_headers) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-A", department="Кузовной цех", amount=Decimal("300.00")
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-B", department="Кузовной цех", amount=Decimal("200.00")
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-C", department="Малярный цех", amount=Decimal("100.00")
+        )
+    )
+    db_session.add(_make_work_order(external_number="WO-NO-DEPT", department=None))
+    db_session.commit()
+
+    response = client.get(f"{LIST_URL}/summary/by-department", headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["department"]: item for item in response.json()["items"]}
+    assert set(items) == {"Кузовной цех", "Малярный цех"}
+    assert items["Кузовной цех"]["total_amount"] == "500.00"
+    assert items["Кузовной цех"]["work_order_count"] == 2
+    assert items["Малярный цех"]["total_amount"] == "100.00"

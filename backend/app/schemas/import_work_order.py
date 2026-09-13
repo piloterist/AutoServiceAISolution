@@ -6,6 +6,23 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 
+class ImportLaborLineRecord(BaseModel):
+    """One row of a Work Order's "Работы" (labor) tabular section."""
+
+    operation: str | None = None
+    price: Decimal | None = None
+    amount: Decimal | None = None
+
+
+class ImportPartLineRecord(BaseModel):
+    """One row of a Work Order's "Товары" (parts) tabular section."""
+
+    item: str | None = None
+    quantity: Decimal | None = None
+    price: Decimal | None = None
+    amount: Decimal | None = None
+
+
 class ImportWorkOrderRecord(BaseModel):
     """One Alpha-Auto work order as sent by the 1C export job."""
 
@@ -17,9 +34,15 @@ class ImportWorkOrderRecord(BaseModel):
     payer: str | None = None
     car: str | None = None
     amount: Decimal
+    # Plain text passthrough - no hardcoded status/department values here,
+    # whatever the client's 1C sends is stored as-is (see ARCHITECTURE.md).
+    status: str | None = None
+    department: str | None = None
     # Not sent by 1C yet, but accepted so the API can move to a more reliable
     # external key later without a breaking contract change.
     source_key: str | None = None
+    labor: list[ImportLaborLineRecord] = Field(default_factory=list)
+    parts: list[ImportPartLineRecord] = Field(default_factory=list)
 
 
 class ImportWorkOrdersRequest(BaseModel):
