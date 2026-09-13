@@ -42,6 +42,9 @@ class WorkOrder(Base):
 
     document_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Payer can differ from the customer (e.g. an insurance company paying
+    # for a customer's repair) - a distinct field, not derived from customer.
+    payer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     vehicle_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Money is never stored as float - fixed-precision NUMERIC only.

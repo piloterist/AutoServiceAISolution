@@ -37,6 +37,7 @@ def _upsert_work_order(db: Session, source: str, exported_at, record) -> bool:
         "source_key": record.source_key,
         "document_date": record.date,
         "customer_name": record.customer,
+        "payer_name": record.payer,
         "vehicle_description": record.car,
         "amount": record.amount,
         "source_updated_at": exported_at,
