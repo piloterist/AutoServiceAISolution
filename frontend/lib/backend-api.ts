@@ -17,6 +17,8 @@ export type WorkOrderListItem = {
   customer_name: string | null;
   payer_name: string | null;
   vehicle_description: string | null;
+  status: string | null;
+  department: string | null;
   amount: string;
 };
 
@@ -35,6 +37,20 @@ export type MonthlySummaryItem = {
 
 export type MonthlySummaryResponse = {
   items: MonthlySummaryItem[];
+};
+
+export type DepartmentSummaryItem = {
+  department: string;
+  work_order_count: number;
+  total_amount: string;
+};
+
+export type DepartmentSummaryResponse = {
+  items: DepartmentSummaryItem[];
+};
+
+export type DepartmentListResponse = {
+  departments: string[];
 };
 
 function backendToken(): string {
@@ -67,26 +83,48 @@ async function backendGet<T>(path: string, params?: Record<string, string>): Pro
   return res.json() as Promise<T>;
 }
 
-export function getWorkOrders(params?: {
+type PeriodAndDepartmentParams = {
   dateFrom?: string;
   dateTo?: string;
-  limit?: number;
-  offset?: number;
-}): Promise<WorkOrderListResponse> {
+  departments?: string[];
+};
+
+function departmentsParam(departments?: string[]): string {
+  return departments && departments.length > 0 ? departments.join(",") : "";
+}
+
+export function getWorkOrders(
+  params?: PeriodAndDepartmentParams & { limit?: number; offset?: number },
+): Promise<WorkOrderListResponse> {
   return backendGet<WorkOrderListResponse>("/api/v1/work-orders", {
     date_from: params?.dateFrom ?? "",
     date_to: params?.dateTo ?? "",
+    departments: departmentsParam(params?.departments),
     limit: params?.limit ? String(params.limit) : "",
     offset: params?.offset ? String(params.offset) : "",
   });
 }
 
-export function getMonthlySummary(params?: {
-  dateFrom?: string;
-  dateTo?: string;
-}): Promise<MonthlySummaryResponse> {
+export function getMonthlySummary(
+  params?: PeriodAndDepartmentParams,
+): Promise<MonthlySummaryResponse> {
   return backendGet<MonthlySummaryResponse>("/api/v1/work-orders/summary/monthly", {
     date_from: params?.dateFrom ?? "",
     date_to: params?.dateTo ?? "",
+    departments: departmentsParam(params?.departments),
   });
+}
+
+export function getDepartmentSummary(
+  params?: PeriodAndDepartmentParams,
+): Promise<DepartmentSummaryResponse> {
+  return backendGet<DepartmentSummaryResponse>("/api/v1/work-orders/summary/by-department", {
+    date_from: params?.dateFrom ?? "",
+    date_to: params?.dateTo ?? "",
+    departments: departmentsParam(params?.departments),
+  });
+}
+
+export function getDepartments(): Promise<DepartmentListResponse> {
+  return backendGet<DepartmentListResponse>("/api/v1/work-orders/departments");
 }

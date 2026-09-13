@@ -23,16 +23,20 @@ type Row = {
   number: string;
   vehicle: string;
   payer: string;
+  status: string;
+  department: string;
   amount: string;
 };
 
-type ColumnKey = "date" | "number" | "vehicle" | "payer" | "amount";
+type ColumnKey = "date" | "number" | "vehicle" | "payer" | "status" | "department" | "amount";
 
 const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "date", label: "Дата" },
   { key: "number", label: "Номер" },
   { key: "vehicle", label: "Автомобиль" },
   { key: "payer", label: "Плательщик" },
+  { key: "status", label: "Статус" },
+  { key: "department", label: "Подразделение" },
   { key: "amount", label: "Сумма", numeric: true },
 ];
 
@@ -43,6 +47,8 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
     number: "",
     vehicle: "",
     payer: "",
+    status: "",
+    department: "",
     amount: "",
   });
 
@@ -54,6 +60,8 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
         number: item.external_number,
         vehicle: item.vehicle_description ?? "",
         payer: item.payer_name ?? "",
+        status: item.status ?? "",
+        department: item.department ?? "",
         amount: formatAmount(item.amount),
       })),
     [items],
@@ -64,7 +72,9 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
 
     return rows.filter((row) => {
       if (query) {
-        const haystack = `${row.date} ${row.number} ${row.vehicle} ${row.payer} ${row.amount}`.toLowerCase();
+        const haystack = COLUMNS.map((col) => row[col.key])
+          .join(" ")
+          .toLowerCase();
         if (!haystack.includes(query)) return false;
       }
 
@@ -82,7 +92,7 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
       <input
         type="search"
         className="search-input"
-        placeholder="Поиск по всем полям (номер, ВИН, плательщик, сумма...)"
+        placeholder="Поиск по всем полям (номер, ВИН, плательщик, статус, подразделение, сумма...)"
         value={search}
         onChange={(event) => setSearch(event.target.value)}
         aria-label="Поиск по всем полям"
@@ -93,7 +103,7 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
       </p>
 
       <div className="table-wrap">
-        <table className="data-table">
+        <table className="data-table data-table--work-orders">
           <thead>
             <tr>
               {COLUMNS.map((col) => (
@@ -125,6 +135,8 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
                 <td>{row.number}</td>
                 <td>{row.vehicle || "—"}</td>
                 <td>{row.payer || "—"}</td>
+                <td>{row.status || "—"}</td>
+                <td>{row.department || "—"}</td>
                 <td className="num">{row.amount}</td>
               </tr>
             ))}

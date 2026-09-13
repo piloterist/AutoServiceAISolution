@@ -189,28 +189,38 @@ main:has(.wide-page) {
   letter-spacing: 0.02em;
 }
 
-/* Column widths: short fixed-ish fields get just enough room, the long
-   free-text vehicle description gets the rest (table-layout: fixed makes
-   these percentages apply consistently instead of auto-sizing to content,
-   which is what was forcing horizontal scroll before). */
-.data-table th:nth-child(1),
-.data-table td:nth-child(1) {
-  width: 9%;
+/* Column widths (Work Orders table specifically - 7 columns): short
+   fixed-ish fields get just enough room, the long free-text vehicle
+   description gets the most (table-layout: fixed makes these percentages
+   apply consistently instead of auto-sizing to content, which is what was
+   forcing horizontal scroll before).
+   1 Дата | 2 Номер | 3 Автомобиль | 4 Плательщик | 5 Статус | 6 Подразделение | 7 Сумма */
+.data-table--work-orders th:nth-child(1),
+.data-table--work-orders td:nth-child(1) {
+  width: 8%;
 }
-.data-table th:nth-child(2),
-.data-table td:nth-child(2) {
+.data-table--work-orders th:nth-child(2),
+.data-table--work-orders td:nth-child(2) {
+  width: 11%;
+}
+.data-table--work-orders th:nth-child(3),
+.data-table--work-orders td:nth-child(3) {
+  width: 28%;
+}
+.data-table--work-orders th:nth-child(4),
+.data-table--work-orders td:nth-child(4) {
+  width: 16%;
+}
+.data-table--work-orders th:nth-child(5),
+.data-table--work-orders td:nth-child(5) {
+  width: 10%;
+}
+.data-table--work-orders th:nth-child(6),
+.data-table--work-orders td:nth-child(6) {
   width: 14%;
 }
-.data-table th:nth-child(3),
-.data-table td:nth-child(3) {
-  width: 42%;
-}
-.data-table th:nth-child(4),
-.data-table td:nth-child(4) {
-  width: 22%;
-}
-.data-table th:nth-child(5),
-.data-table td:nth-child(5) {
+.data-table--work-orders th:nth-child(7),
+.data-table--work-orders td:nth-child(7) {
   width: 13%;
 }
 
@@ -390,4 +400,172 @@ main:has(.wide-page) {
   color: var(--chart-ink-muted);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* --- Dashboard filters (period + department, plain GET form) --- */
+
+.filters-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.filters-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.filters-field input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.filters-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.filters-departments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.filters-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+}
+
+.filters-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.filters-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.filters-submit {
+  padding: 0.5rem 1.1rem;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filters-reset {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* --- Department donut chart (categorical - identity encoding) --- */
+
+.donut-root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2rem;
+}
+
+.donut-visual {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.donut-slice {
+  cursor: pointer;
+  transition: opacity 0.1s ease;
+}
+
+.donut-slice-hovered {
+  opacity: 0.85;
+}
+
+.donut-center-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.donut-center-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.donut-center-caption {
+  font-size: 0.75rem;
+  color: var(--chart-ink-muted);
+}
+
+.donut-tooltip {
+  transform: translate(-50%, -50%);
+}
+
+.donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 200px;
+}
+
+.donut-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.donut-legend-item-hovered {
+  background: var(--bg);
+}
+
+.donut-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.donut-legend-label {
+  flex: 1;
+  color: var(--text);
+}
+
+.donut-legend-value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
