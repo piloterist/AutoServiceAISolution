@@ -131,14 +131,17 @@ ARCHITECTURE.md for that path. This module is the fallback for when even
 that does not clear the firewall.
 
 Instead of 1C calling this API directly, it uploads its export JSON to a
-folder on Yandex.Disk via WebDAV (`https://webdav.yandex.ru/...`, Basic auth
-with a Yandex account + an **app password**, not the account's real
-password). This backend polls that folder on a timer and imports any new
-file through the exact same `process_work_order_import` path the direct API
-uses - same validation, same idempotent upsert, same `ImportBatch` audit
-trail - then moves the file into a `processed/` subfolder so it is not
-re-imported (re-importing it would be harmless, just wasted work, since the
-upsert is idempotent).
+folder on Yandex.Disk through Yandex's **REST API** (`cloud-api.yandex.net`,
+OAuth token) - **not WebDAV**: WebDAV (`webdav.yandex.ru`) was tried first
+and Yandex rejected it with `402 Payment Required: WebDAV is not available
+for the free tariff` - WebDAV specifically requires a paid Yandex.Disk plan,
+while the REST API does not. So 1C uses the same OAuth-token auth as this
+backend's own poller, not a separate login+app-password pair. This backend
+polls the folder on a timer and imports any new file through the exact same
+`process_work_order_import` path the direct API uses - same validation,
+same idempotent upsert, same `ImportBatch` audit trail - then moves the file
+into a `processed/` subfolder so it is not re-imported (re-importing it
+would be harmless, just wasted work, since the upsert is idempotent).
 
 Runs as a plain `asyncio` background task inside the existing backend
 process (started from the FastAPI `lifespan` handler in `app/main.py`) - no
@@ -155,9 +158,10 @@ on for a client instance that actually needs it.
 | `YANDEX_POLL_INTERVAL_SECONDS` | default `300` (5 min) |
 
 Use a **dedicated** Yandex account for this, not a personal one - so access
-can be revoked/rotated independently or handed off. 1C authenticates to
-WebDAV with that account's login + an **app password** (Yandex ID -> security
-settings -> "app passwords"), never the account's real password.
+can be revoked/rotated independently or handed off. 1C authenticates to the
+REST API with the same `YANDEX_DISK_OAUTH_TOKEN` value configured on the
+backend (pasted into the 1C module directly - see `1c/TestExportOrders.bsl`)
+- no separate login/password needed.
 
 ## What stays local
 
