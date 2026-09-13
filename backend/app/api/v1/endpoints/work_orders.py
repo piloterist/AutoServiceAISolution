@@ -28,7 +28,7 @@ router = APIRouter(tags=["work-orders"], dependencies=[Depends(verify_api_token)
 def get_work_orders(
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=100, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> WorkOrderListResponse:

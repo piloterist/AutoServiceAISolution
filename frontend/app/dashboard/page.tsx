@@ -1,4 +1,4 @@
-import { MonthlyRevenueChart } from "@/components/MonthlyRevenueChart";
+import { MonthlyBarChart } from "@/components/MonthlyRevenueChart";
 import { getMonthlySummary } from "@/lib/backend-api";
 
 // See app/work-orders/page.tsx for why this is required.
@@ -52,7 +52,12 @@ export default async function DashboardPage() {
 
           <div className="card">
             <h2 className="chart-title">Выручка по месяцам</h2>
-            <MonthlyRevenueChart data={items} />
+            <MonthlyBarChart data={items} metric="amount" colorSlot="series" />
+          </div>
+
+          <div className="card">
+            <h2 className="chart-title">Количество заказ-нарядов по месяцам</h2>
+            <MonthlyBarChart data={items} metric="count" colorSlot="series-2" />
           </div>
         </>
       )}

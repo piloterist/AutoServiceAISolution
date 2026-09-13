@@ -24,7 +24,7 @@ export default async function WorkOrdersPage() {
   let error: string | null = null;
 
   try {
-    data = await getWorkOrders({ limit: 500 });
+    data = await getWorkOrders({ limit: 5000 });
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
   }
@@ -51,7 +51,6 @@ export default async function WorkOrdersPage() {
                   <th>Дата</th>
                   <th>Номер</th>
                   <th>Автомобиль</th>
-                  <th>Заказчик</th>
                   <th>Плательщик</th>
                   <th className="num">Сумма</th>
                 </tr>
@@ -62,14 +61,13 @@ export default async function WorkOrdersPage() {
                     <td>{formatDate(item.document_date)}</td>
                     <td>{item.external_number}</td>
                     <td>{item.vehicle_description ?? "—"}</td>
-                    <td>{item.customer_name ?? "—"}</td>
                     <td>{item.payer_name ?? "—"}</td>
                     <td className="num">{formatAmount(item.amount)}</td>
                   </tr>
                 ))}
                 {data.items.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="table-empty">
+                    <td colSpan={5} className="table-empty">
                       Пока нет данных.
                     </td>
                   </tr>

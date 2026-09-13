@@ -11,7 +11,8 @@
 
   /* Data-viz tokens (see dataviz skill: sequential blue ramp, chart chrome) */
   --chart-surface: #fcfcfb;
-  --chart-series: #2a78d6; /* sequential hue, step 450 */
+  --chart-series: #2a78d6; /* sequential hue, step 450 (revenue) */
+  --chart-series-2: #eb6834; /* next categorical slot - orange (order count) */
   --chart-gridline: #e1e0d9;
   --chart-baseline: #c3c2b7;
   --chart-ink-secondary: #52514e;
@@ -93,6 +94,10 @@ main {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 1.5rem;
+}
+
+.card + .card {
+  margin-top: 1rem;
 }
 
 .health-indicator {
@@ -275,6 +280,10 @@ main {
   background: var(--chart-series);
   border-radius: 4px 4px 0 0; /* 4px rounded data-end, square at baseline */
   transition: opacity 0.1s ease;
+}
+
+.chart-bar-series-2 {
+  background: var(--chart-series-2);
 }
 
 .chart-bar-hovered {
