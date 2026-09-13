@@ -230,3 +230,79 @@ def test_get_work_order_detail_missing_returns_404(client, auth_headers) -> None
     response = client.get(f"{LIST_URL}/00000000-0000-0000-0000-000000000000", headers=auth_headers)
 
     assert response.status_code == 404
+
+
+class _FakeSettingsWithRevenueStatuses:
+    """Minimal stand-in for Settings - only the one attribute the endpoints
+    actually read off it, so tests don't have to fight Settings' required
+    fields or its @lru_cache."""
+
+    revenue_statuses_list = ["Закрыт"]
+
+
+def test_monthly_summary_only_counts_configured_revenue_status(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-CLOSED",
+            document_date=datetime(2026, 6, 5),
+            amount=Decimal("100.00"),
+            status="Закрыт",
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-OPEN",
+            document_date=datetime(2026, 6, 10),
+            amount=Decimal("500.00"),
+            status="Заявка",
+        )
+    )
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.work_orders.get_settings",
+        lambda: _FakeSettingsWithRevenueStatuses(),
+    )
+
+    response = client.get(SUMMARY_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["month"]: item for item in response.json()["items"]}
+    assert items["2026-06"]["work_order_count"] == 1
+    assert items["2026-06"]["total_amount"] == "100.00"
+
+
+def test_department_summary_only_counts_configured_revenue_status(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-CLOSED",
+            department="Кузовной цех",
+            amount=Decimal("300.00"),
+            status="Закрыт",
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-OPEN",
+            department="Кузовной цех",
+            amount=Decimal("700.00"),
+            status="Заявка",
+        )
+    )
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.work_orders.get_settings",
+        lambda: _FakeSettingsWithRevenueStatuses(),
+    )
+
+    response = client.get(f"{LIST_URL}/summary/by-department", headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["department"]: item for item in response.json()["items"]}
+    assert items["Кузовной цех"]["total_amount"] == "300.00"
+    assert items["Кузовной цех"]["work_order_count"] == 1

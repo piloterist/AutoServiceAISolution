@@ -59,11 +59,21 @@ def monthly_summary(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     departments: list[str] | None = None,
+    revenue_statuses: list[str] | None = None,
 ) -> list[dict]:
-    """Total amount and count of work orders per calendar month, oldest first."""
+    """Total amount and count of work orders per calendar month, oldest first.
+
+    `revenue_statuses`, when given, restricts this to only the status
+    value(s) that count as recognized revenue (e.g. "Закрыт") - an open/
+    in-progress work order's amount isn't finalized yet and shouldn't be
+    reported as earned revenue. Configured via Settings.revenue_statuses,
+    not hardcoded here (see ARCHITECTURE.md).
+    """
     filters = _date_range_filters(date_from, date_to)
     if departments:
         filters.append(WorkOrder.department.in_(departments))
+    if revenue_statuses:
+        filters.append(WorkOrder.status.in_(revenue_statuses))
 
     month = func.date_trunc("month", WorkOrder.document_date).label("month")
 
@@ -94,18 +104,22 @@ def department_summary(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     departments: list[str] | None = None,
+    revenue_statuses: list[str] | None = None,
 ) -> list[dict]:
     """Total amount and count of work orders per department, for a period.
 
     Work orders with no department set are grouped under "" and skipped -
     the frontend shouldn't have to special-case an empty/None bucket in a
-    chart meant to compare named departments.
+    chart meant to compare named departments. See `monthly_summary` for what
+    `revenue_statuses` does.
     """
     filters = _date_range_filters(date_from, date_to)
     filters.append(WorkOrder.department.is_not(None))
     filters.append(WorkOrder.department != "")
     if departments:
         filters.append(WorkOrder.department.in_(departments))
+    if revenue_statuses:
+        filters.append(WorkOrder.status.in_(revenue_statuses))
 
     rows = db.execute(
         select(

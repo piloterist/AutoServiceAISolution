@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.work_order import (
     DepartmentListResponse,
@@ -85,8 +86,17 @@ def get_monthly_summary(
     departments: str | None = Query(default=None, description="Comma-separated department names"),
     db: Session = Depends(get_db),
 ) -> MonthlySummaryResponse:
+    # Revenue reporting only counts work orders in the configured "closed"
+    # status(es) - an open/in-progress order's amount isn't earned revenue
+    # yet. The status value itself is deployment config (Settings.
+    # revenue_statuses), never hardcoded here.
+    revenue_statuses = get_settings().revenue_statuses_list
     rows = monthly_summary(
-        db, date_from=date_from, date_to=date_to, departments=_split_departments(departments)
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        departments=_split_departments(departments),
+        revenue_statuses=revenue_statuses or None,
     )
     return MonthlySummaryResponse(items=[MonthlySummaryItem(**row) for row in rows])
 
@@ -98,8 +108,13 @@ def get_department_summary(
     departments: str | None = Query(default=None, description="Comma-separated department names"),
     db: Session = Depends(get_db),
 ) -> DepartmentSummaryResponse:
+    revenue_statuses = get_settings().revenue_statuses_list
     rows = department_summary(
-        db, date_from=date_from, date_to=date_to, departments=_split_departments(departments)
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        departments=_split_departments(departments),
+        revenue_statuses=revenue_statuses or None,
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
 

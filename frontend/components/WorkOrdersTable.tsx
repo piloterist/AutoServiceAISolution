@@ -18,6 +18,25 @@ function formatAmount(amount: string): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(value) + " ₽";
 }
 
+/** document_date falls within [dateFrom, dateTo] - dateTo is treated as
+ * inclusive of that whole day (a plain <input type="date"> picker gives no
+ * time component, and "по 13.09" should include everything on the 13th). */
+function isWithinDateRange(iso: string, dateFrom: string, dateTo: string): boolean {
+  const orderTime = new Date(iso).getTime();
+
+  if (dateFrom) {
+    const fromTime = new Date(dateFrom).getTime();
+    if (!Number.isNaN(fromTime) && orderTime < fromTime) return false;
+  }
+
+  if (dateTo) {
+    const toTime = new Date(dateTo).getTime() + 24 * 60 * 60 * 1000;
+    if (!Number.isNaN(toTime) && orderTime >= toTime) return false;
+  }
+
+  return true;
+}
+
 type Row = {
   item: WorkOrderListItem;
   date: string;
@@ -53,6 +72,12 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
     department: "",
     amount: "",
   });
+  // Status has its own checkbox dropdown (below) instead of the generic
+  // per-column text filter every other column gets - a free-text substring
+  // match makes little sense against a small fixed set of status values.
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const rows: Row[] = useMemo(
     () =>
@@ -68,6 +93,22 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
       })),
     [items],
   );
+
+  // Distinct status values actually present in the data - never a
+  // hardcoded list of statuses (see ARCHITECTURE.md).
+  const availableStatuses = useMemo(() => {
+    const values = new Set<string>();
+    for (const item of items) {
+      if (item.status) values.add(item.status);
+    }
+    return Array.from(values).sort((a, b) => a.localeCompare(b, "ru"));
+  }, [items]);
+
+  const toggleStatus = (status: string) => {
+    setSelectedStatuses((prev) =>
+      prev.includes(status) ? prev.filter((value) => value !== status) : [...prev, status],
+    );
+  };
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -85,12 +126,73 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
         if (filterValue && !row[key].toLowerCase().includes(filterValue)) return false;
       }
 
+      // No status checked = show all statuses (same "empty = all" rule
+      // used by the department filter on the dashboard).
+      if (selectedStatuses.length > 0 && !selectedStatuses.includes(row.item.status ?? "")) {
+        return false;
+      }
+
+      if (!isWithinDateRange(row.item.document_date, dateFrom, dateTo)) return false;
+
       return true;
     });
-  }, [rows, search, columnFilters]);
+  }, [rows, search, columnFilters, selectedStatuses, dateFrom, dateTo]);
 
   return (
     <div className="wide-page">
+      <div className="toolbar">
+        <details className="status-filter">
+          <summary>
+            Статус{selectedStatuses.length > 0 ? ` (${selectedStatuses.length})` : ""}
+          </summary>
+          <div className="status-filter-panel">
+            {availableStatuses.length === 0 && (
+              <p className="status-filter-empty">Нет данных по статусам</p>
+            )}
+            {availableStatuses.map((status) => (
+              <label key={status} className="status-filter-checkbox">
+                <input
+                  type="checkbox"
+                  checked={selectedStatuses.includes(status)}
+                  onChange={() => toggleStatus(status)}
+                />
+                {status}
+              </label>
+            ))}
+            {selectedStatuses.length > 0 && (
+              <button
+                type="button"
+                className="status-filter-clear"
+                onClick={() => setSelectedStatuses([])}
+              >
+                Сбросить
+              </button>
+            )}
+          </div>
+        </details>
+
+        <div className="period-filter">
+          <label>
+            С
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(event) => setDateFrom(event.target.value)}
+              aria-label="Период с даты"
+            />
+          </label>
+          <label>
+            По
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(event) => setDateTo(event.target.value)}
+              aria-label="Период по дату"
+            />
+          </label>
+        </div>
+      </div>
+
       <input
         type="search"
         className="search-input"
@@ -115,19 +217,23 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
               ))}
             </tr>
             <tr className="filter-row">
-              {COLUMNS.map((col) => (
-                <th key={col.key} className={col.numeric ? "num" : undefined}>
-                  <input
-                    type="text"
-                    value={columnFilters[col.key]}
-                    onChange={(event) =>
-                      setColumnFilters((prev) => ({ ...prev, [col.key]: event.target.value }))
-                    }
-                    placeholder="Фильтр"
-                    aria-label={`Фильтр по полю ${col.label}`}
-                  />
-                </th>
-              ))}
+              {COLUMNS.map((col) =>
+                col.key === "status" ? (
+                  <th key={col.key} />
+                ) : (
+                  <th key={col.key} className={col.numeric ? "num" : undefined}>
+                    <input
+                      type="text"
+                      value={columnFilters[col.key]}
+                      onChange={(event) =>
+                        setColumnFilters((prev) => ({ ...prev, [col.key]: event.target.value }))
+                      }
+                      placeholder="Фильтр"
+                      aria-label={`Фильтр по полю ${col.label}`}
+                    />
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>

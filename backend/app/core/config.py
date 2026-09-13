@@ -50,9 +50,22 @@ class Settings(BaseSettings):
     yandex_disk_watch_path: str = "/1c-export"
     yandex_poll_interval_seconds: int = 300
 
+    # Which work order status value(s) count as "revenue" for the dashboard's
+    # reporting endpoints (monthly summary, by-department summary) - comma
+    # separated, e.g. "Закрыт". A work order in any other status (open, in
+    # progress, ...) still exists and is visible on the work orders list, it
+    # just isn't counted as earned revenue yet. Left empty by default (no
+    # restriction) since the actual status string is client-specific data,
+    # not something the core should hardcode - see ARCHITECTURE.md.
+    revenue_statuses: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def revenue_statuses_list(self) -> list[str]:
+        return [status.strip() for status in self.revenue_statuses.split(",") if status.strip()]
 
     @property
     def is_development(self) -> bool:
