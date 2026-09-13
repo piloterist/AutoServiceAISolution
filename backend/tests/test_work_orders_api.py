@@ -2,6 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from app.models.work_order import WorkOrder
+from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 
 LIST_URL = "/api/v1/work-orders"
 SUMMARY_URL = "/api/v1/work-orders/summary/monthly"
@@ -176,3 +177,56 @@ def test_department_summary_groups_and_sums(client, db_session, auth_headers) ->
     assert items["Кузовной цех"]["total_amount"] == "500.00"
     assert items["Кузовной цех"]["work_order_count"] == 2
     assert items["Малярный цех"]["total_amount"] == "100.00"
+
+
+def test_get_work_order_detail_requires_auth(client, db_session) -> None:
+    work_order = _make_work_order(external_number="WO-DETAIL-AUTH")
+    db_session.add(work_order)
+    db_session.commit()
+
+    response = client.get(f"{LIST_URL}/{work_order.id}")
+
+    assert response.status_code == 401
+
+
+def test_get_work_order_detail_returns_header_and_lines(client, db_session, auth_headers) -> None:
+    work_order = _make_work_order(external_number="WO-DETAIL-1", department="Кузовной цех")
+    db_session.add(work_order)
+    db_session.commit()
+    db_session.add(
+        WorkOrderLaborLine(
+            work_order_id=work_order.id,
+            operation_name="Окраска бампера",
+            price=Decimal("1500.00"),
+            amount=Decimal("1500.00"),
+        )
+    )
+    db_session.add(
+        WorkOrderPartLine(
+            work_order_id=work_order.id,
+            item_name="Бампер передний",
+            quantity=Decimal("1.000"),
+            price=Decimal("8000.00"),
+            amount=Decimal("8000.00"),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"{LIST_URL}/{work_order.id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["external_number"] == "WO-DETAIL-1"
+    assert body["department"] == "Кузовной цех"
+    assert len(body["labor"]) == 1
+    assert body["labor"][0]["operation_name"] == "Окраска бампера"
+    assert body["labor"][0]["amount"] == "1500.00"
+    assert len(body["parts"]) == 1
+    assert body["parts"][0]["item_name"] == "Бампер передний"
+    assert body["parts"][0]["quantity"] == "1.000"
+
+
+def test_get_work_order_detail_missing_returns_404(client, auth_headers) -> None:
+    response = client.get(f"{LIST_URL}/00000000-0000-0000-0000-000000000000", headers=auth_headers)
+
+    assert response.status_code == 404

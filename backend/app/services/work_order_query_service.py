@@ -14,6 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.work_order import WorkOrder
+from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 
 
 def _date_range_filters(date_from: datetime | None, date_to: datetime | None) -> list:
@@ -139,6 +140,28 @@ def list_departments(db: Session) -> list[str]:
         .order_by(WorkOrder.department)
     ).all()
     return [row[0] for row in rows]
+
+
+def get_work_order(db: Session, work_order_id: UUID) -> WorkOrder | None:
+    """Single work order by id, or None if it doesn't exist - the header
+    shown on the work order detail page (same fields as the list row)."""
+    return db.get(WorkOrder, work_order_id)
+
+
+def list_labor_lines(db: Session, work_order_id: UUID) -> list[WorkOrderLaborLine]:
+    """A work order's "Работы" (labor) tabular-section lines."""
+    rows = db.execute(
+        select(WorkOrderLaborLine).where(WorkOrderLaborLine.work_order_id == work_order_id)
+    ).scalars()
+    return list(rows)
+
+
+def list_part_lines(db: Session, work_order_id: UUID) -> list[WorkOrderPartLine]:
+    """A work order's "Товары" (parts) tabular-section lines."""
+    rows = db.execute(
+        select(WorkOrderPartLine).where(WorkOrderPartLine.work_order_id == work_order_id)
+    ).scalars()
+    return list(rows)
 
 
 def delete_work_order(db: Session, work_order_id: UUID) -> bool:

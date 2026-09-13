@@ -20,13 +20,19 @@ from app.schemas.work_order import (
     DepartmentSummaryResponse,
     MonthlySummaryItem,
     MonthlySummaryResponse,
+    WorkOrderDetail,
+    WorkOrderLaborLineItem,
     WorkOrderListItem,
     WorkOrderListResponse,
+    WorkOrderPartLineItem,
 )
 from app.services.work_order_query_service import (
     delete_work_order,
     department_summary,
+    get_work_order,
     list_departments,
+    list_labor_lines,
+    list_part_lines,
     list_work_orders,
     monthly_summary,
 )
@@ -96,6 +102,34 @@ def get_department_summary(
         db, date_from=date_from, date_to=date_to, departments=_split_departments(departments)
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
+
+
+@router.get("/work-orders/{work_order_id}", response_model=WorkOrderDetail)
+def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) -> WorkOrderDetail:
+    """Header (same fields as the list row) plus labor/parts tabular-section
+    lines for one work order - backs the work order detail page.
+
+    Registered after the literal-path routes above (/departments,
+    /summary/...) on purpose: FastAPI/Starlette matches routes in
+    registration order, so a generic /{work_order_id} route registered
+    first would swallow those literal paths as an (invalid) id instead of
+    falling through to them.
+    """
+    work_order = get_work_order(db, work_order_id)
+    if work_order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
+
+    return WorkOrderDetail(
+        **WorkOrderListItem.model_validate(work_order).model_dump(),
+        labor=[
+            WorkOrderLaborLineItem.model_validate(line)
+            for line in list_labor_lines(db, work_order_id)
+        ],
+        parts=[
+            WorkOrderPartLineItem.model_validate(line)
+            for line in list_part_lines(db, work_order_id)
+        ],
+    )
 
 
 @router.delete("/work-orders/{work_order_id}", status_code=status.HTTP_204_NO_CONTENT)

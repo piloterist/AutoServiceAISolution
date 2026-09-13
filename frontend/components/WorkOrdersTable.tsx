@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import type { WorkOrderListItem } from "@/lib/backend-api";
@@ -41,6 +42,7 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
 ];
 
 export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>({
     date: "",
@@ -130,7 +132,19 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
           </thead>
           <tbody>
             {filteredRows.map((row) => (
-              <tr key={row.item.id}>
+              <tr
+                key={row.item.id}
+                className="row-clickable"
+                role="link"
+                tabIndex={0}
+                onClick={() => router.push(`/work-orders/${row.item.id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    router.push(`/work-orders/${row.item.id}`);
+                  }
+                }}
+              >
                 <td>{row.date}</td>
                 <td>{row.number}</td>
                 <td>{row.vehicle || "—"}</td>

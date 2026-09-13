@@ -54,3 +54,28 @@ class DepartmentSummaryResponse(BaseModel):
 
 class DepartmentListResponse(BaseModel):
     departments: list[str]
+
+
+class WorkOrderLaborLineItem(BaseModel):
+    operation_name: str | None
+    price: Decimal | None
+    amount: Decimal | None
+
+    model_config = {"from_attributes": True}
+
+
+class WorkOrderPartLineItem(BaseModel):
+    item_name: str | None
+    quantity: Decimal | None
+    price: Decimal | None
+    amount: Decimal | None
+
+    model_config = {"from_attributes": True}
+
+
+class WorkOrderDetail(WorkOrderListItem):
+    """Single work order's header (same fields as the list) plus its labor
+    (Работы) and parts (Товары) tabular-section lines."""
+
+    labor: list[WorkOrderLaborLineItem]
+    parts: list[WorkOrderPartLineItem]

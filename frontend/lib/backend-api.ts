@@ -53,6 +53,24 @@ export type DepartmentListResponse = {
   departments: string[];
 };
 
+export type WorkOrderLaborLineItem = {
+  operation_name: string | null;
+  price: string | null;
+  amount: string | null;
+};
+
+export type WorkOrderPartLineItem = {
+  item_name: string | null;
+  quantity: string | null;
+  price: string | null;
+  amount: string | null;
+};
+
+export type WorkOrderDetail = WorkOrderListItem & {
+  labor: WorkOrderLaborLineItem[];
+  parts: WorkOrderPartLineItem[];
+};
+
 function backendToken(): string {
   const token = process.env.BACKEND_API_TOKEN;
   if (!token) {
@@ -127,4 +145,8 @@ export function getDepartmentSummary(
 
 export function getDepartments(): Promise<DepartmentListResponse> {
   return backendGet<DepartmentListResponse>("/api/v1/work-orders/departments");
+}
+
+export function getWorkOrder(id: string): Promise<WorkOrderDetail> {
+  return backendGet<WorkOrderDetail>(`/api/v1/work-orders/${id}`);
 }
