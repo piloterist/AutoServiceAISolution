@@ -38,3 +38,6 @@ docker-compose.override.yml
 *.pem
 *.key
 *.pfx
+
+# Claude Code personal/local settings (per-machine permission overrides)
+.claude/settings.local.json
