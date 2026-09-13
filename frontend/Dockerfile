@@ -18,6 +18,12 @@ CMD ["npm", "run", "dev"]
 
 FROM deps AS build
 COPY . .
+# NEXT_PUBLIC_* vars are baked into the client bundle at build time, not read
+# at container runtime - must be passed as a build ARG (Railway and most
+# platforms pass service variables to `docker build` as build args when the
+# Dockerfile declares them; a plain runtime env var set later is too late).
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 FROM base AS prod

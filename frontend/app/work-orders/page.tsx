@@ -1,5 +1,11 @@
 import { getWorkOrders } from "@/lib/backend-api";
 
+// This page must never be statically prerendered: if the backend happens to
+// be reachable at build time (e.g. a Docker build with network access),
+// Next.js can otherwise freeze it as a static page with build-time data,
+// which would then never update after deploy until the next rebuild.
+export const dynamic = "force-dynamic";
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("ru-RU", {
     year: "numeric",

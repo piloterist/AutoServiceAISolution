@@ -1,6 +1,9 @@
 import { MonthlyRevenueChart } from "@/components/MonthlyRevenueChart";
 import { getMonthlySummary } from "@/lib/backend-api";
 
+// See app/work-orders/page.tsx for why this is required.
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   let summary;
   let error: string | null = null;
