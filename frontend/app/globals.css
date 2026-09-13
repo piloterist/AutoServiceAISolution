@@ -540,20 +540,24 @@ main:has(.wide-page) {
   color: var(--chart-ink-muted);
 }
 
-/* Override .chart-tooltip's dark bar-chart styling (dark surface, white
-   text) - on the donut this sits close to the center total label, so a
-   dark box there reads as a stray black bar. A light surface + dark text
-   (matching the rest of the chart chrome) keeps it legible without that. */
+/* .chart-tooltip sets `bottom: 100%` for the bar chart (floats the tooltip
+   above its slot, anchored via the CSS). The donut instead centers its
+   tooltip on an explicit inline top/left (the mid-angle point on the ring),
+   so having both `top` (inline) and `bottom: 100%` (inherited) set at once
+   with no explicit height made the browser compute a near-zero/negative
+   box height - the box collapsed to a sliver and the rest of the text
+   overflowed below it, uncontained (that's the stray white bar with text
+   spilling under it). `bottom: auto` (+ zeroing the bar chart's own
+   margin-bottom) removes that conflict so the box sizes to fit all three
+   lines. Kept it dark (like the bar chart tooltip) but a shade lighter
+   than near-black, per request. */
 .donut-tooltip {
+  bottom: auto;
+  margin-bottom: 0;
   transform: translate(-50%, -50%);
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
-}
-
-.donut-tooltip .chart-tooltip-muted {
-  color: var(--text-muted);
+  background: #33343a;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
 
 .donut-legend {
