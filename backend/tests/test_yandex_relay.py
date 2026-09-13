@@ -74,6 +74,15 @@ def _make_mock_transport(calls: list[str]) -> httpx.MockTransport:
                 return httpx.Response(201)
 
         if request.url.host == "downloader.example.test":
+            # Yandex's real download link redirects to a separate storage
+            # node - simulate that hop to guard against regressing the
+            # follow_redirects fix (httpx does not follow redirects by
+            # default and treats an unfollowed one as an error).
+            return httpx.Response(
+                302, headers={"Location": "https://storage.example.test/real-batch1.json"}
+            )
+
+        if request.url.host == "storage.example.test":
             return httpx.Response(200, content=SAMPLE_PAYLOAD)
 
         return httpx.Response(404)

@@ -93,8 +93,14 @@ async def _download_file(client: httpx.AsyncClient, file_path: str) -> bytes:
     href = link_response.json()["href"]
 
     # The download href is a pre-signed, self-contained URL - fetch it with a
-    # bare client (no Authorization header needed or expected here).
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as plain_client:
+    # bare client (no Authorization header needed or expected here). Yandex's
+    # actual file bytes live behind a further redirect (disk API ->
+    # downloader.disk.yandex.ru -> a specific storage node), so redirects
+    # must be followed - httpx does not follow them by default, and treats
+    # an unfollowed redirect as an error on raise_for_status().
+    async with httpx.AsyncClient(
+        timeout=REQUEST_TIMEOUT_SECONDS, follow_redirects=True
+    ) as plain_client:
         content_response = await plain_client.get(href)
         content_response.raise_for_status()
         return content_response.content
