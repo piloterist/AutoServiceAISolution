@@ -7,8 +7,9 @@ directly) must present API_TOKEN just like the 1C integration does.
 """
 
 from datetime import datetime
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
@@ -19,7 +20,11 @@ from app.schemas.work_order import (
     WorkOrderListItem,
     WorkOrderListResponse,
 )
-from app.services.work_order_query_service import list_work_orders, monthly_summary
+from app.services.work_order_query_service import (
+    delete_work_order,
+    list_work_orders,
+    monthly_summary,
+)
 
 router = APIRouter(tags=["work-orders"], dependencies=[Depends(verify_api_token)])
 
@@ -51,3 +56,11 @@ def get_monthly_summary(
 ) -> MonthlySummaryResponse:
     rows = monthly_summary(db, date_from=date_from, date_to=date_to)
     return MonthlySummaryResponse(items=[MonthlySummaryItem(**row) for row in rows])
+
+
+@router.delete("/work-orders/{work_order_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_work_order(work_order_id: UUID, db: Session = Depends(get_db)) -> None:
+    """Manual cleanup of a bad/test record - not part of the normal 1C flow."""
+    deleted = delete_work_order(db, work_order_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")

@@ -90,3 +90,35 @@ def test_monthly_summary_groups_and_sums_by_month(client, db_session, auth_heade
     assert items["2026-06"]["total_amount"] == "150.00"
     assert items["2026-07"]["work_order_count"] == 1
     assert items["2026-07"]["total_amount"] == "200.00"
+
+
+def test_delete_work_order_requires_auth(client, db_session) -> None:
+    work_order = _make_work_order(external_number="WO-DELETE-1")
+    db_session.add(work_order)
+    db_session.commit()
+
+    response = client.delete(f"{LIST_URL}/{work_order.id}")
+
+    assert response.status_code == 401
+
+
+def test_delete_work_order_removes_it(client, db_session, auth_headers) -> None:
+    work_order = _make_work_order(external_number="WO-DELETE-2")
+    db_session.add(work_order)
+    db_session.commit()
+    work_order_id = work_order.id
+
+    response = client.delete(f"{LIST_URL}/{work_order_id}", headers=auth_headers)
+    assert response.status_code == 204
+
+    list_response = client.get(LIST_URL, headers=auth_headers)
+    numbers = {item["external_number"] for item in list_response.json()["items"]}
+    assert "WO-DELETE-2" not in numbers
+
+
+def test_delete_work_order_missing_returns_404(client, auth_headers) -> None:
+    response = client.delete(
+        f"{LIST_URL}/00000000-0000-0000-0000-000000000000", headers=auth_headers
+    )
+
+    assert response.status_code == 404

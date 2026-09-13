@@ -8,8 +8,9 @@ calls; import_service is used by the 1C ingestion paths).
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.work_order import WorkOrder
@@ -77,3 +78,15 @@ def monthly_summary(
         }
         for row in rows
     ]
+
+
+def delete_work_order(db: Session, work_order_id: UUID) -> bool:
+    """Delete one Work Order by id. Returns True if a row was actually deleted.
+
+    For manual cleanup of bad/test records (e.g. smoke-test data created
+    while verifying the import pipeline) - not part of the normal 1C
+    ingestion flow, which only ever inserts/updates.
+    """
+    result = db.execute(delete(WorkOrder).where(WorkOrder.id == work_order_id))
+    db.commit()
+    return result.rowcount > 0
