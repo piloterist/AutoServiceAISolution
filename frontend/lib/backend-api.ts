@@ -14,6 +14,12 @@ export type WorkOrderListItem = {
   id: string;
   external_number: string;
   document_date: string;
+  // Alpha-Auto's own document requisites (ДатаСоздания/ДатаНачала/
+  // ДатаОкончания/ДатаЗакрытия) - distinct from document_date above.
+  created_date: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  closed_date: string | null;
   customer_name: string | null;
   payer_name: string | null;
   vehicle_description: string | null;

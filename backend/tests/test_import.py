@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -176,3 +177,54 @@ def test_import_stores_status_department_labor_and_parts(client, db_session, aut
         .all()
     )
     assert len(part_lines_after) == 0
+
+
+def test_import_stores_the_four_document_dates(client, db_session, auth_headers) -> None:
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-13T10:00:00",
+        "batch_id": "dates-test-1",
+        "records": [
+            {
+                "number": "DATES-0001",
+                "date": "2026-06-15T10:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 1000,
+                "created_date": "2026-06-15T09:00:00",
+                "start_date": "2026-06-16T08:00:00",
+                "end_date": "2026-09-09T17:00:00",
+                "closed_date": "2026-09-10T12:00:00",
+            }
+        ],
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "DATES-0001")
+    ).scalar_one()
+    assert work_order.created_date == datetime(2026, 6, 15, 9, 0, 0, tzinfo=UTC)
+    assert work_order.start_date == datetime(2026, 6, 16, 8, 0, 0, tzinfo=UTC)
+    assert work_order.end_date == datetime(2026, 9, 9, 17, 0, 0, tzinfo=UTC)
+    assert work_order.closed_date == datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
+
+
+def test_import_accepts_missing_document_dates_as_null(
+    client, db_session, auth_headers, sample_import_payload
+) -> None:
+    """An open work order won't have a closed_date (or maybe start/end)
+    yet - the field must be optional, not required."""
+    response = client.post(IMPORT_URL, json=sample_import_payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PS00010196")
+    ).scalar_one()
+    assert work_order.created_date is None
+    assert work_order.start_date is None
+    assert work_order.end_date is None
+    assert work_order.closed_date is None

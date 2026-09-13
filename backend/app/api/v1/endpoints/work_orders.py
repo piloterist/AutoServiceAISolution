@@ -81,7 +81,9 @@ def get_departments(db: Session = Depends(get_db)) -> DepartmentListResponse:
 
 @router.get("/work-orders/summary/monthly", response_model=MonthlySummaryResponse)
 def get_monthly_summary(
-    date_from: datetime | None = Query(default=None),
+    date_from: datetime | None = Query(
+        default=None, description="Filters/groups by closed_date (ДатаЗакрытия), not document_date"
+    ),
     date_to: datetime | None = Query(default=None),
     departments: str | None = Query(default=None, description="Comma-separated department names"),
     db: Session = Depends(get_db),
@@ -103,7 +105,9 @@ def get_monthly_summary(
 
 @router.get("/work-orders/summary/by-department", response_model=DepartmentSummaryResponse)
 def get_department_summary(
-    date_from: datetime | None = Query(default=None),
+    date_from: datetime | None = Query(
+        default=None, description="Filters by closed_date (ДатаЗакрытия), not document_date"
+    ),
     date_to: datetime | None = Query(default=None),
     departments: str | None = Query(default=None, description="Comma-separated department names"),
     db: Session = Depends(get_db),

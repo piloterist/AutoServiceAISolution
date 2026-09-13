@@ -15,6 +15,12 @@ class WorkOrderListItem(BaseModel):
     id: UUID
     external_number: str
     document_date: datetime
+    # Alpha-Auto's own document requisites (ДатаСоздания/ДатаНачала/
+    # ДатаОкончания/ДатаЗакрытия) - distinct from document_date above.
+    created_date: datetime | None
+    start_date: datetime | None
+    end_date: datetime | None
+    closed_date: datetime | None
     customer_name: str | None
     payer_name: str | None
     vehicle_description: str | None

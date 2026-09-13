@@ -296,39 +296,48 @@ main:has(.wide-page) {
   letter-spacing: 0.02em;
 }
 
-/* Column widths (Work Orders table specifically - 7 columns): short
-   fixed-ish fields get just enough room, the long free-text vehicle
-   description gets the most (table-layout: fixed makes these percentages
-   apply consistently instead of auto-sizing to content, which is what was
-   forcing horizontal scroll before).
-   1 Дата | 2 Номер | 3 Автомобиль | 4 Плательщик | 5 Статус | 6 Подразделение | 7 Сумма */
+/* Column widths (Work Orders table specifically - 9 columns): the three
+   date columns and the short fixed-ish fields get just enough room, the
+   long free-text vehicle description gets the most (table-layout: fixed
+   makes these percentages apply consistently instead of auto-sizing to
+   content, which is what was forcing horizontal scroll before).
+   1 Дата создания | 2 Дата начала | 3 Дата закрытия | 4 Номер |
+   5 Автомобиль | 6 Контрагент | 7 Статус | 8 Подразделение | 9 Сумма */
 .data-table--work-orders th:nth-child(1),
 .data-table--work-orders td:nth-child(1) {
-  width: 8%;
+  width: 9%;
 }
 .data-table--work-orders th:nth-child(2),
 .data-table--work-orders td:nth-child(2) {
-  width: 11%;
+  width: 9%;
 }
 .data-table--work-orders th:nth-child(3),
 .data-table--work-orders td:nth-child(3) {
-  width: 28%;
+  width: 9%;
 }
 .data-table--work-orders th:nth-child(4),
 .data-table--work-orders td:nth-child(4) {
-  width: 16%;
+  width: 8%;
 }
 .data-table--work-orders th:nth-child(5),
 .data-table--work-orders td:nth-child(5) {
-  width: 10%;
+  width: 22%;
 }
 .data-table--work-orders th:nth-child(6),
 .data-table--work-orders td:nth-child(6) {
-  width: 14%;
+  width: 13%;
 }
 .data-table--work-orders th:nth-child(7),
 .data-table--work-orders td:nth-child(7) {
-  width: 13%;
+  width: 8%;
+}
+.data-table--work-orders th:nth-child(8),
+.data-table--work-orders td:nth-child(8) {
+  width: 12%;
+}
+.data-table--work-orders th:nth-child(9),
+.data-table--work-orders td:nth-child(9) {
+  width: 10%;
 }
 
 .filter-row th {

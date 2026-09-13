@@ -41,6 +41,29 @@ class WorkOrder(Base):
     source_key: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
 
     document_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Four more dates from Alpha-Auto's own document requisites, distinct
+    # from `document_date` (ЗаказНаряд.Дата, the plain document date/number
+    # sequencing field). All nullable - an open work order won't have a
+    # closed_date yet, and the source only sends a value when the 1C field
+    # is actually filled in (its "empty date" sentinel is translated to
+    # null on export, not sent as a fake date - see 1c/TestExportOrders.bsl).
+    created_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # ДатаСоздания
+    start_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # ДатаНачала
+    end_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # ДатаОкончания
+    # Indexed: this is the date revenue reporting groups/filters by (see
+    # services/work_order_query_service.py) - a work order's revenue is
+    # attributed to the month it was actually closed in, not created in.
+    closed_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )  # ДатаЗакрытия
+
     customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Payer can differ from the customer (e.g. an insurance company paying
     # for a customer's repair) - a distinct field, not derived from customer.

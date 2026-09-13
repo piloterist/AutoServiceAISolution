@@ -5,7 +5,8 @@ import { useMemo, useState } from "react";
 
 import type { WorkOrderListItem } from "@/lib/backend-api";
 
-function formatDate(iso: string): string {
+function formatDateOrDash(iso: string | null): string {
+  if (!iso) return "—";
   return new Date(iso).toLocaleDateString("ru-RU", {
     year: "numeric",
     month: "2-digit",
@@ -39,7 +40,9 @@ function isWithinDateRange(iso: string, dateFrom: string, dateTo: string): boole
 
 type Row = {
   item: WorkOrderListItem;
-  date: string;
+  createdDate: string;
+  startDate: string;
+  closedDate: string;
   number: string;
   vehicle: string;
   customer: string;
@@ -48,10 +51,21 @@ type Row = {
   amount: string;
 };
 
-type ColumnKey = "date" | "number" | "vehicle" | "customer" | "status" | "department" | "amount";
+type ColumnKey =
+  | "createdDate"
+  | "startDate"
+  | "closedDate"
+  | "number"
+  | "vehicle"
+  | "customer"
+  | "status"
+  | "department"
+  | "amount";
 
 const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
-  { key: "date", label: "Дата" },
+  { key: "createdDate", label: "Дата создания" },
+  { key: "startDate", label: "Дата начала" },
+  { key: "closedDate", label: "Дата закрытия" },
   { key: "number", label: "Номер" },
   { key: "vehicle", label: "Автомобиль" },
   { key: "customer", label: "Контрагент" },
@@ -64,7 +78,9 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>({
-    date: "",
+    createdDate: "",
+    startDate: "",
+    closedDate: "",
     number: "",
     vehicle: "",
     customer: "",
@@ -83,7 +99,9 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
     () =>
       items.map((item) => ({
         item,
-        date: formatDate(item.document_date),
+        createdDate: formatDateOrDash(item.created_date),
+        startDate: formatDateOrDash(item.start_date),
+        closedDate: formatDateOrDash(item.closed_date),
         number: item.external_number,
         vehicle: item.vehicle_description ?? "",
         customer: item.customer_name ?? "",
@@ -251,7 +269,9 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
                   }
                 }}
               >
-                <td>{row.date}</td>
+                <td>{row.createdDate}</td>
+                <td>{row.startDate}</td>
+                <td>{row.closedDate}</td>
                 <td>{row.number}</td>
                 <td>{row.vehicle || "—"}</td>
                 <td>{row.customer || "—"}</td>

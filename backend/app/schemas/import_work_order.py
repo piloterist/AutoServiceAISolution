@@ -38,6 +38,14 @@ class ImportWorkOrderRecord(BaseModel):
     # whatever the client's 1C sends is stored as-is (see ARCHITECTURE.md).
     status: str | None = None
     department: str | None = None
+    # Four more document dates (ЗаказНаряд.ДатаСоздания/ДатаНачала/
+    # ДатаОкончания/ДатаЗакрытия), distinct from `date` above. All optional -
+    # 1C sends null instead of its "empty date" sentinel when a field isn't
+    # filled in yet (e.g. an open order has no closed_date).
+    created_date: datetime | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    closed_date: datetime | None = None
     # Not sent by 1C yet, but accepted so the API can move to a more reliable
     # external key later without a breaking contract change.
     source_key: str | None = None

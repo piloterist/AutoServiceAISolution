@@ -68,17 +68,26 @@ def test_list_work_orders_filters_by_date_range(client, db_session, auth_headers
 def test_monthly_summary_groups_and_sums_by_month(client, db_session, auth_headers) -> None:
     db_session.add(
         _make_work_order(
-            external_number="WO-1", document_date=datetime(2026, 6, 5), amount=Decimal("100.00")
+            external_number="WO-1",
+            document_date=datetime(2026, 6, 5),
+            closed_date=datetime(2026, 6, 5),
+            amount=Decimal("100.00"),
         )
     )
     db_session.add(
         _make_work_order(
-            external_number="WO-2", document_date=datetime(2026, 6, 20), amount=Decimal("50.00")
+            external_number="WO-2",
+            document_date=datetime(2026, 6, 20),
+            closed_date=datetime(2026, 6, 20),
+            amount=Decimal("50.00"),
         )
     )
     db_session.add(
         _make_work_order(
-            external_number="WO-3", document_date=datetime(2026, 7, 1), amount=Decimal("200.00")
+            external_number="WO-3",
+            document_date=datetime(2026, 7, 1),
+            closed_date=datetime(2026, 7, 1),
+            amount=Decimal("200.00"),
         )
     )
     db_session.commit()
@@ -91,6 +100,71 @@ def test_monthly_summary_groups_and_sums_by_month(client, db_session, auth_heade
     assert items["2026-06"]["total_amount"] == "150.00"
     assert items["2026-07"]["work_order_count"] == 1
     assert items["2026-07"]["total_amount"] == "200.00"
+
+
+def test_monthly_summary_attributes_revenue_to_closed_month_not_created_month(
+    client, db_session, auth_headers
+) -> None:
+    """Opened in June, closed in September -> counts as September revenue,
+    not June's - the exact scenario the user described."""
+    db_session.add(
+        _make_work_order(
+            external_number="WO-CROSS-MONTH",
+            document_date=datetime(2026, 6, 15),
+            closed_date=datetime(2026, 9, 10),
+            amount=Decimal("1000.00"),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-NOT-CLOSED-YET",
+            document_date=datetime(2026, 6, 16),
+            closed_date=None,
+            amount=Decimal("9999.00"),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(SUMMARY_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["month"]: item for item in response.json()["items"]}
+    assert "2026-06" not in items
+    assert items["2026-09"]["work_order_count"] == 1
+    assert items["2026-09"]["total_amount"] == "1000.00"
+
+
+def test_monthly_summary_date_range_filters_by_closed_date(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-CLOSED-JUNE",
+            document_date=datetime(2026, 6, 1),
+            closed_date=datetime(2026, 6, 5),
+            amount=Decimal("100.00"),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-CREATED-JUNE-CLOSED-SEPT",
+            document_date=datetime(2026, 6, 1),
+            closed_date=datetime(2026, 9, 5),
+            amount=Decimal("200.00"),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        SUMMARY_URL,
+        headers=auth_headers,
+        params={"date_from": "2026-09-01T00:00:00", "date_to": "2026-10-01T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["month"] for item in body["items"]] == ["2026-09"]
+    assert body["items"][0]["total_amount"] == "200.00"
 
 
 def test_delete_work_order_requires_auth(client, db_session) -> None:
@@ -153,20 +227,33 @@ def test_get_departments_returns_distinct_values(client, db_session, auth_header
 def test_department_summary_groups_and_sums(client, db_session, auth_headers) -> None:
     db_session.add(
         _make_work_order(
-            external_number="WO-A", department="Кузовной цех", amount=Decimal("300.00")
+            external_number="WO-A",
+            department="Кузовной цех",
+            amount=Decimal("300.00"),
+            closed_date=datetime(2026, 6, 5),
         )
     )
     db_session.add(
         _make_work_order(
-            external_number="WO-B", department="Кузовной цех", amount=Decimal("200.00")
+            external_number="WO-B",
+            department="Кузовной цех",
+            amount=Decimal("200.00"),
+            closed_date=datetime(2026, 6, 6),
         )
     )
     db_session.add(
         _make_work_order(
-            external_number="WO-C", department="Малярный цех", amount=Decimal("100.00")
+            external_number="WO-C",
+            department="Малярный цех",
+            amount=Decimal("100.00"),
+            closed_date=datetime(2026, 6, 7),
         )
     )
-    db_session.add(_make_work_order(external_number="WO-NO-DEPT", department=None))
+    db_session.add(
+        _make_work_order(
+            external_number="WO-NO-DEPT", department=None, closed_date=datetime(2026, 6, 8)
+        )
+    )
     db_session.commit()
 
     response = client.get(f"{LIST_URL}/summary/by-department", headers=auth_headers)
@@ -247,6 +334,7 @@ def test_monthly_summary_only_counts_configured_revenue_status(
         _make_work_order(
             external_number="WO-CLOSED",
             document_date=datetime(2026, 6, 5),
+            closed_date=datetime(2026, 6, 5),
             amount=Decimal("100.00"),
             status="Закрыт",
         )
@@ -255,6 +343,7 @@ def test_monthly_summary_only_counts_configured_revenue_status(
         _make_work_order(
             external_number="WO-OPEN",
             document_date=datetime(2026, 6, 10),
+            closed_date=None,
             amount=Decimal("500.00"),
             status="Заявка",
         )
@@ -283,6 +372,7 @@ def test_department_summary_only_counts_configured_revenue_status(
             department="Кузовной цех",
             amount=Decimal("300.00"),
             status="Закрыт",
+            closed_date=datetime(2026, 6, 5),
         )
     )
     db_session.add(
@@ -291,6 +381,7 @@ def test_department_summary_only_counts_configured_revenue_status(
             department="Кузовной цех",
             amount=Decimal("700.00"),
             status="Заявка",
+            closed_date=None,
         )
     )
     db_session.commit()

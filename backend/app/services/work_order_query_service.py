@@ -10,19 +10,21 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 
 
-def _date_range_filters(date_from: datetime | None, date_to: datetime | None) -> list:
+def _date_range_filters(
+    column: ColumnElement, date_from: datetime | None, date_to: datetime | None
+) -> list:
     filters = []
     if date_from is not None:
-        filters.append(WorkOrder.document_date >= date_from)
+        filters.append(column >= date_from)
     if date_to is not None:
-        filters.append(WorkOrder.document_date < date_to)
+        filters.append(column < date_to)
     return filters
 
 
@@ -35,8 +37,13 @@ def list_work_orders(
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[WorkOrder], int]:
-    """Return a page of work orders (newest first) plus the total matching count."""
-    filters = _date_range_filters(date_from, date_to)
+    """Return a page of work orders (newest first) plus the total matching count.
+
+    The date range here is against `document_date` (browsing/listing by
+    document date) - see `monthly_summary`/`department_summary` for the
+    revenue-reporting queries, which filter by `closed_date` instead.
+    """
+    filters = _date_range_filters(WorkOrder.document_date, date_from, date_to)
     if departments:
         filters.append(WorkOrder.department.in_(departments))
 
@@ -63,19 +70,26 @@ def monthly_summary(
 ) -> list[dict]:
     """Total amount and count of work orders per calendar month, oldest first.
 
-    `revenue_statuses`, when given, restricts this to only the status
-    value(s) that count as recognized revenue (e.g. "Закрыт") - an open/
-    in-progress work order's amount isn't finalized yet and shouldn't be
-    reported as earned revenue. Configured via Settings.revenue_statuses,
-    not hardcoded here (see ARCHITECTURE.md).
+    Grouped and date-range-filtered by `closed_date` (ДатаЗакрытия), not
+    `document_date` - revenue is attributed to the month a work order was
+    actually closed in, not the month it was opened/created in (a work
+    order opened in June but closed in September must show up in
+    September's revenue, not June's). Work orders with no closed_date yet
+    (not closed) are excluded - there's no month to attribute them to.
+
+    `revenue_statuses`, when given, additionally restricts this to only the
+    status value(s) that count as recognized revenue (e.g. "Закрыт").
+    Configured via Settings.revenue_statuses, not hardcoded here (see
+    ARCHITECTURE.md).
     """
-    filters = _date_range_filters(date_from, date_to)
+    filters = _date_range_filters(WorkOrder.closed_date, date_from, date_to)
+    filters.append(WorkOrder.closed_date.is_not(None))
     if departments:
         filters.append(WorkOrder.department.in_(departments))
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
 
-    month = func.date_trunc("month", WorkOrder.document_date).label("month")
+    month = func.date_trunc("month", WorkOrder.closed_date).label("month")
 
     rows = db.execute(
         select(
@@ -108,12 +122,14 @@ def department_summary(
 ) -> list[dict]:
     """Total amount and count of work orders per department, for a period.
 
-    Work orders with no department set are grouped under "" and skipped -
-    the frontend shouldn't have to special-case an empty/None bucket in a
-    chart meant to compare named departments. See `monthly_summary` for what
-    `revenue_statuses` does.
+    Date-range-filtered by `closed_date`, same reasoning as
+    `monthly_summary`. Work orders with no department set are grouped under
+    "" and skipped - the frontend shouldn't have to special-case an empty/
+    None bucket in a chart meant to compare named departments. See
+    `monthly_summary` for what `revenue_statuses` does.
     """
-    filters = _date_range_filters(date_from, date_to)
+    filters = _date_range_filters(WorkOrder.closed_date, date_from, date_to)
+    filters.append(WorkOrder.closed_date.is_not(None))
     filters.append(WorkOrder.department.is_not(None))
     filters.append(WorkOrder.department != "")
     if departments:
