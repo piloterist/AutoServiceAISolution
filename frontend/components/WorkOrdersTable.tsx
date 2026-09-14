@@ -71,7 +71,21 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "amount", label: "Сумма", numeric: true },
 ];
 
-export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
+export function WorkOrdersTable({
+  items,
+  initialStatus,
+  initialDateFrom,
+  initialDateTo,
+}: {
+  items: WorkOrderListItem[];
+  /** Pre-applied filters, e.g. arriving from a click on the dashboard's
+   * status donut chart (/work-orders?status=...&date_from=...&date_to=...).
+   * Plain strings from the URL's searchParams, not component state shared
+   * across pages - just the initial values. */
+  initialStatus?: string;
+  initialDateFrom?: string;
+  initialDateTo?: string;
+}) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>({
@@ -87,9 +101,11 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
   // Status has its own checkbox dropdown (below) instead of the generic
   // per-column text filter every other column gets - a free-text substring
   // match makes little sense against a small fixed set of status values.
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(
+    initialStatus ? [initialStatus] : [],
+  );
+  const [dateFrom, setDateFrom] = useState(initialDateFrom ?? "");
+  const [dateTo, setDateTo] = useState(initialDateTo ?? "");
 
   const rows: Row[] = useMemo(
     () =>

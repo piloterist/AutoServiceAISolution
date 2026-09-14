@@ -21,6 +21,8 @@ from app.schemas.work_order import (
     DepartmentSummaryResponse,
     MonthlySummaryItem,
     MonthlySummaryResponse,
+    StatusSummaryItem,
+    StatusSummaryResponse,
     WorkOrderDetail,
     WorkOrderLaborLineItem,
     WorkOrderListItem,
@@ -36,6 +38,7 @@ from app.services.work_order_query_service import (
     list_part_lines,
     list_work_orders,
     monthly_summary,
+    status_summary,
 )
 
 router = APIRouter(tags=["work-orders"], dependencies=[Depends(verify_api_token)])
@@ -121,6 +124,27 @@ def get_department_summary(
         revenue_statuses=revenue_statuses or None,
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
+
+
+@router.get("/work-orders/summary/by-status", response_model=StatusSummaryResponse)
+def get_status_summary(
+    date_from: datetime | None = Query(
+        default=None, description="Filters by document_date, not closed_date"
+    ),
+    date_to: datetime | None = Query(default=None),
+    departments: str | None = Query(default=None, description="Comma-separated department names"),
+    db: Session = Depends(get_db),
+) -> StatusSummaryResponse:
+    # Deliberately NOT restricted to revenue_statuses - this chart exists
+    # specifically to show the distribution across every status, not just
+    # the ones that count as recognized revenue.
+    rows = status_summary(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        departments=_split_departments(departments),
+    )
+    return StatusSummaryResponse(items=[StatusSummaryItem(**row) for row in rows])
 
 
 @router.get("/work-orders/{work_order_id}", response_model=WorkOrderDetail)

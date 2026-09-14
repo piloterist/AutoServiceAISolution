@@ -158,6 +158,54 @@ def department_summary(
     ]
 
 
+def status_summary(
+    db: Session,
+    *,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    departments: list[str] | None = None,
+) -> list[dict]:
+    """Count and total amount of work orders per status, for a period.
+
+    Unlike `monthly_summary`/`department_summary`, this is deliberately
+    NOT restricted to `revenue_statuses` and NOT filtered/grouped by
+    `closed_date` - the whole point of a status breakdown is to see the
+    distribution across every status a work order can be in (open,
+    in-progress, declined, closed, ...), not just the ones that count as
+    recognized revenue. Restricting to closed_date would collapse this to
+    ~100% "closed" and defeat the purpose. Date-range-filtered by
+    `document_date` instead, matching `list_work_orders`'s own semantics
+    (browsing/reporting by when the document was raised). Work orders with
+    no status set are excluded, same reasoning as department_summary's
+    empty-department handling.
+    """
+    filters = _date_range_filters(WorkOrder.document_date, date_from, date_to)
+    filters.append(WorkOrder.status.is_not(None))
+    filters.append(WorkOrder.status != "")
+    if departments:
+        filters.append(WorkOrder.department.in_(departments))
+
+    rows = db.execute(
+        select(
+            WorkOrder.status,
+            func.count(WorkOrder.id).label("work_order_count"),
+            func.sum(WorkOrder.amount).label("total_amount"),
+        )
+        .where(*filters)
+        .group_by(WorkOrder.status)
+        .order_by(func.count(WorkOrder.id).desc())
+    ).all()
+
+    return [
+        {
+            "status": row.status,
+            "work_order_count": row.work_order_count,
+            "total_amount": row.total_amount,
+        }
+        for row in rows
+    ]
+
+
 def list_departments(db: Session) -> list[str]:
     """Distinct department values actually present in the data - never a
     hardcoded list (see ARCHITECTURE.md: department names are client data,

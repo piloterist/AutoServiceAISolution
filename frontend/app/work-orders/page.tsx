@@ -7,7 +7,19 @@ import { getWorkOrders } from "@/lib/backend-api";
 // which would then never update after deploy until the next rebuild.
 export const dynamic = "force-dynamic";
 
-export default async function WorkOrdersPage() {
+type SearchParams = {
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+};
+
+export default async function WorkOrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
+
   let data;
   let error: string | null = null;
 
@@ -27,7 +39,14 @@ export default async function WorkOrdersPage() {
         </div>
       )}
 
-      {data && <WorkOrdersTable items={data.items} />}
+      {data && (
+        <WorkOrdersTable
+          items={data.items}
+          initialStatus={params.status}
+          initialDateFrom={params.date_from}
+          initialDateTo={params.date_to}
+        />
+      )}
     </div>
   );
 }

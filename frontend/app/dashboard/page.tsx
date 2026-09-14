@@ -1,7 +1,13 @@
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { DepartmentDonutChart } from "@/components/DepartmentDonutChart";
 import { MonthlyBarChart } from "@/components/MonthlyRevenueChart";
-import { getDepartmentSummary, getDepartments, getMonthlySummary } from "@/lib/backend-api";
+import { StatusDonutChart } from "@/components/StatusDonutChart";
+import {
+  getDepartments,
+  getDepartmentSummary,
+  getMonthlySummary,
+  getStatusSummary,
+} from "@/lib/backend-api";
 
 // See app/work-orders/page.tsx for why this is required.
 export const dynamic = "force-dynamic";
@@ -31,17 +37,20 @@ export default async function DashboardPage({
 
   let summary;
   let departmentSummary;
+  let statusSummary;
   let allDepartments: string[] = [];
   let error: string | null = null;
 
   try {
-    const [summaryRes, departmentSummaryRes, departmentsRes] = await Promise.all([
+    const [summaryRes, departmentSummaryRes, statusSummaryRes, departmentsRes] = await Promise.all([
       getMonthlySummary(filterParams),
       getDepartmentSummary(filterParams),
+      getStatusSummary(filterParams),
       getDepartments(),
     ]);
     summary = summaryRes;
     departmentSummary = departmentSummaryRes;
+    statusSummary = statusSummaryRes;
     allDepartments = departmentsRes.departments;
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
@@ -55,6 +64,11 @@ export default async function DashboardPage({
   const donutData = (departmentSummary?.items ?? []).map((item) => ({
     label: item.department,
     value: Number(item.total_amount),
+  }));
+
+  const statusDonutData = (statusSummary?.items ?? []).map((item) => ({
+    label: item.status,
+    value: item.work_order_count,
   }));
 
   return (
@@ -108,6 +122,11 @@ export default async function DashboardPage({
           <div className="card">
             <h2 className="chart-title">Выручка по подразделениям за период</h2>
             <DepartmentDonutChart data={donutData} />
+          </div>
+
+          <div className="card">
+            <h2 className="chart-title">Заказ-наряды по статусам за период</h2>
+            <StatusDonutChart data={statusDonutData} dateFrom={dateFrom} dateTo={dateTo} />
           </div>
         </>
       )}

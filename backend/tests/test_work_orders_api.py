@@ -397,3 +397,82 @@ def test_department_summary_only_counts_configured_revenue_status(
     items = {item["department"]: item for item in response.json()["items"]}
     assert items["Кузовной цех"]["total_amount"] == "300.00"
     assert items["Кузовной цех"]["work_order_count"] == 1
+
+
+def test_status_summary_groups_and_sums_and_ignores_revenue_status_restriction(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    """Unlike monthly/by-department, this must NOT collapse to only the
+    configured revenue status - it exists to show the full distribution."""
+    db_session.add(
+        _make_work_order(
+            external_number="WO-CLOSED",
+            status="Закрыт",
+            amount=Decimal("300.00"),
+            document_date=datetime(2026, 6, 5),
+            closed_date=datetime(2026, 6, 5),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-DECLINED-1",
+            status="Отказ",
+            amount=Decimal("500.00"),
+            document_date=datetime(2026, 6, 6),
+            closed_date=None,
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-DECLINED-2",
+            status="Отказ",
+            amount=Decimal("200.00"),
+            document_date=datetime(2026, 6, 7),
+            closed_date=None,
+        )
+    )
+    db_session.add(_make_work_order(external_number="WO-NO-STATUS", status=None))
+    db_session.commit()
+
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.work_orders.get_settings",
+        lambda: _FakeSettingsWithRevenueStatuses(),
+    )
+
+    response = client.get(f"{LIST_URL}/summary/by-status", headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["status"]: item for item in response.json()["items"]}
+    assert set(items) == {"Закрыт", "Отказ"}
+    assert items["Закрыт"]["work_order_count"] == 1
+    assert items["Отказ"]["work_order_count"] == 2
+    assert items["Отказ"]["total_amount"] == "700.00"
+
+
+def test_status_summary_filters_by_document_date(client, db_session, auth_headers) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-JUNE",
+            status="Заявка",
+            document_date=datetime(2026, 6, 10),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-JULY",
+            status="Заявка",
+            document_date=datetime(2026, 7, 10),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"{LIST_URL}/summary/by-status",
+        headers=auth_headers,
+        params={"date_from": "2026-07-01T00:00:00", "date_to": "2026-08-01T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 1
+    assert body["items"][0]["work_order_count"] == 1

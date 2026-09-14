@@ -59,6 +59,16 @@ export type DepartmentListResponse = {
   departments: string[];
 };
 
+export type StatusSummaryItem = {
+  status: string;
+  work_order_count: number;
+  total_amount: string;
+};
+
+export type StatusSummaryResponse = {
+  items: StatusSummaryItem[];
+};
+
 export type WorkOrderLaborLineItem = {
   operation_name: string | null;
   price: string | null;
@@ -151,6 +161,16 @@ export function getDepartmentSummary(
 
 export function getDepartments(): Promise<DepartmentListResponse> {
   return backendGet<DepartmentListResponse>("/api/v1/work-orders/departments");
+}
+
+export function getStatusSummary(
+  params?: PeriodAndDepartmentParams,
+): Promise<StatusSummaryResponse> {
+  return backendGet<StatusSummaryResponse>("/api/v1/work-orders/summary/by-status", {
+    date_from: params?.dateFrom ?? "",
+    date_to: params?.dateTo ?? "",
+    departments: departmentsParam(params?.departments),
+  });
 }
 
 export function getWorkOrder(id: string): Promise<WorkOrderDetail> {

@@ -62,6 +62,16 @@ class DepartmentListResponse(BaseModel):
     departments: list[str]
 
 
+class StatusSummaryItem(BaseModel):
+    status: str
+    work_order_count: int
+    total_amount: Decimal
+
+
+class StatusSummaryResponse(BaseModel):
+    items: list[StatusSummaryItem]
+
+
 class WorkOrderLaborLineItem(BaseModel):
     operation_name: str | None
     price: Decimal | None
