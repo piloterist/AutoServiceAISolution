@@ -423,7 +423,24 @@ main:has(.wide-page) {
 .chart-title {
   font-size: 1rem;
   font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+/* Clarifies which date field a chart is filtered/grouped by - revenue
+   charts use closed_date, the status breakdown uses document_date (see
+   app/dashboard/page.tsx). Without this, two donuts on the same page under
+   the same "period" filter read as contradictory when they're actually
+   just looking at different date fields on purpose. */
+.chart-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
   margin: 0 0 1rem;
+}
+
+.dashboard-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: -0.5rem 0 1.25rem;
 }
 
 .chart-empty {

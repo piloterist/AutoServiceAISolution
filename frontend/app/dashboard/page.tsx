@@ -108,24 +108,35 @@ export default async function DashboardPage({
               </span>
             </div>
           </div>
+          <p className="dashboard-note">
+            Выручка везде на этой странице считается по дате закрытия заказ-наряда (кроме
+            диаграммы по статусам ниже — там по дате создания, иначе не закрытые заказ-наряды
+            вообще нигде бы не отображались).
+          </p>
 
           <div className="card">
             <h2 className="chart-title">Выручка по месяцам</h2>
+            <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
             <MonthlyBarChart data={items} metric="amount" colorSlot="series" />
           </div>
 
           <div className="card">
             <h2 className="chart-title">Количество заказ-нарядов по месяцам</h2>
+            <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
             <MonthlyBarChart data={items} metric="count" colorSlot="series-2" />
           </div>
 
           <div className="card">
             <h2 className="chart-title">Выручка по подразделениям за период</h2>
+            <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
             <DepartmentDonutChart data={donutData} />
           </div>
 
           <div className="card">
             <h2 className="chart-title">Заказ-наряды по статусам за период</h2>
+            <p className="chart-subtitle">
+              по дате создания заказ-наряда — включает все статусы, не только закрытые
+            </p>
             <StatusDonutChart data={statusDonutData} dateFrom={dateFrom} dateTo={dateTo} />
           </div>
         </>
