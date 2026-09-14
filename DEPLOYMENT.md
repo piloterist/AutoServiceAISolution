@@ -1,170 +1,232 @@
-# Deploying the backend to Railway
+# Deploying to Timeweb Cloud
 
-This covers **backend only**. The frontend stays local for now and is not
-deployed to Railway at this stage.
+This is the current production platform (backend + frontend + managed
+PostgreSQL, all in Timeweb's **App Platform** / DBaaS, region `ru-3` = `MSK-1`
+Moscow). Railway was the original platform for this project and is
+documented in git history only - it was decommissioned once RU-based
+visitors reported the site was only reachable through a VPN (Railway's own
+IP ranges turned out to be blocked for direct connections from Russian
+networks; see `ARCHITECTURE.md`/commit history around September 2026 for the
+full story). Do not resurrect anything Railway-specific from old docs
+without checking it's still relevant.
 
-## Service settings (Railway dashboard, when creating/configuring the backend service)
+## Why Timeweb
 
-| Setting | Value |
-|---|---|
-| Root Directory | `backend` |
-| Builder | Dockerfile |
-| Dockerfile Path | `Dockerfile` (relative to Root Directory, so `backend/Dockerfile`) |
-| Start Command | leave empty - the Dockerfile's `CMD` already runs `uvicorn` bound to `$PORT` |
-| Healthcheck Path | `/health` |
+Same reasoning as the Yandex.Disk relay module below, at the whole-hosting
+level instead of just the 1C integration: some Russian networks (both
+"corporate firewall blocking a specific cloud ASN outbound" and, it turned
+out, "Russian residential/mobile ISPs blocking that ASN's inbound edge too")
+treat foreign-cloud-hosting IP ranges as blocked. Timeweb is a Russian
+provider with Russian-registered IP space, which sidesteps that whole class
+of problem for a product whose primary customer base is in Russia. See
+`ARCHITECTURE.md` for the "cloud-agnostic, pick a provider that reaches your
+actual customers" framing - Timeweb is not a hard dependency, just the
+current provider.
 
-A `backend/railway.json` is committed with these deploy settings
-(build/healthcheck/restart policy) so most of this is picked up automatically
-once Root Directory is set to `backend`; the table above is what to check/set
-by hand if Railway doesn't read it.
+## Account / API
 
-## Required environment variables (backend service)
+Dashboard: https://timeweb.cloud. API base URL: `https://api.timeweb.cloud`,
+auth via `Authorization: Bearer <token>` - generate a token under **API и
+Terraform** in the dashboard. Full OpenAPI spec (useful for finding exact
+request shapes):
 
-Set these in the Railway backend service's **Variables** tab. None of them
-exist in the code or in git - they must be entered per deployment:
+```
+curl -s https://timeweb.cloud/api-docs-data/bundle.json
+```
+
+Most of what's below (env vars, redeploys, reboots) can be driven directly
+via this REST API with a plain `curl`/`Bearer` token - no separate CLI is
+required (there is a `twc` Python CLI, but it wasn't needed here).
+
+**Two things the API cannot do - dashboard only:**
+- Connecting a GitHub account/repo (App Platform → Settings → VCS
+  providers) - this is an OAuth consent flow, inherently browser-based.
+- Attaching a custom ("external") domain to an app (App Platform → app →
+  Settings → **Домены** → **Редактировать** → "Внешний домен"). No
+  `/domains` sub-resource exists under `/api/v1/apps/{app_id}` as of this
+  writing.
+
+## App Platform service settings
+
+Two apps, both deployed the same way, both pointed at
+`github.com/piloterist/AutoServiceAISolution`, branch `main`,
+auto-deploy on push enabled:
+
+| Setting | Backend | Frontend |
+|---|---|---|
+| Deploy method | **Docker** tab → **Dockerfile** (not the "Backend"/"Frontend" buildpack tabs - those are for non-Docker language/framework auto-detection, not what we want) | same |
+| Root directory | `/backend` (leading slash required by the form) | `/frontend` |
+| Region | `ru-3` (Moscow / `MSK-1`) | same - keep app(s) and DB in the same region |
+| Preset | smallest available is plenty for current data volume (1 CPU / 1GB RAM / 15GB disk, ~510₽/mo each) | same |
+
+### The one gotcha that will bite you: PORT vs Dockerfile `EXPOSE`
+
+Timeweb's reverse proxy (Caddy) routes to whatever port the Dockerfile's
+`EXPOSE` directive declares - **not** whatever you set the `PORT` env var
+to. Setting `PORT` to something else just makes the app listen on a port
+Caddy isn't forwarding to, which looks exactly like a working-but-invisible
+app (deploy log says "App is healthy", external requests 502).
+
+- `backend/Dockerfile` → `EXPOSE 8000` → set `PORT=8000`
+- `frontend/Dockerfile` → `EXPOSE 3000` → set `PORT=3000`
+
+### The second gotcha: Next.js standalone binds to the wrong interface
+
+`frontend/Dockerfile`'s prod stage now sets `ENV HOSTNAME=0.0.0.0` -
+Next.js's standalone `server.js` binds to `process.env.HOSTNAME`, which
+Docker otherwise defaults to the container's own ID/hostname. That only
+resolves on the container's *primary* network interface; a container
+attached to a second network (this happened specifically right after
+attaching an external domain, which appears to move the app onto an
+additional internal network) then has the server listening on only one of
+its interfaces. If Caddy reaches it via the other one: connection refused →
+502, even though Timeweb's own deploy-time healthcheck (apparently routed
+differently) reports the app healthy. This was root-caused live via the
+app's **Console** tab (a shell into the running container) -
+`netstat -ltnp` showed the process bound to one specific container IP, not
+`0.0.0.0`. The fix is in the Dockerfile now, so it should not recur - if it
+somehow does (e.g. after Timeweb changes something platform-side), the
+Console tab + `netstat` is the fastest way to confirm it before chasing
+anything else.
+
+### If a redeploy or config change doesn't seem to take effect
+
+Symptom: deploy log shows a clean `Build succeeded` → `App is healthy` →
+`Web server Configured` → `Deploy succeeded`, but the app 502s externally
+anyway. Try, in order: `PATCH /api/v1/apps/{id}/action/reboot`, then a full
+explicit `POST /api/v1/apps/{id}/deploy` (not just relying on
+`is_auto_deploy`), then `pause` immediately followed by `resume`. One of
+these has always cleared it in practice; if none do, check the Console tab
+as above before assuming it's something in this repo's code.
+
+## Required environment variables
+
+Set via `PATCH /api/v1/apps/{app_id}` with a body like
+`{"envs": {"KEY": "value", ...}}` - this **replaces** the whole `envs` map,
+so always include every key you want kept, not just the one you're
+changing. A `GET` on the app only ever shows
+`"hidden-by-api-key-policy"` for values, never the real ones back - keep
+your own record of what you set.
+
+**Backend:**
 
 | Variable | Value | Notes |
 |---|---|---|
-| `DATABASE_URL` | `postgresql+psycopg://<user>:<password>@<host>:<port>/<database>` | **Must** keep the `+psycopg` driver suffix (see "Connecting to the Railway Postgres" below) - do not reuse Railway Postgres's own `DATABASE_URL` variable as-is. |
-| `API_TOKEN` | a long random secret, unique to this instance | This is the bearer token the 1C/Alpha-Auto integration will send. Generate with e.g. `openssl rand -hex 32`. Never reuse the local dev value. |
+| `PORT` | `8000` | must match the Dockerfile's `EXPOSE` - see gotcha above |
+| `DATABASE_URL` | `postgresql+psycopg://<user>:<password>@<host>:5432/<db>?sslmode=require` | from the DBaaS cluster's connection details; keep the `+psycopg` scheme |
+| `API_TOKEN` | long random secret, unique to this instance | bearer token the 1C/Alpha-Auto integration (via the Yandex relay) and the frontend's server-side calls use |
 | `ENVIRONMENT` | `production` | |
 | `LOG_LEVEL` | `INFO` | |
-| `CORS_ORIGINS` | leave at default for now, or set to the frontend's future URL once it exists | comma-separated if more than one origin |
+| `CORS_ORIGINS` | comma-separated list including the real custom domain, the app's own technical domain, and `http://localhost:3000` for local dev pointed at prod | |
+| `REVENUE_STATUSES` | e.g. `Закрыт` | which work-order status(es) count as recognized revenue on the dashboard - client-specific config, not hardcoded (see `ARCHITECTURE.md`) |
+| `ENABLE_YANDEX_RELAY` | `true` | see below |
+| `YANDEX_DISK_OAUTH_TOKEN` | OAuth token, `disk:read`+`disk:write` scopes | same token the 1C module itself uses |
+| `YANDEX_DISK_WATCH_PATH` | `/1c-export` | must match what 1C uploads into |
+| `YANDEX_POLL_INTERVAL_SECONDS` | `300` | |
 
-Do **not** set `PORT` yourself - Railway injects it automatically and the
-Dockerfile's `CMD` reads it (`--port ${PORT:-8000}`, falling back to 8000
-only when `PORT` is absent, e.g. local `docker run`).
+**Frontend:**
 
-`TEST_DATABASE_URL` is not needed in Railway - it's only used by the local
-test suite.
+| Variable | Value | Notes |
+|---|---|---|
+| `PORT` | `3000` | must match the Dockerfile's `EXPOSE` |
+| `NEXT_PUBLIC_API_URL` | the backend app's own technical domain (`https://<backend-id>.twc1.net`), **not** the custom frontend domain | baked into the client bundle at build time - Timeweb's Docker builder does pick up `envs` as build args, confirmed working |
+| `BACKEND_API_TOKEN` | same value as backend's `API_TOKEN` | server-side only, read at runtime by Next.js Server Components |
 
-## Connecting the backend service to the existing Railway PostgreSQL
+## Managed PostgreSQL (DBaaS)
 
-Railway's Postgres plugin exposes its own reference variables (`PGHOST`,
-`PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, and a `DATABASE_URL` using the
-plain `postgresql://` scheme). Our backend uses SQLAlchemy with the
-**psycopg 3** driver (`psycopg[binary]`, not `psycopg2`), which requires the
-`postgresql+psycopg://` scheme - the bare `postgresql://` that Railway
-generates for its own `DATABASE_URL` variable will make SQLAlchemy try to
-load `psycopg2`, which is not installed, and the app will fail to start.
-
-So in the backend service's Variables tab, set `DATABASE_URL` as a **new**
-variable built from a reference to the Postgres service, with the scheme
-corrected:
-
-```
-DATABASE_URL=postgresql+psycopg://${{Postgres.PGUSER}}:${{Postgres.PGPASSWORD}}@${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
-```
-
-(Adjust `Postgres` to whatever the Postgres service is actually named in the
-Railway project - that's the reference prefix Railway uses.) Using Railway's
-variable references (rather than copy-pasting the resolved values) means the
-value stays correct if the Postgres service ever changes host/port/creds.
+Created via dashboard (the `admin`/`instance` request shape for
+`POST /api/v1/databases` isn't fully documented in the OpenAPI bundle - use
+the dashboard's own "generate cURL" button under the create-cluster form if
+you need to script this later). Postgres 16, region matching the apps.
+Connection needs `sslmode=require` (or `sslmode=verify-full` with Timeweb's
+CA cert at `https://st.timeweb.com/cloud-static/ca.crt`, not currently
+used). The free tier only allows one DB + one user per cluster - rename the
+defaults (`gen_user`/`default_db`) to something meaningful instead of
+creating new ones.
 
 ## Applying Alembic migrations
 
-Tables are created by the existing Alembic migration(s) via a Railway
-**pre-deploy command** (`alembic upgrade head`) - never by hand, and never
-baked into the container's normal start command (`alembic upgrade head &&
-uvicorn ...`), since that would re-run the migration on every restart/replica
-concurrently - harmless once applied, but unnecessary risk for no benefit.
-
-**What actually worked, in practice (do this, not the two things below it):**
-the repo's `backend/railway.json` is Railway's older, now-deprecated
-"Config as Code" mechanism - a service created after ~2026-08-28 that never
-used it before cannot enable it, so this file is currently inert for a fresh
-service (kept anyway - harmless, and this may change). The Railway
-dashboard's own `Settings -> Deploy -> Add pre-deploy step` field also
-**silently failed to persist** when tried once (confirmed by pulling the
-live config back down - it came back empty even after saving "successfully"
-in the UI). The mechanism that did work is Railway's **current CLI-based
-IaC** (`railway config`, backed by `.railway/railway.ts` - unrelated to the
-deprecated repo-committed `railway.json`/`railway.toml` files despite the
-similar name):
+No pre-deploy-command equivalent was found in Timeweb's app config (unlike
+Railway's `preDeployCommand`). What worked: build the backend image locally
+and run Alembic against the remote database directly, pointed at whatever
+`DATABASE_URL`/`API_TOKEN` you set on the app (Settings requires
+`api_token` even just to import the app, so it must be passed too even
+though Alembic itself doesn't use it):
 
 ```bash
-railway link                      # once, selects this project/service
-railway config pull                # imports live config into .railway/railway.ts
-# edit .railway/railway.ts: add `preDeployCommand: "alembic upgrade head"`
-# to the service's options
-railway config plan                 # preview - should show exactly that one change
-railway config apply --yes
-railway redeploy -s AutoServiceAISolution -y   # re-run the pre-deploy step now
+docker build -t autoservice-backend-migrate ./backend
+docker run --rm \
+  -e DATABASE_URL="postgresql+psycopg://<user>:<password>@<host>:5432/<db>?sslmode=require" \
+  -e API_TOKEN="<same value as the app's API_TOKEN>" \
+  autoservice-backend-migrate alembic upgrade head
 ```
 
-`.railway/` is gitignored (it can hold decrypted-looking `preserve()`
-placeholders for secrets, never real values, but keep it local regardless).
+Confirm it worked either from the Alembic output itself (`Running upgrade
+... -> <revision>`) or by calling the real API afterward
+(`GET /api/v1/work-orders` should return `200` with an empty list, not a
+"relation does not exist" error).
 
-On Windows, `railway config plan/apply` may fail with `This version of
-railway/iac requires Railway CLI X.Y.Z or newer` even when the installed CLI
-is newer - this is a real bug in how the CLI reports its own path to the
-bundled Node evaluator via the `_` env var on Windows. Workaround: invoke the
-actual `railway.exe` by its full path (not the bare `railway` shim on PATH),
-e.g. `"$(npm root -g)/@railway/cli/bin/railway.exe" config plan` - bash then
-sets `_` to that real path itself and the check passes.
+## Custom domain
 
-To verify migrations actually ran: check `railway logs -s <service>
---deployment --lines 100 --latest` for Alembic's `Running upgrade ->
-<revision>` line, or just call the real API (`POST
-/api/v1/import/work-orders`) and confirm it returns `200` instead of a
-"relation does not exist" error - that's the most reliable proof the tables
-exist.
+1. App Platform → the frontend app → **Settings** → **Домены** →
+   **Редактировать** → choose **Внешний домен**, enter it, save. The panel
+   then shows an IP to point an A record at.
+2. At your DNS host (not Cloudflare - see the "Why Timeweb" note above,
+   proxying through Cloudflare's edge turned out to be part of the original
+   RU-reachability problem too), create an A record: `@` → that IP.
+3. Wait for it to actually resolve (`nslookup yourdomain.ru 8.8.8.8` from
+   outside your own network/ISP, to rule out local caching) before doing
+   anything else in Timeweb's panel - the panel's own hint says as much.
+4. **Only after step 3 resolves**, go back and hit Save in Timeweb's
+   domain form. This triggers a redeploy. If the app 502s afterward, see
+   "If a redeploy or config change doesn't seem to take effect" above -
+   binding/unbinding a domain is exactly the trigger that surfaced the
+   HOSTNAME gotcha in the first place.
 
-## Health check
-
-`GET /health` requires no authentication and does not touch the database,
-so it is safe to point Railway's health check at it - it reflects only "the
-process is up", not "the database is reachable", which avoids restart loops
-from a transient DB blip. It already matches what `backend/railway.json`
-configures (`healthcheckPath: /health`).
+If the domain's registrar is REG.RU and it was previously delegated
+elsewhere (Cloudflare, in this project's case): switch the domain's
+nameservers back to REG.RU's own (`ns1.reg.ru` / `ns2.reg.ru`) *before*
+adding the A record - the DNS-records section of REG.RU's panel is
+otherwise inert (accepts and saves the record, but it never actually
+resolves) until that delegation change has propagated to the .ru registry,
+which can take anywhere from minutes to ~24h. You can add the A record
+immediately regardless (it just sits inert until the NS switch lands) - no
+need to wait to do that part.
 
 ## Optional module: Yandex.Disk relay (firewall fallback)
 
-Some client 1C environments cannot reach this backend's domain directly -
-seen with the Pan Motors / 5Systems hosting, whose outbound firewall blocks
-HTTPS to arbitrary "cloud hosting" IP ranges (confirmed: Railway's own IP is
-blocked, `api.github.com` and Cloudflare's `1.1.1.1` are not - looks like a
-block on cloud/VPS-hosting ASNs specifically, not a strict default-deny
-policy). The first fix to try for that is fronting the backend with a custom
-domain through Cloudflare (widely-allowed CDN IP ranges) - see git history /
-ARCHITECTURE.md for that path. This module is the fallback for when even
-that does not clear the firewall.
-
-Instead of 1C calling this API directly, it uploads its export JSON to a
-folder on Yandex.Disk through Yandex's **REST API** (`cloud-api.yandex.net`,
-OAuth token) - **not WebDAV**: WebDAV (`webdav.yandex.ru`) was tried first
-and Yandex rejected it with `402 Payment Required: WebDAV is not available
-for the free tariff` - WebDAV specifically requires a paid Yandex.Disk plan,
-while the REST API does not. So 1C uses the same OAuth-token auth as this
-backend's own poller, not a separate login+app-password pair. This backend
-polls the folder on a timer and imports any new file through the exact same
-`process_work_order_import` path the direct API uses - same validation,
-same idempotent upsert, same `ImportBatch` audit trail - then moves the file
-into a `processed/` subfolder so it is not re-imported (re-importing it
-would be harmless, just wasted work, since the upsert is idempotent).
+Unchanged in mechanism from the original design - only which backend polls
+the folder changes when switching platforms. Some client 1C environments
+cannot reach a hosted backend's domain directly (seen with the Pan Motors /
+5Systems hosting: their outbound firewall blocked direct HTTPS to Railway's
+IP ranges specifically, while Yandex's own infrastructure was reachable).
+Instead of 1C calling the backend API directly, it uploads its export JSON
+to a folder on Yandex.Disk through Yandex's **REST API**
+(`cloud-api.yandex.net`, OAuth token) - **not WebDAV** (that requires a paid
+Yandex.Disk plan). This backend polls the folder on a timer and imports any
+new file through the exact same `process_work_order_import` path the direct
+API uses, then moves the file into a `processed/` subfolder.
 
 Runs as a plain `asyncio` background task inside the existing backend
 process (started from the FastAPI `lifespan` handler in `app/main.py`) - no
-separate service, queue, or scheduler to deploy. Off by default; only turn it
-on for a client instance that actually needs it.
+separate service to deploy. Off by default; the env vars are listed in the
+table above.
 
-**Environment variables** (backend service):
+**Only one backend instance should have `ENABLE_YANDEX_RELAY=true` pointed
+at a given watch path at a time** - two pollers racing on the same folder
+can end up with only one of them actually importing a given file (whichever
+wins the race moves it to `processed/` first). This mattered directly
+during the Railway → Timeweb cutover: Railway's relay had to be switched off
+before Timeweb's was switched on, to make sure the next 1C export actually
+landed in the right database.
 
-| Variable | Value |
-|---|---|
-| `ENABLE_YANDEX_RELAY` | `true` to turn it on |
-| `YANDEX_DISK_OAUTH_TOKEN` | OAuth token for the dedicated Yandex account, scopes `disk:read` + `disk:write` (get one at https://oauth.yandex.ru, or via the quick test-token flow at https://yandex.ru/dev/disk/poligon/) |
-| `YANDEX_DISK_WATCH_PATH` | folder to watch, default `/1c-export` (must match what 1C uploads into) |
-| `YANDEX_POLL_INTERVAL_SECONDS` | default `300` (5 min) |
-
-Use a **dedicated** Yandex account for this, not a personal one - so access
+Use a **dedicated** Yandex account for this, not a personal one, so access
 can be revoked/rotated independently or handed off. 1C authenticates to the
 REST API with the same `YANDEX_DISK_OAUTH_TOKEN` value configured on the
-backend (pasted into the 1C module directly - see `1c/TestExportOrders.bsl`)
-- no separate login/password needed.
+backend (pasted directly into the 1C module - see
+`1c/TestExportOrders.bsl`) - no separate login/password needed.
 
 ## What stays local
 
-The frontend, `docker-compose.yml`, and `.env` are unaffected by any of the
-above - local development continues to run exactly as before via
-`docker compose up`.
+`docker-compose.yml` and `.env` are unaffected by any of the above - local
+development continues to run exactly as before via `docker compose up`.

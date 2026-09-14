@@ -15,6 +15,28 @@ IMPORTANT:
 
 ---
 
+## ⚠️ PLATFORM UPDATE (September 2026): Railway → Timeweb Cloud
+
+Everything below this notice that talks about Railway is **history, not
+current state**. Railway (backend, frontend, and its PostgreSQL) was fully
+decommissioned in mid-September 2026 after discovering its IP ranges are
+blocked for direct connections from Russian networks - the product's actual
+customer base couldn't reach the site without a VPN. Production now runs on
+**Timeweb Cloud** (App Platform + managed PostgreSQL, region `ru-3`/Moscow),
+with DNS at REG.RU (not Cloudflare - that was also part of the RU-reachability
+problem). See **DEPLOYMENT.md** for the current, accurate deployment guide -
+service settings, required env vars, the Timeweb-specific gotchas (port vs.
+Dockerfile `EXPOSE`, Next.js standalone binding to the wrong interface),
+custom domain setup, and the Yandex.Disk relay module (unchanged in
+mechanism, just re-pointed at the new backend).
+
+The Railway narrative below is kept as-is because the debugging history (the
+Windows CLI IaC bug, the migration-mechanism dead ends, etc.) is still
+useful project memory - just don't follow it as instructions for where to
+deploy today.
+
+---
+
 # 1. PRODUCT GOAL
 
 We are building a **replicable commercial browser-based product for automotive service businesses**.

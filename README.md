@@ -132,5 +132,5 @@ managed PostgreSQL service or on-premise for an enterprise client. See
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - design decisions and extension points
   for future client-specific customization (workflows, KPIs, feature flags).
-- [DEPLOYMENT.md](DEPLOYMENT.md) - deploying the backend to Railway (env vars,
+- [DEPLOYMENT.md](DEPLOYMENT.md) - deploying to Timeweb Cloud (env vars,
   service settings, migration mechanism).
