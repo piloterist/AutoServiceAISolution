@@ -127,12 +127,28 @@ function departmentsParam(departments?: string[]): string {
   return departments && departments.length > 0 ? departments.join(",") : "";
 }
 
+/** The date pickers feeding `dateTo` are date-only (no time component), but
+ * the backend treats `date_to` as an EXCLUSIVE upper bound
+ * (`closed_date < date_to` / `document_date < date_to`) - sending a bare
+ * "YYYY-MM-DD" as-is would exclude everything on that day, when picking
+ * "по 13.09" obviously should include all of the 13th. Push it to the
+ * start of the next day before sending, computed in UTC (matching how the
+ * date-only string itself parses as UTC midnight) so this doesn't depend on
+ * the server container's local timezone. */
+function dateToParam(dateTo?: string): string {
+  if (!dateTo) return "";
+  const parsed = new Date(dateTo);
+  if (Number.isNaN(parsed.getTime())) return dateTo;
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10);
+}
+
 export function getWorkOrders(
   params?: PeriodAndDepartmentParams & { limit?: number; offset?: number },
 ): Promise<WorkOrderListResponse> {
   return backendGet<WorkOrderListResponse>("/api/v1/work-orders", {
     date_from: params?.dateFrom ?? "",
-    date_to: params?.dateTo ?? "",
+    date_to: dateToParam(params?.dateTo),
     departments: departmentsParam(params?.departments),
     limit: params?.limit ? String(params.limit) : "",
     offset: params?.offset ? String(params.offset) : "",
@@ -144,7 +160,7 @@ export function getMonthlySummary(
 ): Promise<MonthlySummaryResponse> {
   return backendGet<MonthlySummaryResponse>("/api/v1/work-orders/summary/monthly", {
     date_from: params?.dateFrom ?? "",
-    date_to: params?.dateTo ?? "",
+    date_to: dateToParam(params?.dateTo),
     departments: departmentsParam(params?.departments),
   });
 }
@@ -154,7 +170,7 @@ export function getDepartmentSummary(
 ): Promise<DepartmentSummaryResponse> {
   return backendGet<DepartmentSummaryResponse>("/api/v1/work-orders/summary/by-department", {
     date_from: params?.dateFrom ?? "",
-    date_to: params?.dateTo ?? "",
+    date_to: dateToParam(params?.dateTo),
     departments: departmentsParam(params?.departments),
   });
 }
@@ -168,7 +184,7 @@ export function getStatusSummary(
 ): Promise<StatusSummaryResponse> {
   return backendGet<StatusSummaryResponse>("/api/v1/work-orders/summary/by-status", {
     date_from: params?.dateFrom ?? "",
-    date_to: params?.dateTo ?? "",
+    date_to: dateToParam(params?.dateTo),
     departments: departmentsParam(params?.departments),
   });
 }
