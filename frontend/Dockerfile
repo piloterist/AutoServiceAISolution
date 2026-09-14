@@ -28,6 +28,19 @@ RUN npm run build
 
 FROM base AS prod
 ENV NODE_ENV=production
+# The Next.js standalone server.js binds to process.env.HOSTNAME, which
+# Docker sets by default to the container's own hostname/ID - that only
+# resolves on the container's primary network interface. A container
+# attached to a second network (as happened on Timeweb's App Platform when
+# an external domain was attached) then has the server listening on only
+# one of its two interfaces; if the platform's reverse proxy reaches it via
+# the other one, every request gets connection-refused -> 502, even though
+# the platform's own healthcheck (routed differently) reports it healthy.
+# Binding to all interfaces sidesteps the whole class of problem. A
+# platform-level HOSTNAME env var was also set as a stopgap on Timeweb, but
+# baking it into the image here means it doesn't depend on remembering to
+# set that on every deploy target/recreation.
+ENV HOSTNAME=0.0.0.0
 COPY --from=build /app/public ./public
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
