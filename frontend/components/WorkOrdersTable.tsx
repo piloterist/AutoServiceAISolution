@@ -41,7 +41,6 @@ function isWithinDateRange(iso: string, dateFrom: string, dateTo: string): boole
 type Row = {
   item: WorkOrderListItem;
   createdDate: string;
-  startDate: string;
   closedDate: string;
   number: string;
   vehicle: string;
@@ -53,7 +52,6 @@ type Row = {
 
 type ColumnKey =
   | "createdDate"
-  | "startDate"
   | "closedDate"
   | "number"
   | "vehicle"
@@ -64,7 +62,6 @@ type ColumnKey =
 
 const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "createdDate", label: "Дата создания" },
-  { key: "startDate", label: "Дата начала" },
   { key: "closedDate", label: "Дата закрытия" },
   { key: "number", label: "Номер" },
   { key: "vehicle", label: "Автомобиль" },
@@ -79,7 +76,6 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
   const [search, setSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>({
     createdDate: "",
-    startDate: "",
     closedDate: "",
     number: "",
     vehicle: "",
@@ -100,7 +96,6 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
       items.map((item) => ({
         item,
         createdDate: formatDateOrDash(item.created_date),
-        startDate: formatDateOrDash(item.start_date),
         closedDate: formatDateOrDash(item.closed_date),
         number: item.external_number,
         vehicle: item.vehicle_description ?? "",
@@ -270,7 +265,6 @@ export function WorkOrdersTable({ items }: { items: WorkOrderListItem[] }) {
                 }}
               >
                 <td>{row.createdDate}</td>
-                <td>{row.startDate}</td>
                 <td>{row.closedDate}</td>
                 <td>{row.number}</td>
                 <td>{row.vehicle || "—"}</td>
