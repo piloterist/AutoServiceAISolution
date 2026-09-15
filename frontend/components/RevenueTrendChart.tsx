@@ -113,7 +113,6 @@ export function RevenueTrendChart({
 
   const hoveredCurrent = hovered !== null ? currentPoints[hovered] : null;
   const hoveredPrevious = hovered !== null ? (previousPoints[hovered] ?? null) : null;
-  const lastPoint = currentPoints[n - 1];
 
   const handleMove = (event: React.MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -181,13 +180,6 @@ export function RevenueTrendChart({
             style={{ left: `${p.xPct}%`, bottom: `${p.yPct}%` }}
           />
         ))}
-
-        <div
-          className="chart-end-label"
-          style={{ left: `${lastPoint.xPct}%`, bottom: `${lastPoint.yPct}%` }}
-        >
-          {formatAmount(Number(lastPoint.point.total_amount))}
-        </div>
 
         {hoveredCurrent && (
           <div

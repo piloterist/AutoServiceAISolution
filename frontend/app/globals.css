@@ -805,16 +805,6 @@ main:has(.wide-page) {
   pointer-events: none;
 }
 
-.chart-end-label {
-  position: absolute;
-  transform: translate(8px, 50%);
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 .chart-tooltip--trend {
   transform: translate(-50%, calc(-100% - 12px));
 }
