@@ -93,9 +93,18 @@ export type WorkOrderPartLineItem = {
   amount: string | null;
 };
 
+export type StatusHistoryItem = {
+  status: string;
+  first_seen_at: string;
+  // null = the currently-open segment (still the work order's status as of
+  // the most recent import).
+  last_seen_at: string | null;
+};
+
 export type WorkOrderDetail = WorkOrderListItem & {
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
+  status_history: StatusHistoryItem[];
 };
 
 function backendToken(): string {

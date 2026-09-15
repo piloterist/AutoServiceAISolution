@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_status_history import WorkOrderStatusHistory
 
 
 def _date_range_filters(
@@ -347,6 +348,19 @@ def list_part_lines(db: Session, work_order_id: UUID) -> list[WorkOrderPartLine]
     """A work order's "Товары" (parts) tabular-section lines."""
     rows = db.execute(
         select(WorkOrderPartLine).where(WorkOrderPartLine.work_order_id == work_order_id)
+    ).scalars()
+    return list(rows)
+
+
+def list_status_history(db: Session, work_order_id: UUID) -> list[WorkOrderStatusHistory]:
+    """A work order's status timeline, oldest first - see
+    models/work_order_status_history.py. The currently-open segment (if
+    any) is the last row and has `last_seen_at is None`.
+    """
+    rows = db.execute(
+        select(WorkOrderStatusHistory)
+        .where(WorkOrderStatusHistory.work_order_id == work_order_id)
+        .order_by(WorkOrderStatusHistory.first_seen_at)
     ).scalars()
     return list(rows)
 

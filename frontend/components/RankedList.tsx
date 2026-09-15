@@ -40,25 +40,46 @@ function formatValue(value: number, kind: "amount" | "count"): string {
   return `${value.toLocaleString("ru-RU")} ${pluralWorkOrders(value)}`;
 }
 
+export type RankedListMode =
+  /** Not clickable - plain list. */
+  | "none"
+  /** Clicking a row navigates to the work-orders list filtered by this
+   * row's label as a `status` filter, plus the dashboard's current period
+   * if set. */
+  | "status-link"
+  /** Clicking a row toggles it as the dashboard's department filter (single
+   * select) - clicking the already-selected row clears it back to "all
+   * departments". Navigates within the dashboard itself (same page,
+   * different `departments` query param), preserving the current/previous
+   * period params. */
+  | "department-filter";
+
 /** Ranked, horizontal-bar list - replaces the old donut charts. Reads faster
  * than a donut for "who's biggest / what order": the eye compares bar
  * length top-to-bottom instead of guessing at wedge angles. */
 export function RankedList({
   data,
   kind,
-  clickable = false,
+  mode = "none",
   dateFrom,
   dateTo,
+  prevDateFrom,
+  prevDateTo,
+  selectedDepartments,
 }: {
   data: RankedItem[];
   kind: "amount" | "count";
-  /** Clicking a row navigates to the work-orders list filtered by this
-   * row's label as a `status` filter (plus the dashboard's current period,
-   * if set) - only the status list is clickable, same as the old
-   * StatusDonutChart; departments have no equivalent list filter yet. */
-  clickable?: boolean;
+  mode?: RankedListMode;
   dateFrom?: string;
   dateTo?: string;
+  /** Only needed for `mode="department-filter"` - carried along so toggling
+   * the department filter doesn't drop the period comparison the operator
+   * already set up. */
+  prevDateFrom?: string;
+  prevDateTo?: string;
+  /** Only needed for `mode="department-filter"` - which row (if any) is the
+   * active filter, so it can be highlighted and toggled back off. */
+  selectedDepartments?: string[];
 }) {
   const router = useRouter();
   const [grown, setGrown] = useState(false);
@@ -76,6 +97,7 @@ export function RankedList({
   }
 
   const max = Math.max(...data.map((item) => item.value), 1);
+  const clickable = mode !== "none";
 
   const goToStatus = (status: string) => {
     const params = new URLSearchParams();
@@ -85,25 +107,51 @@ export function RankedList({
     router.push(`/work-orders?${params.toString()}`);
   };
 
+  const isSelectedDepartment = (label: string) =>
+    selectedDepartments?.length === 1 && selectedDepartments[0] === label;
+
+  const toggleDepartment = (label: string) => {
+    const params = new URLSearchParams();
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    if (prevDateFrom) params.set("prev_date_from", prevDateFrom);
+    if (prevDateTo) params.set("prev_date_to", prevDateTo);
+    if (!isSelectedDepartment(label)) params.set("departments", label);
+    router.push(`/dashboard?${params.toString()}`);
+  };
+
+  const handleActivate = (label: string) => {
+    if (mode === "status-link") goToStatus(label);
+    else if (mode === "department-filter") toggleDepartment(label);
+  };
+
   return (
     <ul className="rank-list">
       {data.map((item, index) => {
         const color = CATEGORICAL_COLORS[index % CATEGORICAL_COLORS.length];
         const pct = (item.value / max) * 100;
+        const active = mode === "department-filter" && isSelectedDepartment(item.label);
 
         return (
           <li
             key={item.label}
-            className={clickable ? "rank-row rank-row-clickable" : "rank-row"}
-            onClick={clickable ? () => goToStatus(item.label) : undefined}
+            className={
+              clickable
+                ? active
+                  ? "rank-row rank-row-clickable rank-row-active"
+                  : "rank-row rank-row-clickable"
+                : "rank-row"
+            }
+            onClick={clickable ? () => handleActivate(item.label) : undefined}
             role={clickable ? "button" : undefined}
             tabIndex={clickable ? 0 : undefined}
+            aria-pressed={mode === "department-filter" ? active : undefined}
             onKeyDown={
               clickable
                 ? (event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      goToStatus(item.label);
+                      handleActivate(item.label);
                     }
                   }
                 : undefined

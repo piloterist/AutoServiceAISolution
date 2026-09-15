@@ -1,62 +1,125 @@
-// Plain server-rendered GET form - no client JS needed. Submitting it just
-// navigates to /dashboard?date_from=...&date_to=...&departments=a&departments=b,
-// which the dashboard page (a Server Component) reads via searchParams and
-// uses to re-fetch already-filtered data from the backend. "All departments"
-// is simply "none of the checkboxes checked" - no special case needed since
-// that's exactly what the backend's own optional `departments` filter means.
+"use client";
+
+import { useState } from "react";
+
+import { previousPeriod } from "@/lib/period";
+
+// Plain GET form (no onSubmit handler - native browser navigation on
+// submit reads whatever's currently in the inputs) that navigates to
+// /dashboard?date_from=...&date_to=...&prev_date_from=...&prev_date_to=...,
+// which the dashboard page (a Server Component) reads via searchParams.
+// "use client" only for the previous-period auto-fill behavior below -
+// department selection now happens by clicking a row in the department
+// ranked list (see RankedList's "department-filter" mode), not here, so a
+// hidden field just carries whatever department is currently selected
+// through when the operator changes the date range.
 export function DashboardFilters({
-  departments,
-  selectedDepartments,
   dateFrom,
   dateTo,
+  prevDateFrom,
+  prevDateTo,
+  selectedDepartment,
   hasActiveFilters,
 }: {
-  departments: string[];
-  selectedDepartments: string[];
-  /** Pre-filled into the date inputs - the dashboard defaults these to the
-   * current calendar month when the URL has no explicit date params (see
-   * app/dashboard/page.tsx), so this is the *effective* period, not
-   * necessarily what's literally in the URL. */
+  /** Pre-filled into the date inputs - the dashboard defaults these when
+   * the URL has no explicit params (see app/dashboard/page.tsx), so these
+   * are the *effective* period, not necessarily what's literally in the
+   * URL. */
   dateFrom?: string;
   dateTo?: string;
+  prevDateFrom?: string;
+  prevDateTo?: string;
+  /** Carried through as a hidden field so submitting a new date range
+   * doesn't silently drop the department filter set by clicking a row in
+   * the department ranked list. */
+  selectedDepartment?: string;
   /** Whether the URL itself carries an explicit filter - distinct from
-   * `dateFrom`/`dateTo` being set, since those are always set (defaulted to
-   * the current month). Controls whether "Сбросить фильтры" shows: it
-   * shouldn't appear on the plain default view, only once the operator has
-   * actually changed something. */
+   * `dateFrom`/`dateTo` being set, since those are always set (defaulted).
+   * Controls whether "Сбросить фильтры" shows: it shouldn't appear on the
+   * plain default view, only once the operator has actually changed
+   * something. */
   hasActiveFilters: boolean;
 }) {
+  const [currentFrom, setCurrentFrom] = useState(dateFrom ?? "");
+  const [currentTo, setCurrentTo] = useState(dateTo ?? "");
+  const [prevFrom, setPrevFrom] = useState(prevDateFrom ?? "");
+  const [prevTo, setPrevTo] = useState(prevDateTo ?? "");
+  // Once the operator edits the previous-period fields themselves, stop
+  // overwriting their choice when the current period changes.
+  const [prevTouched, setPrevTouched] = useState(false);
+
+  const recomputePrev = (from: string, to: string) => {
+    if (prevTouched || !from || !to) return;
+    const next = previousPeriod(from, to);
+    setPrevFrom(next.dateFrom);
+    setPrevTo(next.dateTo);
+  };
+
   return (
     <form className="filters-form card" method="get">
-      <div className="filters-row">
-        <label className="filters-field">
-          <span className="filters-label">С даты</span>
-          <input type="date" name="date_from" defaultValue={dateFrom ?? ""} />
-        </label>
-        <label className="filters-field">
-          <span className="filters-label">По дату</span>
-          <input type="date" name="date_to" defaultValue={dateTo ?? ""} />
-        </label>
-      </div>
+      {selectedDepartment && <input type="hidden" name="departments" value={selectedDepartment} />}
 
-      {departments.length > 0 && (
-        <div className="filters-departments">
-          <span className="filters-label">Подразделение (не выбрано ни одного = все)</span>
-          <div className="filters-checkboxes">
-            {departments.map((dept) => (
-              <label key={dept} className="filters-checkbox">
-                <input
-                  type="checkbox"
-                  name="departments"
-                  value={dept}
-                  defaultChecked={selectedDepartments.includes(dept)}
-                />
-                {dept}
-              </label>
-            ))}
+      <div className="filters-periods">
+        <div className="filters-period-group">
+          <span className="filters-group-label">Текущий период</span>
+          <div className="filters-row">
+            <label className="filters-field">
+              <span className="filters-label">С даты</span>
+              <input
+                type="date"
+                name="date_from"
+                value={currentFrom}
+                onChange={(event) => {
+                  setCurrentFrom(event.target.value);
+                  recomputePrev(event.target.value, currentTo);
+                }}
+              />
+            </label>
+            <label className="filters-field">
+              <span className="filters-label">По дату</span>
+              <input
+                type="date"
+                name="date_to"
+                value={currentTo}
+                onChange={(event) => {
+                  setCurrentTo(event.target.value);
+                  recomputePrev(currentFrom, event.target.value);
+                }}
+              />
+            </label>
           </div>
         </div>
-      )}
+
+        <div className="filters-period-group">
+          <span className="filters-group-label">Предыдущий период (для сравнения)</span>
+          <div className="filters-row">
+            <label className="filters-field">
+              <span className="filters-label">С даты</span>
+              <input
+                type="date"
+                name="prev_date_from"
+                value={prevFrom}
+                onChange={(event) => {
+                  setPrevTouched(true);
+                  setPrevFrom(event.target.value);
+                }}
+              />
+            </label>
+            <label className="filters-field">
+              <span className="filters-label">По дату</span>
+              <input
+                type="date"
+                name="prev_date_to"
+                value={prevTo}
+                onChange={(event) => {
+                  setPrevTouched(true);
+                  setPrevTo(event.target.value);
+                }}
+              />
+            </label>
+          </div>
+        </div>
+      </div>
 
       <div className="filters-actions">
         <button type="submit" className="filters-submit">

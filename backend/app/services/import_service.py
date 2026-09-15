@@ -9,15 +9,17 @@ per-client branching - that belongs to future configuration-driven layers
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
 import structlog
-from sqlalchemy import delete, func, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_status_history import WorkOrderStatusHistory
 from app.schemas.import_work_order import ImportWorkOrderRecord, ImportWorkOrdersRequest
 
 logger = structlog.get_logger(__name__)
@@ -81,6 +83,56 @@ def _upsert_work_order(
     return row["id"], bool(row["inserted"])
 
 
+def _lookup_current_status(db: Session, source: str, external_number: str) -> str | None:
+    """The work order's status as it stood *before* this import - looked up
+    before `_upsert_work_order` overwrites it, since the raw ON CONFLICT
+    UPDATE's RETURNING only ever gives the post-update row. None both when
+    the work order doesn't exist yet and when it exists but has no status
+    set - both cases are "nothing to compare against" for
+    `_record_status_history`.
+    """
+    return db.execute(
+        select(WorkOrder.status).where(
+            WorkOrder.source_system == source, WorkOrder.external_number == external_number
+        )
+    ).scalar_one_or_none()
+
+
+def _record_status_history(
+    db: Session,
+    work_order_id: uuid.UUID,
+    previous_status: str | None,
+    new_status: str | None,
+    observed_at: datetime,
+) -> None:
+    """Append-only status timeline - see models/work_order_status_history.py.
+
+    No-ops when there's nothing to track: no incoming status at all, or the
+    status didn't actually change (an unchanged status on a later import
+    just means the currently-open segment still applies - it does not get a
+    new row, only a genuine transition does).
+    """
+    if not new_status or previous_status == new_status:
+        return
+
+    db.execute(
+        update(WorkOrderStatusHistory)
+        .where(
+            WorkOrderStatusHistory.work_order_id == work_order_id,
+            WorkOrderStatusHistory.last_seen_at.is_(None),
+        )
+        .values(last_seen_at=observed_at)
+    )
+    db.add(
+        WorkOrderStatusHistory(
+            work_order_id=work_order_id,
+            status=new_status,
+            first_seen_at=observed_at,
+            last_seen_at=None,
+        )
+    )
+
+
 def _replace_line_items(
     db: Session, work_order_id: uuid.UUID, record: ImportWorkOrderRecord
 ) -> None:
@@ -127,10 +179,14 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
 
     try:
         for record in payload.records:
+            previous_status = _lookup_current_status(db, payload.source, record.number)
             work_order_id, was_inserted = _upsert_work_order(
                 db, payload.source, payload.exported_at, record
             )
             _replace_line_items(db, work_order_id, record)
+            _record_status_history(
+                db, work_order_id, previous_status, record.status, payload.exported_at
+            )
             if was_inserted:
                 inserted += 1
             else:

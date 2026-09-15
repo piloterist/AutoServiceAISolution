@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_status_history import WorkOrderStatusHistory
 
 IMPORT_URL = "/api/v1/import/work-orders"
 
@@ -211,6 +212,108 @@ def test_import_stores_the_four_document_dates(client, db_session, auth_headers)
     assert work_order.start_date == datetime(2026, 6, 16, 8, 0, 0, tzinfo=UTC)
     assert work_order.end_date == datetime(2026, 9, 9, 17, 0, 0, tzinfo=UTC)
     assert work_order.closed_date == datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
+
+
+def _import_status(client, auth_headers, status, exported_at, batch_id) -> None:
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": exported_at,
+        "batch_id": batch_id,
+        "records": [
+            {
+                "number": "HIST-0001",
+                "date": "2026-09-10T06:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 1000,
+                "status": status,
+            }
+        ],
+    }
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+
+def _status_history(db_session, work_order_id) -> list[WorkOrderStatusHistory]:
+    return list(
+        db_session.execute(
+            select(WorkOrderStatusHistory)
+            .where(WorkOrderStatusHistory.work_order_id == work_order_id)
+            .order_by(WorkOrderStatusHistory.first_seen_at)
+        ).scalars()
+    )
+
+
+def test_status_history_opens_a_segment_on_first_import(client, db_session, auth_headers) -> None:
+    _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
+    ).scalar_one()
+    rows = _status_history(db_session, work_order.id)
+
+    assert len(rows) == 1
+    assert rows[0].status == "В работе"
+    assert rows[0].first_seen_at == datetime(2026, 9, 10, 6, 0, 0, tzinfo=UTC)
+    assert rows[0].last_seen_at is None
+
+
+def test_status_history_unchanged_status_does_not_add_a_row(
+    client, db_session, auth_headers
+) -> None:
+    _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
+    _import_status(client, auth_headers, "В работе", "2026-09-11T06:00:00", "hist-2")
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
+    ).scalar_one()
+    rows = _status_history(db_session, work_order.id)
+
+    assert len(rows) == 1
+    assert rows[0].last_seen_at is None
+
+
+def test_status_history_transition_closes_old_row_and_opens_new_one(
+    client, db_session, auth_headers
+) -> None:
+    """The exact scenario from the spec: В работе (10.09) -> unchanged
+    (11.09, no-op) -> Ожидание запчастей (12.09) closes В работе and opens
+    a new open segment."""
+    _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
+    _import_status(client, auth_headers, "В работе", "2026-09-11T06:00:00", "hist-2")
+    _import_status(client, auth_headers, "Ожидание запчастей", "2026-09-12T06:00:00", "hist-3")
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
+    ).scalar_one()
+    rows = _status_history(db_session, work_order.id)
+
+    assert len(rows) == 2
+    assert rows[0].status == "В работе"
+    assert rows[0].first_seen_at == datetime(2026, 9, 10, 6, 0, 0, tzinfo=UTC)
+    assert rows[0].last_seen_at == datetime(2026, 9, 12, 6, 0, 0, tzinfo=UTC)
+    assert rows[1].status == "Ожидание запчастей"
+    assert rows[1].first_seen_at == datetime(2026, 9, 12, 6, 0, 0, tzinfo=UTC)
+    assert rows[1].last_seen_at is None
+
+
+def test_status_history_ignores_a_missing_status(client, db_session, auth_headers) -> None:
+    """No status on the incoming record - nothing to track, and the
+    previously-open segment (if any) stays open rather than being closed
+    out by a non-status."""
+    _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
+    _import_status(client, auth_headers, None, "2026-09-11T06:00:00", "hist-2")
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
+    ).scalar_one()
+    rows = _status_history(db_session, work_order.id)
+
+    assert len(rows) == 1
+    assert rows[0].status == "В работе"
+    assert rows[0].last_seen_at is None
 
 
 def test_import_accepts_missing_document_dates_as_null(

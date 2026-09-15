@@ -650,6 +650,13 @@ main:has(.wide-page) {
   }
 }
 
+/* A full-width card directly after the grid (the status chip mosaic) isn't
+   preceded by another .card, so the generic ".card + .card" adjacent-margin
+   rule doesn't catch it. */
+.dashboard-grid + .card {
+  margin-top: 1rem;
+}
+
 .chart-empty {
   color: var(--text-muted);
 }
@@ -856,13 +863,37 @@ main:has(.wide-page) {
   border-top: 2px dashed var(--chart-series-previous);
 }
 
-/* --- Dashboard filters (period + department, plain GET form) --- */
+/* --- Dashboard filters (current + previous period, plain GET form) ---
+   Department selection isn't here any more - it's a click on a row in the
+   department ranked list (see RankedList's "department-filter" mode); this
+   form only carries it through as a hidden field so changing the date
+   range doesn't silently drop it. */
 
 .filters-form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
   margin-bottom: 1.25rem;
+}
+
+.filters-periods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.filters-period-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.filters-group-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .filters-row {
@@ -891,25 +922,6 @@ main:has(.wide-page) {
   color: var(--text-muted);
   font-size: 0.8rem;
   font-weight: 600;
-}
-
-.filters-departments {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.filters-checkboxes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.25rem;
-}
-
-.filters-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
 }
 
 .filters-actions {
@@ -968,6 +980,18 @@ main:has(.wide-page) {
 .rank-row-clickable:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* The single active department filter (RankedList's "department-filter"
+   mode) - stays highlighted even without hover so it's clear which row a
+   click would now toggle back off. */
+.rank-row-active {
+  background: var(--accent-soft, color-mix(in srgb, var(--accent) 10%, transparent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.rank-row-active:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .rank-line1 {
@@ -1123,4 +1147,182 @@ main:has(.wide-page) {
 .data-table--parts th:nth-child(4),
 .data-table--parts td:nth-child(4) {
   width: 18%;
+}
+
+/* --- Work order detail: status history timeline --- */
+
+.status-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.status-timeline-item {
+  position: relative;
+  display: flex;
+  gap: 0.85rem;
+  padding: 0 0 1.25rem 0.15rem;
+}
+
+.status-timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.status-timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 16px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--border);
+}
+
+.status-timeline-item:last-child::before {
+  display: none;
+}
+
+.status-timeline-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  z-index: 1;
+}
+
+.status-timeline-item-open .status-timeline-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.status-timeline-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.status-timeline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.status-timeline-duration {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.status-timeline-item-open .status-timeline-duration {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.status-timeline-range {
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* --- Dashboard status chip grid (categorical - identity encoding) ---
+   A mosaic of small tiles instead of a ranked list - suits a dimension
+   (status) with no inherent "biggest is most important" ordering the way
+   department revenue has. Each chip carries its own accent color via the
+   --chip-color custom property set inline per chip (StatusChipGrid). */
+
+.status-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 0.6rem;
+}
+
+.status-chip {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.status-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--chip-color);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.07);
+}
+
+.status-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.status-chip-top {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.status-chip-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chip-color);
+}
+
+.status-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.status-chip-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.status-chip-meta {
+  font-size: 0.72rem;
+  color: var(--chart-ink-muted);
+  margin-top: -0.3rem;
+}
+
+.status-chip-track {
+  display: block;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.status-chip-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--chip-color);
+  transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-chip-fill {
+    transition: none;
+  }
 }

@@ -3,15 +3,15 @@ import { MonthlyBarChart } from "@/components/MonthlyRevenueChart";
 import { RankedList, type RankedItem } from "@/components/RankedList";
 import { RevenueTrendChart } from "@/components/RevenueTrendChart";
 import { StatTile } from "@/components/StatTile";
+import { StatusChipGrid, type StatusChipItem } from "@/components/StatusChipGrid";
 import {
   type DepartmentSummaryItem,
-  getDepartments,
   getDepartmentSummary,
   getMonthlySummary,
   getStatusSummary,
   getTrendSummary,
 } from "@/lib/backend-api";
-import { currentMonthRange, previousPeriod } from "@/lib/period";
+import { currentYearToDateRange, monthToDateRange, previousPeriod } from "@/lib/period";
 
 // See app/work-orders/page.tsx for why this is required.
 export const dynamic = "force-dynamic";
@@ -19,6 +19,8 @@ export const dynamic = "force-dynamic";
 type SearchParams = {
   date_from?: string;
   date_to?: string;
+  prev_date_from?: string;
+  prev_date_to?: string;
   departments?: string | string[];
 };
 
@@ -97,21 +99,45 @@ export default async function DashboardPage({
   const params = await searchParams;
   const rawDateFrom = params.date_from || undefined;
   const rawDateTo = params.date_to || undefined;
+  const rawPrevDateFrom = params.prev_date_from || undefined;
+  const rawPrevDateTo = params.prev_date_to || undefined;
   const selectedDepartments = toArray(params.departments);
   const hasActiveFilters =
-    selectedDepartments.length > 0 || Boolean(rawDateFrom) || Boolean(rawDateTo);
+    selectedDepartments.length > 0 ||
+    Boolean(rawDateFrom) ||
+    Boolean(rawDateTo) ||
+    Boolean(rawPrevDateFrom) ||
+    Boolean(rawPrevDateTo);
 
-  // Defaults to the current calendar month when the operator hasn't picked
-  // a period - this is meant to be a "how's the shop doing right now"
-  // screen, not one that opens onto an all-time (or empty) view.
+  // Defaults to month-to-date (1st of the current month through today) when
+  // the operator hasn't picked a period - this is meant to be a "how's the
+  // shop doing right now" screen, not one that opens onto an all-time (or
+  // empty-tail-of-the-month) view.
   const { dateFrom, dateTo } =
-    rawDateFrom && rawDateTo ? { dateFrom: rawDateFrom, dateTo: rawDateTo } : currentMonthRange();
-  const previousRange = previousPeriod(dateFrom, dateTo);
+    rawDateFrom && rawDateTo ? { dateFrom: rawDateFrom, dateTo: rawDateTo } : monthToDateRange();
+  // The previous-period comparison is explicit once the filter form has
+  // been submitted (it auto-fills a default but lets the operator override
+  // it - see DashboardFilters); only computed here for the very first,
+  // param-less load.
+  const previousRange =
+    rawPrevDateFrom && rawPrevDateTo
+      ? { dateFrom: rawPrevDateFrom, dateTo: rawPrevDateTo }
+      : previousPeriod(dateFrom, dateTo);
 
   const filterParams = { dateFrom, dateTo, departments: selectedDepartments };
   const previousFilterParams = {
     dateFrom: previousRange.dateFrom,
     dateTo: previousRange.dateTo,
+    departments: selectedDepartments,
+  };
+  // "Заказ-нарядов по месяцам" always shows the current year to date,
+  // regardless of the period filter above - still respects the department
+  // filter (a real constraint), just not the date range (which would
+  // otherwise collapse it to a single bar).
+  const yearToDateRange = currentYearToDateRange();
+  const yearToDateParams = {
+    dateFrom: yearToDateRange.dateFrom,
+    dateTo: yearToDateRange.dateTo,
     departments: selectedDepartments,
   };
 
@@ -121,27 +147,23 @@ export default async function DashboardPage({
   let statusSummary;
   let trendCurrent;
   let trendPrevious;
-  let allDepartments: string[] = [];
   let error: string | null = null;
 
   try {
-    const [monthlyRes, deptRes, deptPrevRes, statusRes, trendRes, trendPrevRes, departmentsRes] =
-      await Promise.all([
-        getMonthlySummary(filterParams),
-        getDepartmentSummary(filterParams),
-        getDepartmentSummary(previousFilterParams),
-        getStatusSummary(filterParams),
-        getTrendSummary(filterParams),
-        getTrendSummary(previousFilterParams),
-        getDepartments(),
-      ]);
+    const [monthlyRes, deptRes, deptPrevRes, statusRes, trendRes, trendPrevRes] = await Promise.all([
+      getMonthlySummary(yearToDateParams),
+      getDepartmentSummary(filterParams),
+      getDepartmentSummary(previousFilterParams),
+      getStatusSummary(filterParams),
+      getTrendSummary(filterParams),
+      getTrendSummary(previousFilterParams),
+    ]);
     monthlySummary = monthlyRes;
     departmentSummary = deptRes;
     departmentSummaryPrevious = deptPrevRes;
     statusSummary = statusRes;
     trendCurrent = trendRes;
     trendPrevious = trendPrevRes;
-    allDepartments = departmentsRes.departments;
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
   }
@@ -178,7 +200,7 @@ export default async function DashboardPage({
 
   const statusItems = statusSummary?.items ?? [];
   const totalStatusCount = statusItems.reduce((sum, item) => sum + item.work_order_count, 0);
-  const statusRanked: RankedItem[] = statusItems.map((item) => ({
+  const statusChips: StatusChipItem[] = statusItems.map((item) => ({
     label: item.status,
     value: item.work_order_count,
     meta:
@@ -199,10 +221,11 @@ export default async function DashboardPage({
       <h1>Dashboard</h1>
 
       <DashboardFilters
-        departments={allDepartments}
-        selectedDepartments={selectedDepartments}
         dateFrom={dateFrom}
         dateTo={dateTo}
+        prevDateFrom={previousRange.dateFrom}
+        prevDateTo={previousRange.dateTo}
+        selectedDepartment={selectedDepartments[0]}
         hasActiveFilters={hasActiveFilters}
       />
 
@@ -261,8 +284,11 @@ export default async function DashboardPage({
               </div>
 
               <div className="card">
-                <h2 className="chart-title">Количество заказ-нарядов по месяцам</h2>
-                <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
+                <h2 className="chart-title">Заказ-нарядов по месяцам</h2>
+                <p className="chart-subtitle">
+                  по дате закрытия заказ-наряда — с начала года по текущий месяц, независимо от периода
+                  выше
+                </p>
                 <MonthlyBarChart data={monthlySummary?.items ?? []} metric="count" colorSlot="series-2" />
               </div>
             </div>
@@ -270,24 +296,31 @@ export default async function DashboardPage({
             <div className="dashboard-sidebar">
               <div className="card">
                 <h2 className="chart-title">Выручка по подразделениям</h2>
-                <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
-                <RankedList data={departmentRanked} kind="amount" />
-              </div>
-
-              <div className="card">
-                <h2 className="chart-title">Заказ-наряды по статусам</h2>
                 <p className="chart-subtitle">
-                  по дате создания заказ-наряда — включает все статусы, не только закрытые
+                  по дате закрытия заказ-наряда — нажмите на подразделение, чтобы отфильтровать всю
+                  страницу по нему
                 </p>
                 <RankedList
-                  data={statusRanked}
-                  kind="count"
-                  clickable
+                  data={departmentRanked}
+                  kind="amount"
+                  mode="department-filter"
                   dateFrom={dateFrom}
                   dateTo={dateTo}
+                  prevDateFrom={previousRange.dateFrom}
+                  prevDateTo={previousRange.dateTo}
+                  selectedDepartments={selectedDepartments}
                 />
               </div>
             </div>
+          </div>
+
+          <div className="card">
+            <h2 className="chart-title">Заказ-наряды по статусам</h2>
+            <p className="chart-subtitle">
+              по дате создания заказ-наряда — включает все статусы, не только закрытые; нажмите на
+              статус, чтобы открыть список
+            </p>
+            <StatusChipGrid data={statusChips} dateFrom={dateFrom} dateTo={dateTo} />
           </div>
         </>
       )}

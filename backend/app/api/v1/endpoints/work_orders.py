@@ -21,6 +21,7 @@ from app.schemas.work_order import (
     DepartmentSummaryResponse,
     MonthlySummaryItem,
     MonthlySummaryResponse,
+    StatusHistoryItem,
     StatusSummaryItem,
     StatusSummaryResponse,
     TrendSummaryItem,
@@ -38,6 +39,7 @@ from app.services.work_order_query_service import (
     list_departments,
     list_labor_lines,
     list_part_lines,
+    list_status_history,
     list_work_orders,
     monthly_summary,
     status_summary,
@@ -206,6 +208,9 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
         parts=[
             WorkOrderPartLineItem.model_validate(line)
             for line in list_part_lines(db, work_order_id)
+        ],
+        status_history=[
+            StatusHistoryItem.model_validate(row) for row in list_status_history(db, work_order_id)
         ],
     )
 

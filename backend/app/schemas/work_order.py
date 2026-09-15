@@ -100,9 +100,22 @@ class WorkOrderPartLineItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class StatusHistoryItem(BaseModel):
+    status: str
+    first_seen_at: datetime
+    # None = this is the currently-open segment (still the work order's
+    # status as of the most recent import) - the frontend computes its
+    # duration against "now", not a value from here.
+    last_seen_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
 class WorkOrderDetail(WorkOrderListItem):
     """Single work order's header (same fields as the list) plus its labor
-    (Работы) and parts (Товары) tabular-section lines."""
+    (Работы) and parts (Товары) tabular-section lines, and its status
+    timeline (oldest first - see models/work_order_status_history.py)."""
 
     labor: list[WorkOrderLaborLineItem]
     parts: list[WorkOrderPartLineItem]
+    status_history: list[StatusHistoryItem]

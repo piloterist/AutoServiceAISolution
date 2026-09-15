@@ -71,13 +71,21 @@ export function RevenueTrendChart({
     return <p className="chart-empty">Нет данных за выбранный период.</p>;
   }
 
+  const n = current.length;
+
+  // Scale the axis to what's actually drawn - only the previous-period
+  // points that get rendered (aligned/clipped to the current period's
+  // bucket count below), never the full previous array. Using the full
+  // array here was the bug: if the previous period ever resolved to more
+  // buckets than the current one (a granularity/boundary mismatch), a
+  // point that never appears on the chart could still blow up the axis to
+  // many times the tallest visible bar.
   const currentValues = current.map((p) => Number(p.total_amount));
-  const previousValues = previous.map((p) => Number(p.total_amount));
+  const previousValues = previous.slice(0, n).map((p) => Number(p.total_amount));
   const maxValue = Math.max(...currentValues, ...previousValues, 1);
   const niceMax = Math.ceil(maxValue / 4) * 4 || 1;
   const ticks = [0, niceMax / 2, niceMax];
 
-  const n = current.length;
   const xPct = (i: number) => (n === 1 ? 50 : (i / (n - 1)) * 100);
   const yPct = (value: number) => (value / niceMax) * 100;
 

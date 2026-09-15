@@ -1,6 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
 
+from sqlalchemy import select
+
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 
@@ -311,6 +313,59 @@ def test_get_work_order_detail_returns_header_and_lines(client, db_session, auth
     assert len(body["parts"]) == 1
     assert body["parts"][0]["item_name"] == "Бампер передний"
     assert body["parts"][0]["quantity"] == "1.000"
+    # No status history for a work order that was never run through the
+    # import pipeline (see test_import.py for the tracking itself).
+    assert body["status_history"] == []
+
+
+def test_get_work_order_detail_includes_status_history(client, db_session, auth_headers) -> None:
+    import_payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-10T06:00:00",
+        "batch_id": "detail-hist-1",
+        "records": [
+            {
+                "number": "WO-DETAIL-HIST",
+                "date": "2026-09-10T06:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 1000,
+                "status": "В работе",
+            }
+        ],
+    }
+    assert (
+        client.post(
+            "/api/v1/import/work-orders", json=import_payload, headers=auth_headers
+        ).status_code
+        == 200
+    )
+
+    import_payload["exported_at"] = "2026-09-12T06:00:00"
+    import_payload["batch_id"] = "detail-hist-2"
+    import_payload["records"][0]["status"] = "Ожидание запчастей"
+    assert (
+        client.post(
+            "/api/v1/import/work-orders", json=import_payload, headers=auth_headers
+        ).status_code
+        == 200
+    )
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "WO-DETAIL-HIST")
+    ).scalar_one()
+
+    response = client.get(f"{LIST_URL}/{work_order.id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    history = response.json()["status_history"]
+    assert len(history) == 2
+    assert history[0]["status"] == "В работе"
+    assert history[0]["last_seen_at"] == "2026-09-12T06:00:00Z"
+    assert history[1]["status"] == "Ожидание запчастей"
+    assert history[1]["last_seen_at"] is None
 
 
 def test_get_work_order_detail_missing_returns_404(client, auth_headers) -> None:

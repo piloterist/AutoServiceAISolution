@@ -89,7 +89,11 @@ export default async function WorkOrderDetailPage({
           </div>
 
           <div className="card">
-            <WorkOrderLineTabs labor={workOrder.labor} parts={workOrder.parts} />
+            <WorkOrderLineTabs
+              labor={workOrder.labor}
+              parts={workOrder.parts}
+              statusHistory={workOrder.status_history}
+            />
           </div>
         </>
       )}
