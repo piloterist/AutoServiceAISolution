@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { isValidSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { absoluteUrl, isValidSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
 
 // Gates every page behind the login cookie - the site is otherwise public
 // (no per-user auth system yet, see ARCHITECTURE.md), and this exists
@@ -11,7 +11,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const loginUrl = new URL("/login", request.url);
+  const loginUrl = absoluteUrl("/login", request);
   loginUrl.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
   return NextResponse.redirect(loginUrl);
 }

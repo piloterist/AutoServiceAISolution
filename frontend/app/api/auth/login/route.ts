@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  absoluteUrl,
   checkCredentials,
   createSessionToken,
   safeNextPath,
@@ -15,14 +16,14 @@ export async function POST(request: NextRequest) {
   const next = safeNextPath(String(formData.get("next") ?? ""));
 
   if (!checkCredentials(username, password)) {
-    const loginUrl = new URL("/login", request.url);
+    const loginUrl = absoluteUrl("/login", request);
     loginUrl.searchParams.set("error", "1");
     loginUrl.searchParams.set("next", next);
     return NextResponse.redirect(loginUrl, { status: 303 });
   }
 
   const token = await createSessionToken();
-  const response = NextResponse.redirect(new URL(next, request.url), { status: 303 });
+  const response = NextResponse.redirect(absoluteUrl(next, request), { status: 303 });
   response.cookies.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

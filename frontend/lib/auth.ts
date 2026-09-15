@@ -78,3 +78,20 @@ export function safeNextPath(next: string | null | undefined): string {
   if (next && next.startsWith("/") && !next.startsWith("//")) return next;
   return "/dashboard";
 }
+
+/** Builds an absolute URL for a redirect Response, preferring the
+ * X-Forwarded-* headers Timeweb's Caddy reverse proxy sets over
+ * `request.url` - the Next.js standalone server binds to
+ * `HOSTNAME=0.0.0.0` (see frontend/Dockerfile, a fix for an unrelated
+ * container-networking bug), which then leaks into `request.url` in a Node
+ * route handler (unlike Edge middleware, which reports it correctly) and
+ * produces a redirect to `https://0.0.0.0:3000/...` - unreachable from a
+ * real browser. */
+export function absoluteUrl(path: string, request: Request): URL {
+  const forwardedHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  if (forwardedHost) {
+    const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
+    return new URL(path, `${forwardedProto}://${forwardedHost}`);
+  }
+  return new URL(path, request.url);
+}
