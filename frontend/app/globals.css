@@ -869,11 +869,30 @@ main:has(.wide-page) {
    form only carries it through as a hidden field so changing the date
    range doesn't silently drop it. */
 
+/* Logo + filter form share one row instead of stacking, to save vertical
+   space - the form's own internal layout (period groups, actions) still
+   wraps within whatever width that leaves it. */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.dashboard-logo {
+  flex: none;
+  height: 44px;
+  width: auto;
+  border-radius: 6px;
+}
+
 .filters-form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  margin-bottom: 1.25rem;
+  flex: 1;
+  min-width: 260px;
 }
 
 .filters-periods {

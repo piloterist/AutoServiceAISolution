@@ -1,3 +1,5 @@
+import Image from "next/image";
+
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { MonthlyBarChart } from "@/components/MonthlyRevenueChart";
 import { RankedList, type RankedItem } from "@/components/RankedList";
@@ -218,16 +220,25 @@ export default async function DashboardPage({
 
   return (
     <div className="wide-page">
-      <h1>Dashboard</h1>
+      <div className="dashboard-header">
+        <Image
+          src="/pan-motors-logo.png"
+          alt="Pan Motors"
+          width={746}
+          height={323}
+          className="dashboard-logo"
+          priority
+        />
 
-      <DashboardFilters
-        dateFrom={dateFrom}
-        dateTo={dateTo}
-        prevDateFrom={previousRange.dateFrom}
-        prevDateTo={previousRange.dateTo}
-        selectedDepartment={selectedDepartments[0]}
-        hasActiveFilters={hasActiveFilters}
-      />
+        <DashboardFilters
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          prevDateFrom={previousRange.dateFrom}
+          prevDateTo={previousRange.dateTo}
+          selectedDepartment={selectedDepartments[0]}
+          hasActiveFilters={hasActiveFilters}
+        />
+      </div>
 
       {error && (
         <div className="card" style={{ borderColor: "var(--down)" }}>
