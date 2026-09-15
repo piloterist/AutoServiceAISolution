@@ -76,7 +76,7 @@ export function DashboardFilters({
               recomputePrev(event.target.value, currentTo);
             }}
           />
-          <span className="filters-inline-sublabel">По дату</span>
+          <span className="filters-inline-sublabel">По</span>
           <input
             type="date"
             name="date_to"

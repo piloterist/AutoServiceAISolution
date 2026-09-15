@@ -914,6 +914,19 @@ main:has(.wide-page) {
   font-weight: 600;
 }
 
+/* Narrow screens: the label drops to its own line above "С ... По ...",
+   instead of squeezing everything onto one line that no longer fits. */
+@media (max-width: 520px) {
+  .filters-inline-row {
+    flex-wrap: wrap;
+  }
+
+  .filters-inline-label {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+}
+
 .filters-inline-sublabel {
   color: var(--text-muted);
   font-size: 0.8rem;
