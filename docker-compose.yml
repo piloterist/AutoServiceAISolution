@@ -48,6 +48,11 @@ services:
       # Server-side only - never exposed to the browser (no NEXT_PUBLIC_
       # prefix). Must match whatever backend NEXT_PUBLIC_API_URL points at.
       BACKEND_API_TOKEN: ${BACKEND_API_TOKEN:-${API_TOKEN}}
+      # Single hardcoded operator login (see frontend/lib/auth.ts) - the
+      # site would otherwise be wide open to anyone with the URL.
+      AUTH_USERNAME: ${AUTH_USERNAME}
+      AUTH_PASSWORD: ${AUTH_PASSWORD}
+      AUTH_SECRET: ${AUTH_SECRET}
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules

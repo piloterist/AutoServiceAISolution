@@ -20,6 +20,10 @@ const NAV_ITEMS = [
 export function Nav() {
   const pathname = usePathname();
 
+  // No point showing the app chrome on the login page itself - every link
+  // in it just bounces back here via middleware until you're logged in.
+  if (pathname === "/login") return null;
+
   return (
     <nav className="nav">
       <Link href="/" className="nav-brand">
@@ -37,6 +41,9 @@ export function Nav() {
           </li>
         ))}
       </ul>
+      <a href="/api/auth/logout" className="nav-link">
+        Выйти
+      </a>
       <ThemeToggle />
     </nav>
   );
