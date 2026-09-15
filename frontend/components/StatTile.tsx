@@ -1,5 +1,9 @@
 // Pure presentational, no hooks/browser APIs - stays a plain Server
 // Component so it can be rendered directly from app/dashboard/page.tsx.
+// `href` (when given) makes the whole tile a Link instead of a div - still
+// no client JS needed for that.
+
+import Link from "next/link";
 
 const SPARK_WIDTH = 74;
 const SPARK_HEIGHT = 30;
@@ -31,6 +35,7 @@ export function StatTile({
   value,
   deltaPct,
   sparkline,
+  href,
 }: {
   label: string;
   /** Pre-formatted - the caller decides currency/count formatting. */
@@ -39,12 +44,17 @@ export function StatTile({
    * instead of showing a misleading 0%/∞). */
   deltaPct: number | null;
   sparkline: number[];
+  /** Makes the tile clickable, e.g. the revenue tile linking to the
+   * work-orders list filtered to exactly the orders that make up this
+   * figure - so the number is always one click away from being checkable,
+   * not just asserted. */
+  href?: string;
 }) {
   const { line, area, endX, endY } = buildSparkline(sparkline);
   const isUp = deltaPct !== null && deltaPct >= 0;
 
-  return (
-    <div className="stat-tile">
+  const inner = (
+    <>
       <div className="stat-top">
         <span className="stat-label">{label}</span>
         {deltaPct !== null && (
@@ -63,6 +73,16 @@ export function StatTile({
           </svg>
         )}
       </div>
-    </div>
+    </>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="stat-tile stat-tile-clickable">
+        {inner}
+      </Link>
+    );
+  }
+
+  return <div className="stat-tile">{inner}</div>;
 }

@@ -322,8 +322,18 @@ main:has(.wide-page) {
 
 .period-filter {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+/* Two period-filter blocks now sit side by side (document date, closed
+   date) - the label says which date field each one filters by, since
+   they'd otherwise be indistinguishable "С/По" pairs. */
+.period-filter-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
 }
 
 .period-filter label {
@@ -530,6 +540,25 @@ main:has(.wide-page) {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.stat-tile-clickable {
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+
+.stat-tile-clickable:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.07);
+}
+
+.stat-tile-clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .stat-top {

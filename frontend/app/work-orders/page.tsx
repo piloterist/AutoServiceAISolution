@@ -11,6 +11,9 @@ type SearchParams = {
   status?: string;
   date_from?: string;
   date_to?: string;
+  closed_from?: string;
+  closed_to?: string;
+  departments?: string;
 };
 
 export default async function WorkOrdersPage({
@@ -45,6 +48,9 @@ export default async function WorkOrdersPage({
           initialStatus={params.status}
           initialDateFrom={params.date_from}
           initialDateTo={params.date_to}
+          initialClosedFrom={params.closed_from}
+          initialClosedTo={params.closed_to}
+          initialDepartment={params.departments}
         />
       )}
     </div>

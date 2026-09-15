@@ -19,10 +19,15 @@ function formatAmount(amount: string | number): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(value) + " ₽";
 }
 
-/** document_date falls within [dateFrom, dateTo] - dateTo is treated as
- * inclusive of that whole day (a plain <input type="date"> picker gives no
- * time component, and "по 13.09" should include everything on the 13th). */
-function isWithinDateRange(iso: string, dateFrom: string, dateTo: string): boolean {
+/** `iso` falls within [dateFrom, dateTo] - dateTo is treated as inclusive of
+ * that whole day (a plain <input type="date"> picker gives no time
+ * component, and "по 13.09" should include everything on the 13th). A null
+ * `iso` (not closed yet) never matches an active range - there's no date to
+ * fall inside it. */
+function isWithinDateRange(iso: string | null, dateFrom: string, dateTo: string): boolean {
+  if (!dateFrom && !dateTo) return true;
+  if (!iso) return false;
+
   const orderTime = new Date(iso).getTime();
 
   if (dateFrom) {
@@ -76,15 +81,23 @@ export function WorkOrdersTable({
   initialStatus,
   initialDateFrom,
   initialDateTo,
+  initialClosedFrom,
+  initialClosedTo,
+  initialDepartment,
 }: {
   items: WorkOrderListItem[];
   /** Pre-applied filters, e.g. arriving from a click on the dashboard's
-   * status donut chart (/work-orders?status=...&date_from=...&date_to=...).
-   * Plain strings from the URL's searchParams, not component state shared
-   * across pages - just the initial values. */
+   * status chips (/work-orders?status=...&date_from=...&date_to=...) or the
+   * revenue stat tile
+   * (/work-orders?closed_from=...&closed_to=...&departments=...). Plain
+   * strings from the URL's searchParams, not component state shared across
+   * pages - just the initial values. */
   initialStatus?: string;
   initialDateFrom?: string;
   initialDateTo?: string;
+  initialClosedFrom?: string;
+  initialClosedTo?: string;
+  initialDepartment?: string;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -95,7 +108,7 @@ export function WorkOrdersTable({
     vehicle: "",
     customer: "",
     status: "",
-    department: "",
+    department: initialDepartment ?? "",
     amount: "",
   });
   // Status has its own checkbox dropdown (below) instead of the generic
@@ -106,6 +119,8 @@ export function WorkOrdersTable({
   );
   const [dateFrom, setDateFrom] = useState(initialDateFrom ?? "");
   const [dateTo, setDateTo] = useState(initialDateTo ?? "");
+  const [closedFrom, setClosedFrom] = useState(initialClosedFrom ?? "");
+  const [closedTo, setClosedTo] = useState(initialClosedTo ?? "");
 
   const rows: Row[] = useMemo(
     () =>
@@ -162,10 +177,11 @@ export function WorkOrdersTable({
       }
 
       if (!isWithinDateRange(row.item.document_date, dateFrom, dateTo)) return false;
+      if (!isWithinDateRange(row.item.closed_date, closedFrom, closedTo)) return false;
 
       return true;
     });
-  }, [rows, search, columnFilters, selectedStatuses, dateFrom, dateTo]);
+  }, [rows, search, columnFilters, selectedStatuses, dateFrom, dateTo, closedFrom, closedTo]);
 
   // Recomputes with filteredRows - the whole point is that it tracks
   // whatever's currently visible, not the unfiltered total.
@@ -208,13 +224,14 @@ export function WorkOrdersTable({
         </details>
 
         <div className="period-filter">
+          <span className="period-filter-label">Дата документа</span>
           <label>
             С
             <input
               type="date"
               value={dateFrom}
               onChange={(event) => setDateFrom(event.target.value)}
-              aria-label="Период с даты"
+              aria-label="Дата документа с"
             />
           </label>
           <label>
@@ -223,7 +240,29 @@ export function WorkOrdersTable({
               type="date"
               value={dateTo}
               onChange={(event) => setDateTo(event.target.value)}
-              aria-label="Период по дату"
+              aria-label="Дата документа по"
+            />
+          </label>
+        </div>
+
+        <div className="period-filter">
+          <span className="period-filter-label">Дата закрытия</span>
+          <label>
+            С
+            <input
+              type="date"
+              value={closedFrom}
+              onChange={(event) => setClosedFrom(event.target.value)}
+              aria-label="Дата закрытия с"
+            />
+          </label>
+          <label>
+            По
+            <input
+              type="date"
+              value={closedTo}
+              onChange={(event) => setClosedTo(event.target.value)}
+              aria-label="Дата закрытия по"
             />
           </label>
         </div>

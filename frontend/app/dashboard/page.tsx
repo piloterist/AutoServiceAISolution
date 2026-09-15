@@ -218,6 +218,19 @@ export default async function DashboardPage({
     previousDepartments: departmentSummaryPrevious?.items ?? [],
   });
 
+  // The revenue figure is closed_date-based (see monthly_summary/
+  // department_summary) - this link has to filter the work-orders list by
+  // closed_date too, or clicking through would show a different set of
+  // orders than the ones that actually make up the number. Carries the
+  // active department filter along for the same reason.
+  const revenueHref = (() => {
+    const params = new URLSearchParams();
+    params.set("closed_from", dateFrom);
+    params.set("closed_to", dateTo);
+    if (selectedDepartments[0]) params.set("departments", selectedDepartments[0]);
+    return `/work-orders?${params.toString()}`;
+  })();
+
   return (
     <div className="wide-page">
       <div className="dashboard-header">
@@ -261,15 +274,16 @@ export default async function DashboardPage({
               value={`${totalAmount.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`}
               deltaPct={revenueDeltaPct}
               sparkline={revenueSpark}
+              href={revenueHref}
             />
             <StatTile
-              label="Заказ-нарядов"
+              label="Закрытых заказ-нарядов"
               value={totalCount.toLocaleString("ru-RU")}
               deltaPct={countDeltaPct}
               sparkline={countSpark}
             />
             <StatTile
-              label="Средний чек"
+              label="Средний чек за период"
               value={`${avgAmount.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`}
               deltaPct={avgDeltaPct}
               sparkline={avgSpark}
@@ -277,7 +291,7 @@ export default async function DashboardPage({
           </div>
 
           <div className="card">
-            <h2 className="chart-title">Заказ-наряды по статусам</h2>
+            <h2 className="chart-title">Заказ-наряды по статусам за период</h2>
             <StatusChipGrid data={statusChips} dateFrom={dateFrom} dateTo={dateTo} />
           </div>
 
