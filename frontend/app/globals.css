@@ -610,12 +610,6 @@ main:has(.wide-page) {
   margin: 0 0 1rem;
 }
 
-.dashboard-note {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  margin: -0.5rem 0 1.25rem;
-}
-
 /* --- Dashboard grid: an executive-overview layout, not a plain scroll ---
    Mobile (default): everything stacks in one column, reading order = DOM
    order (trend/count charts, then the two ranked lists).
@@ -882,65 +876,56 @@ main:has(.wide-page) {
 
 .dashboard-logo {
   flex: none;
-  height: 44px;
+  height: 88px;
   width: auto;
   border-radius: 6px;
 }
 
-.filters-form {
+/* The whole form is one row: the two stacked period lines, then Apply/Reset
+   to their right - sized to its content (not flex: 1), so it sits compactly
+   beside the logo instead of stretching across the page. */
+.filters-form-row {
   display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  flex: 1;
-  min-width: 260px;
-}
-
-.filters-periods {
-  display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 1.5rem;
+  flex-wrap: wrap;
 }
 
-.filters-period-group {
+.filters-periods-stack {
   display: flex;
   flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
+}
+
+/* One line per period: label, "С", a date, "По", a date - all inline. The
+   label has a fixed width so the current/previous rows' date inputs line
+   up in a column underneath each other. */
+.filters-inline-row {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
 }
 
-.filters-group-label {
+.filters-inline-label {
+  min-width: 8.5rem;
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
 
-.filters-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-}
-
-.filters-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-}
-
-.filters-field input {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.85rem;
-  color: var(--text);
-  background: var(--surface);
-}
-
-.filters-label {
+.filters-inline-sublabel {
   color: var(--text-muted);
   font-size: 0.8rem;
-  font-weight: 600;
+}
+
+.filters-inline-row input[type="date"] {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: var(--text);
+  background: var(--surface);
 }
 
 .filters-actions {
@@ -1256,7 +1241,10 @@ main:has(.wide-page) {
 
 .status-chip-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  /* auto-fit (not auto-fill) collapses empty tracks, so whatever chips
+     exist stretch evenly to fill the full row width instead of leaving a
+     gap where unused columns would have been. */
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 0.6rem;
 }
 

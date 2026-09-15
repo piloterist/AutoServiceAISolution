@@ -13,6 +13,10 @@ import { previousPeriod } from "@/lib/period";
 // ranked list (see RankedList's "department-filter" mode), not here, so a
 // hidden field just carries whatever department is currently selected
 // through when the operator changes the date range.
+//
+// Sits directly beside the logo in the page header (see
+// app/dashboard/page.tsx) - deliberately compact (two stacked one-line
+// period rows, not a boxed card) rather than a wide standalone filter bar.
 export function DashboardFilters({
   dateFrom,
   dateTo,
@@ -56,68 +60,56 @@ export function DashboardFilters({
   };
 
   return (
-    <form className="filters-form card" method="get">
+    <form className="filters-form-row" method="get">
       {selectedDepartment && <input type="hidden" name="departments" value={selectedDepartment} />}
 
-      <div className="filters-periods">
-        <div className="filters-period-group">
-          <span className="filters-group-label">Текущий период</span>
-          <div className="filters-row">
-            <label className="filters-field">
-              <span className="filters-label">С даты</span>
-              <input
-                type="date"
-                name="date_from"
-                value={currentFrom}
-                onChange={(event) => {
-                  setCurrentFrom(event.target.value);
-                  recomputePrev(event.target.value, currentTo);
-                }}
-              />
-            </label>
-            <label className="filters-field">
-              <span className="filters-label">По дату</span>
-              <input
-                type="date"
-                name="date_to"
-                value={currentTo}
-                onChange={(event) => {
-                  setCurrentTo(event.target.value);
-                  recomputePrev(currentFrom, event.target.value);
-                }}
-              />
-            </label>
-          </div>
+      <div className="filters-periods-stack">
+        <div className="filters-inline-row">
+          <span className="filters-inline-label">Текущий период</span>
+          <span className="filters-inline-sublabel">С</span>
+          <input
+            type="date"
+            name="date_from"
+            value={currentFrom}
+            onChange={(event) => {
+              setCurrentFrom(event.target.value);
+              recomputePrev(event.target.value, currentTo);
+            }}
+          />
+          <span className="filters-inline-sublabel">По дату</span>
+          <input
+            type="date"
+            name="date_to"
+            value={currentTo}
+            onChange={(event) => {
+              setCurrentTo(event.target.value);
+              recomputePrev(currentFrom, event.target.value);
+            }}
+          />
         </div>
 
-        <div className="filters-period-group">
-          <span className="filters-group-label">Предыдущий период (для сравнения)</span>
-          <div className="filters-row">
-            <label className="filters-field">
-              <span className="filters-label">С даты</span>
-              <input
-                type="date"
-                name="prev_date_from"
-                value={prevFrom}
-                onChange={(event) => {
-                  setPrevTouched(true);
-                  setPrevFrom(event.target.value);
-                }}
-              />
-            </label>
-            <label className="filters-field">
-              <span className="filters-label">По дату</span>
-              <input
-                type="date"
-                name="prev_date_to"
-                value={prevTo}
-                onChange={(event) => {
-                  setPrevTouched(true);
-                  setPrevTo(event.target.value);
-                }}
-              />
-            </label>
-          </div>
+        <div className="filters-inline-row">
+          <span className="filters-inline-label">Предыдущий период</span>
+          <span className="filters-inline-sublabel">С</span>
+          <input
+            type="date"
+            name="prev_date_from"
+            value={prevFrom}
+            onChange={(event) => {
+              setPrevTouched(true);
+              setPrevFrom(event.target.value);
+            }}
+          />
+          <span className="filters-inline-sublabel">По</span>
+          <input
+            type="date"
+            name="prev_date_to"
+            value={prevTo}
+            onChange={(event) => {
+              setPrevTouched(true);
+              setPrevTo(event.target.value);
+            }}
+          />
         </div>
       </div>
 

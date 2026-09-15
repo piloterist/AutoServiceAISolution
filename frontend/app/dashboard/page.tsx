@@ -276,18 +276,8 @@ export default async function DashboardPage({
             />
           </div>
 
-          <p className="dashboard-note">
-            Выручка везде на этой странице считается по дате закрытия заказ-наряда (кроме списка по
-            статусам — там по дате создания, иначе не закрытые заказ-наряды вообще нигде бы не
-            отображались).
-          </p>
-
           <div className="card">
             <h2 className="chart-title">Заказ-наряды по статусам</h2>
-            <p className="chart-subtitle">
-              по дате создания заказ-наряда — включает все статусы, не только закрытые; нажмите на
-              статус, чтобы открыть список
-            </p>
             <StatusChipGrid data={statusChips} dateFrom={dateFrom} dateTo={dateTo} />
           </div>
 
