@@ -271,6 +271,15 @@ export default async function DashboardPage({
             отображались).
           </p>
 
+          <div className="card">
+            <h2 className="chart-title">Заказ-наряды по статусам</h2>
+            <p className="chart-subtitle">
+              по дате создания заказ-наряда — включает все статусы, не только закрытые; нажмите на
+              статус, чтобы открыть список
+            </p>
+            <StatusChipGrid data={statusChips} dateFrom={dateFrom} dateTo={dateTo} />
+          </div>
+
           <div className="dashboard-grid">
             <div className="dashboard-main">
               <div className="card">
@@ -312,15 +321,6 @@ export default async function DashboardPage({
                 />
               </div>
             </div>
-          </div>
-
-          <div className="card">
-            <h2 className="chart-title">Заказ-наряды по статусам</h2>
-            <p className="chart-subtitle">
-              по дате создания заказ-наряда — включает все статусы, не только закрытые; нажмите на
-              статус, чтобы открыть список
-            </p>
-            <StatusChipGrid data={statusChips} dateFrom={dateFrom} dateTo={dateTo} />
           </div>
         </>
       )}

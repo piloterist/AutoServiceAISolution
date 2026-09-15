@@ -650,10 +650,10 @@ main:has(.wide-page) {
   }
 }
 
-/* A full-width card directly after the grid (the status chip mosaic) isn't
-   preceded by another .card, so the generic ".card + .card" adjacent-margin
-   rule doesn't catch it. */
-.dashboard-grid + .card {
+/* The full-width status chip card sits directly before the grid, not after
+   another .card, so the generic ".card + .card" adjacent-margin rule
+   doesn't give it space below - add it explicitly instead. */
+.card + .dashboard-grid {
   margin-top: 1rem;
 }
 
