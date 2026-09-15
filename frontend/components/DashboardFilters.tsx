@@ -9,14 +9,23 @@ export function DashboardFilters({
   selectedDepartments,
   dateFrom,
   dateTo,
+  hasActiveFilters,
 }: {
   departments: string[];
   selectedDepartments: string[];
+  /** Pre-filled into the date inputs - the dashboard defaults these to the
+   * current calendar month when the URL has no explicit date params (see
+   * app/dashboard/page.tsx), so this is the *effective* period, not
+   * necessarily what's literally in the URL. */
   dateFrom?: string;
   dateTo?: string;
+  /** Whether the URL itself carries an explicit filter - distinct from
+   * `dateFrom`/`dateTo` being set, since those are always set (defaulted to
+   * the current month). Controls whether "Сбросить фильтры" shows: it
+   * shouldn't appear on the plain default view, only once the operator has
+   * actually changed something. */
+  hasActiveFilters: boolean;
 }) {
-  const hasActiveFilters = selectedDepartments.length > 0 || Boolean(dateFrom) || Boolean(dateTo);
-
   return (
     <form className="filters-form card" method="get">
       <div className="filters-row">

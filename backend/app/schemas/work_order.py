@@ -48,6 +48,17 @@ class MonthlySummaryResponse(BaseModel):
     items: list[MonthlySummaryItem]
 
 
+class TrendSummaryItem(BaseModel):
+    period: str  # "YYYY-MM-DD" - start of the bucket (day/week/month)
+    work_order_count: int
+    total_amount: Decimal
+
+
+class TrendSummaryResponse(BaseModel):
+    items: list[TrendSummaryItem]
+    granularity: str  # "day" | "week" | "month"
+
+
 class DepartmentSummaryItem(BaseModel):
     department: str
     work_order_count: int

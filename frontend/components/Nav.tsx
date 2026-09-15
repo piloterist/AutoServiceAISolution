@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { ThemeToggle } from "@/components/ThemeToggle";
+
 // Placeholder top-level navigation. Items map to future core modules; actual
 // enabled modules per client instance will come from configuration/feature
 // flags, not from this hardcoded list once that layer exists.
@@ -35,6 +37,7 @@ export function Nav() {
           </li>
         ))}
       </ul>
+      <ThemeToggle />
     </nav>
   );
 }

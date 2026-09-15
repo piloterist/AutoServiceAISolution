@@ -449,6 +449,112 @@ def test_status_summary_groups_and_sums_and_ignores_revenue_status_restriction(
     assert items["Отказ"]["total_amount"] == "700.00"
 
 
+def test_trend_summary_daily_granularity_for_a_one_month_span(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-DAY-1",
+            amount=Decimal("100.00"),
+            closed_date=datetime(2026, 6, 5, 9, 0, 0),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-DAY-2",
+            amount=Decimal("50.00"),
+            closed_date=datetime(2026, 6, 5, 15, 0, 0),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-DAY-3",
+            amount=Decimal("200.00"),
+            closed_date=datetime(2026, 6, 6, 9, 0, 0),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"{LIST_URL}/summary/trend",
+        headers=auth_headers,
+        params={"date_from": "2026-06-01T00:00:00", "date_to": "2026-07-01T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["granularity"] == "day"
+    items = {item["period"]: item for item in body["items"]}
+    assert items["2026-06-05"]["work_order_count"] == 2
+    assert items["2026-06-05"]["total_amount"] == "150.00"
+    assert items["2026-06-06"]["total_amount"] == "200.00"
+
+
+def test_trend_summary_monthly_granularity_for_a_long_span(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-JAN", amount=Decimal("100.00"), closed_date=datetime(2026, 1, 5)
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-JUN", amount=Decimal("200.00"), closed_date=datetime(2026, 6, 5)
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"{LIST_URL}/summary/trend",
+        headers=auth_headers,
+        params={"date_from": "2026-01-01T00:00:00", "date_to": "2026-07-01T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["granularity"] == "month"
+    # Zero-filled: Jan and Jun have work orders, Feb-May don't but still
+    # appear as 0-count buckets so the series stays gap-free.
+    items = {item["period"]: item for item in body["items"]}
+    assert set(items) == {
+        "2026-01-01",
+        "2026-02-01",
+        "2026-03-01",
+        "2026-04-01",
+        "2026-05-01",
+        "2026-06-01",
+    }
+    assert items["2026-01-01"]["total_amount"] == "100.00"
+    assert items["2026-06-01"]["total_amount"] == "200.00"
+    assert items["2026-03-01"]["work_order_count"] == 0
+    assert items["2026-03-01"]["total_amount"] == "0"
+
+
+def test_trend_summary_granularity_can_be_overridden(client, db_session, auth_headers) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-OVERRIDE",
+            amount=Decimal("100.00"),
+            closed_date=datetime(2026, 6, 5),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"{LIST_URL}/summary/trend",
+        headers=auth_headers,
+        params={
+            "date_from": "2026-06-01T00:00:00",
+            "date_to": "2026-07-01T00:00:00",
+            "granularity": "week",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["granularity"] == "week"
+
+
 def test_status_summary_filters_by_document_date(client, db_session, auth_headers) -> None:
     db_session.add(
         _make_work_order(

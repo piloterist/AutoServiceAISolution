@@ -23,6 +23,8 @@ from app.schemas.work_order import (
     MonthlySummaryResponse,
     StatusSummaryItem,
     StatusSummaryResponse,
+    TrendSummaryItem,
+    TrendSummaryResponse,
     WorkOrderDetail,
     WorkOrderLaborLineItem,
     WorkOrderListItem,
@@ -39,6 +41,7 @@ from app.services.work_order_query_service import (
     list_work_orders,
     monthly_summary,
     status_summary,
+    trend_summary,
 )
 
 router = APIRouter(tags=["work-orders"], dependencies=[Depends(verify_api_token)])
@@ -145,6 +148,38 @@ def get_status_summary(
         departments=_split_departments(departments),
     )
     return StatusSummaryResponse(items=[StatusSummaryItem(**row) for row in rows])
+
+
+@router.get("/work-orders/summary/trend", response_model=TrendSummaryResponse)
+def get_trend_summary(
+    date_from: datetime = Query(
+        ..., description="Filters/groups by closed_date; bucket size auto-detects from the span"
+    ),
+    date_to: datetime = Query(...),
+    departments: str | None = Query(default=None, description="Comma-separated department names"),
+    granularity: str | None = Query(
+        default=None,
+        pattern="^(day|week|month)$",
+        description="Overrides auto-detected bucket size",
+    ),
+    db: Session = Depends(get_db),
+) -> TrendSummaryResponse:
+    # Used for the dashboard's period-over-period trend chart: the caller
+    # fetches this twice (current period, previous period) and relies on
+    # both auto-detecting the same granularity, since the two periods are
+    # the same length by construction (see app/dashboard/page.tsx).
+    revenue_statuses = get_settings().revenue_statuses_list
+    rows, resolved_granularity = trend_summary(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        departments=_split_departments(departments),
+        revenue_statuses=revenue_statuses or None,
+        granularity=granularity,
+    )
+    return TrendSummaryResponse(
+        items=[TrendSummaryItem(**row) for row in rows], granularity=resolved_granularity
+    )
 
 
 @router.get("/work-orders/{work_order_id}", response_model=WorkOrderDetail)

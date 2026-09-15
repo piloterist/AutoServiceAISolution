@@ -69,6 +69,17 @@ export type StatusSummaryResponse = {
   items: StatusSummaryItem[];
 };
 
+export type TrendSummaryItem = {
+  period: string; // "YYYY-MM-DD" - start of the bucket (day/week/month)
+  work_order_count: number;
+  total_amount: string;
+};
+
+export type TrendSummaryResponse = {
+  items: TrendSummaryItem[];
+  granularity: "day" | "week" | "month";
+};
+
 export type WorkOrderLaborLineItem = {
   operation_name: string | null;
   price: string | null;
@@ -186,6 +197,23 @@ export function getStatusSummary(
     date_from: params?.dateFrom ?? "",
     date_to: dateToParam(params?.dateTo),
     departments: departmentsParam(params?.departments),
+  });
+}
+
+/** `date_from`/`date_to` are required here (unlike the other summary
+ * endpoints) - the backend auto-detects bucket size (day/week/month) from
+ * the span between them, so an open-ended range has nothing to detect from.
+ * The dashboard always resolves a concrete range before calling this (see
+ * app/dashboard/page.tsx and lib/period.ts). */
+export function getTrendSummary(params: {
+  dateFrom: string;
+  dateTo: string;
+  departments?: string[];
+}): Promise<TrendSummaryResponse> {
+  return backendGet<TrendSummaryResponse>("/api/v1/work-orders/summary/trend", {
+    date_from: params.dateFrom,
+    date_to: dateToParam(params.dateTo),
+    departments: departmentsParam(params.departments),
   });
 }
 
