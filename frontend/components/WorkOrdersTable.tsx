@@ -14,8 +14,8 @@ function formatDateOrDash(iso: string | null): string {
   });
 }
 
-function formatAmount(amount: string): string {
-  const value = Number(amount);
+function formatAmount(amount: string | number): string {
+  const value = typeof amount === "string" ? Number(amount) : amount;
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(value) + " ₽";
 }
 
@@ -167,6 +167,13 @@ export function WorkOrdersTable({
     });
   }, [rows, search, columnFilters, selectedStatuses, dateFrom, dateTo]);
 
+  // Recomputes with filteredRows - the whole point is that it tracks
+  // whatever's currently visible, not the unfiltered total.
+  const filteredAmount = useMemo(
+    () => filteredRows.reduce((sum, row) => sum + Number(row.item.amount), 0),
+    [filteredRows],
+  );
+
   return (
     <div className="wide-page">
       <div className="toolbar">
@@ -231,9 +238,12 @@ export function WorkOrdersTable({
         aria-label="Поиск по всем полям"
       />
 
-      <p className="table-meta">
-        Показано {filteredRows.length} из {items.length}
-      </p>
+      <div className="table-meta">
+        <span>
+          Показано {filteredRows.length} из {items.length}
+        </span>
+        <span className="table-meta-total">Сумма: {formatAmount(filteredAmount)}</span>
+      </div>
 
       <div className="table-wrap">
         <table className="data-table data-table--work-orders">
