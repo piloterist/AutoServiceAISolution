@@ -59,6 +59,21 @@ class ImportWorkOrderRecord(BaseModel):
     labor: list[ImportLaborLineRecord] = Field(default_factory=list)
     parts: list[ImportPartLineRecord] = Field(default_factory=list)
 
+    # Settlement/payment state, computed by the 1C export itself by
+    # reproducing 5S AUTO's own
+    # пп_КлиентСервер.СписокЗаказНарядПоказатьПроцентОплаты() logic
+    # (РегистрНакопления.ВзаиморасчетыКомпании.Остатки()) - never
+    # recomputed on this side from raw payment documents, see
+    # 1c/TestExportOrders.bsl. All optional so older export files (and any
+    # work order 1C hasn't priced) keep importing unchanged.
+    deal_amount: Decimal | None = None
+    debt_amount: Decimal | None = None
+    paid_amount: Decimal | None = None
+    # Deliberately unbounded (not clamped to 0..100) - 5S AUTO itself
+    # allows a negative percent or one past 100% (overpayment), and that's
+    # real data worth keeping for analytics, not an error to normalize away.
+    payment_percent: Decimal | None = None
+
 
 class ImportWorkOrdersRequest(BaseModel):
     source: str = Field(..., description='e.g. "alpha-auto"')

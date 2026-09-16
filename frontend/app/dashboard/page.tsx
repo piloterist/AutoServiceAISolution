@@ -10,10 +10,16 @@ import {
   type DepartmentSummaryItem,
   getDepartmentSummary,
   getMonthlySummary,
+  getPaymentTrendSummary,
   getStatusSummary,
   getTrendSummary,
 } from "@/lib/backend-api";
-import { currentYearToDateRange, monthToDateRange, previousPeriod } from "@/lib/period";
+import {
+  currentYearToDateRange,
+  monthToDateRange,
+  previousPeriod,
+  resolveGranularity,
+} from "@/lib/period";
 
 // See app/work-orders/page.tsx for why this is required.
 export const dynamic = "force-dynamic";
@@ -142,6 +148,12 @@ export default async function DashboardPage({
     dateTo: yearToDateRange.dateTo,
     departments: selectedDepartments,
   };
+  // Resolved once here (mirrors the backend's own auto-detection) and
+  // passed explicitly to every trend-shaped call below, current and
+  // previous alike - lets them all fetch in parallel instead of needing to
+  // wait for one response before asking the others for the same bucket
+  // size.
+  const granularity = resolveGranularity(dateFrom, dateTo);
 
   let monthlySummary;
   let departmentSummary;
@@ -149,16 +161,29 @@ export default async function DashboardPage({
   let statusSummary;
   let trendCurrent;
   let trendPrevious;
+  let paymentTrendCurrent;
+  let paymentTrendPrevious;
   let error: string | null = null;
 
   try {
-    const [monthlyRes, deptRes, deptPrevRes, statusRes, trendRes, trendPrevRes] = await Promise.all([
+    const [
+      monthlyRes,
+      deptRes,
+      deptPrevRes,
+      statusRes,
+      trendRes,
+      trendPrevRes,
+      paymentTrendRes,
+      paymentTrendPrevRes,
+    ] = await Promise.all([
       getMonthlySummary(yearToDateParams),
       getDepartmentSummary(filterParams),
       getDepartmentSummary(previousFilterParams),
       getStatusSummary(filterParams),
-      getTrendSummary(filterParams),
-      getTrendSummary(previousFilterParams),
+      getTrendSummary({ ...filterParams, granularity }),
+      getTrendSummary({ ...previousFilterParams, granularity }),
+      getPaymentTrendSummary({ ...filterParams, granularity }),
+      getPaymentTrendSummary({ ...previousFilterParams, granularity }),
     ]);
     monthlySummary = monthlyRes;
     departmentSummary = deptRes;
@@ -166,13 +191,16 @@ export default async function DashboardPage({
     statusSummary = statusRes;
     trendCurrent = trendRes;
     trendPrevious = trendPrevRes;
+    paymentTrendCurrent = paymentTrendRes;
+    paymentTrendPrevious = paymentTrendPrevRes;
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
   }
 
   const trendCurrentItems = trendCurrent?.items ?? [];
   const trendPreviousItems = trendPrevious?.items ?? [];
-  const granularity = trendCurrent?.granularity ?? "month";
+  const paymentTrendCurrentItems = paymentTrendCurrent?.items ?? [];
+  const paymentTrendPreviousItems = paymentTrendPrevious?.items ?? [];
 
   const totalAmount = trendCurrentItems.reduce((sum, item) => sum + Number(item.total_amount), 0);
   const totalCount = trendCurrentItems.reduce((sum, item) => sum + item.work_order_count, 0);
@@ -187,6 +215,21 @@ export default async function DashboardPage({
   const countDeltaPct =
     prevTotalCount > 0 ? ((totalCount - prevTotalCount) / prevTotalCount) * 100 : null;
   const avgDeltaPct = prevAvgAmount > 0 ? ((avgAmount - prevAvgAmount) / prevAvgAmount) * 100 : null;
+
+  // Net change in paid_amount observed in-period - there is no real payment
+  // date in this integration (see getPaymentTrendSummary), this is the
+  // closest available approximation.
+  const totalPayments = paymentTrendCurrentItems.reduce(
+    (sum, item) => sum + Number(item.total_amount),
+    0,
+  );
+  const prevTotalPayments = paymentTrendPreviousItems.reduce(
+    (sum, item) => sum + Number(item.total_amount),
+    0,
+  );
+  const paymentsDeltaPct =
+    prevTotalPayments > 0 ? ((totalPayments - prevTotalPayments) / prevTotalPayments) * 100 : null;
+  const paymentsSpark = paymentTrendCurrentItems.map((item) => Number(item.total_amount));
 
   const revenueSpark = trendCurrentItems.map((item) => Number(item.total_amount));
   const countSpark = trendCurrentItems.map((item) => item.work_order_count);
@@ -288,7 +331,17 @@ export default async function DashboardPage({
               deltaPct={avgDeltaPct}
               sparkline={avgSpark}
             />
+            <StatTile
+              label="Оплаты за период"
+              value={`${totalPayments.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`}
+              deltaPct={paymentsDeltaPct}
+              sparkline={paymentsSpark}
+            />
           </div>
+          <p className="chart-subtitle">
+            «Оплаты» — изменение суммы оплаты, замеченное при очередной выгрузке из 1С; точной даты
+            платежа система не получает
+          </p>
 
           <div className="card">
             <h2 className="chart-title">Заказ-наряды по статусам за период</h2>
@@ -303,6 +356,7 @@ export default async function DashboardPage({
                 <RevenueTrendChart
                   current={trendCurrentItems}
                   previous={trendPreviousItems}
+                  payments={paymentTrendCurrentItems}
                   granularity={granularity}
                 />
               </div>

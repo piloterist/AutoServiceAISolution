@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 
 IMPORT_URL = "/api/v1/import/work-orders"
@@ -221,6 +222,240 @@ def test_import_accepts_missing_repair_type_as_null(
         select(WorkOrder).where(WorkOrder.external_number == "PS00010196")
     ).scalar_one()
     assert work_order.repair_type is None
+
+
+def test_import_stores_payment_fields(client, db_session, auth_headers) -> None:
+    """deal_amount/debt_amount/paid_amount/payment_percent - computed by the
+    1C export itself (5S AUTO's own ВзаиморасчетыКомпании logic), just
+    stored as sent."""
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "payment-test-1",
+        "records": [
+            {
+                "number": "PAYMENT-0001",
+                "date": "2026-09-16T09:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 231710.80,
+                "deal_amount": 231710.80,
+                "debt_amount": 181710.80,
+                "paid_amount": 50000.00,
+                "payment_percent": 21.58,
+            }
+        ],
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-0001")
+    ).scalar_one()
+    assert work_order.deal_amount == Decimal("231710.80")
+    assert work_order.debt_amount == Decimal("181710.80")
+    assert work_order.paid_amount == Decimal("50000.00")
+    assert work_order.payment_percent == Decimal("21.58")
+
+
+def test_import_accepts_missing_payment_fields_as_null(
+    client, db_session, auth_headers, sample_import_payload
+) -> None:
+    """Backward compatibility - an older export with no payment fields at
+    all must keep importing exactly as before."""
+    response = client.post(IMPORT_URL, json=sample_import_payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PS00010196")
+    ).scalar_one()
+    assert work_order.deal_amount is None
+    assert work_order.debt_amount is None
+    assert work_order.paid_amount is None
+    assert work_order.payment_percent is None
+
+
+def test_import_allows_negative_and_over_100_payment_percent(
+    client, db_session, auth_headers
+) -> None:
+    """5S AUTO's own figure isn't clamped to 0..100 (overpayment, unusual
+    settlement states) - neither is ours."""
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "payment-overpaid-1",
+        "records": [
+            {
+                "number": "PAYMENT-OVERPAID",
+                "date": "2026-09-16T09:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 10000,
+                "deal_amount": 10000,
+                "debt_amount": -2000,
+                "paid_amount": 12000,
+                "payment_percent": 120.00,
+            }
+        ],
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-OVERPAID")
+    ).scalar_one()
+    assert work_order.debt_amount == Decimal("-2000.00")
+    assert work_order.payment_percent == Decimal("120.00")
+
+
+def _payment_history(db_session, work_order_id) -> list[WorkOrderPaymentHistory]:
+    return list(
+        db_session.execute(
+            select(WorkOrderPaymentHistory)
+            .where(WorkOrderPaymentHistory.work_order_id == work_order_id)
+            .order_by(WorkOrderPaymentHistory.observed_at)
+        ).scalars()
+    )
+
+
+def _import_payment(client, auth_headers, batch_id, **payment_fields) -> None:
+    record = {
+        "number": "PAYMENT-HIST-0001",
+        "date": "2026-09-16T09:00:00",
+        "customer": "Test Customer",
+        "car": "VW TIGUAN",
+        "amount": 10000,
+        **payment_fields,
+    }
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": batch_id,
+        "records": [record],
+    }
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+
+def test_payment_history_creates_a_snapshot_on_first_import(
+    client, db_session, auth_headers
+) -> None:
+    _import_payment(
+        client,
+        auth_headers,
+        "payment-hist-1",
+        deal_amount=10000,
+        debt_amount=10000,
+        paid_amount=0,
+        payment_percent=0,
+    )
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-HIST-0001")
+    ).scalar_one()
+    rows = _payment_history(db_session, work_order.id)
+
+    assert len(rows) == 1
+    assert rows[0].deal_amount == Decimal("10000.00")
+    assert rows[0].debt_amount == Decimal("10000.00")
+    assert rows[0].paid_amount == Decimal("0.00")
+    assert rows[0].payment_percent == Decimal("0.00")
+
+
+def test_payment_history_unchanged_values_do_not_add_a_row(
+    client, db_session, auth_headers
+) -> None:
+    _import_payment(
+        client,
+        auth_headers,
+        "payment-hist-1",
+        deal_amount=10000,
+        debt_amount=10000,
+        paid_amount=0,
+        payment_percent=0,
+    )
+    _import_payment(
+        client,
+        auth_headers,
+        "payment-hist-2",
+        deal_amount=10000,
+        debt_amount=10000,
+        paid_amount=0,
+        payment_percent=0,
+    )
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-HIST-0001")
+    ).scalar_one()
+    rows = _payment_history(db_session, work_order.id)
+
+    assert len(rows) == 1
+
+
+def test_payment_history_adds_a_row_when_debt_changes(client, db_session, auth_headers) -> None:
+    _import_payment(
+        client,
+        auth_headers,
+        "payment-hist-1",
+        deal_amount=10000,
+        debt_amount=10000,
+        paid_amount=0,
+        payment_percent=0,
+    )
+    _import_payment(
+        client,
+        auth_headers,
+        "payment-hist-2",
+        deal_amount=10000,
+        debt_amount=4000,
+        paid_amount=6000,
+        payment_percent=60,
+    )
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-HIST-0001")
+    ).scalar_one()
+    rows = _payment_history(db_session, work_order.id)
+
+    assert len(rows) == 2
+    assert rows[0].debt_amount == Decimal("10000.00")
+    assert rows[1].debt_amount == Decimal("4000.00")
+    assert rows[1].paid_amount == Decimal("6000.00")
+    assert rows[1].payment_percent == Decimal("60.00")
+    assert rows[1].observed_at > rows[0].observed_at
+
+
+def test_payment_history_ignores_a_reimport_with_no_payment_data(
+    client, db_session, auth_headers
+) -> None:
+    """A later re-import that doesn't send payment fields at all (e.g. an
+    older-style batch) must not be mistaken for "payment data cleared" -
+    the existing snapshot just stays as the latest one."""
+    _import_payment(
+        client,
+        auth_headers,
+        "payment-hist-1",
+        deal_amount=10000,
+        debt_amount=10000,
+        paid_amount=0,
+        payment_percent=0,
+    )
+    _import_payment(client, auth_headers, "payment-hist-2")
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-HIST-0001")
+    ).scalar_one()
+    rows = _payment_history(db_session, work_order.id)
+
+    assert len(rows) == 1
 
 
 def test_import_stores_the_four_document_dates(client, db_session, auth_headers) -> None:

@@ -15,8 +15,14 @@ function formatDate(iso: string): string {
   });
 }
 
-function formatAmount(amount: string): string {
+function formatAmount(amount: string | null): string {
+  if (amount === null) return "—";
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(Number(amount)) + " ₽";
+}
+
+function formatPercent(percent: string | null): string {
+  if (percent === null) return "—";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(percent)) + "%";
 }
 
 export default async function WorkOrderDetailPage({
@@ -86,6 +92,18 @@ export default async function WorkOrderDetailPage({
               <span className="detail-label">Сумма</span>
               <span>{formatAmount(workOrder.amount)}</span>
             </div>
+            <div className="detail-field">
+              <span className="detail-label">% оплаты</span>
+              <span>{formatPercent(workOrder.payment_percent)}</span>
+            </div>
+            <div className="detail-field">
+              <span className="detail-label">Оплачено</span>
+              <span>{formatAmount(workOrder.paid_amount)}</span>
+            </div>
+            <div className="detail-field">
+              <span className="detail-label">Остаток долга</span>
+              <span>{formatAmount(workOrder.debt_amount)}</span>
+            </div>
           </div>
 
           <div className="card">
@@ -93,6 +111,7 @@ export default async function WorkOrderDetailPage({
               labor={workOrder.labor}
               parts={workOrder.parts}
               statusHistory={workOrder.status_history}
+              paymentHistory={workOrder.payment_history}
             />
           </div>
         </>

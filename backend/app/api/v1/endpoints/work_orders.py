@@ -21,6 +21,9 @@ from app.schemas.work_order import (
     DepartmentSummaryResponse,
     MonthlySummaryItem,
     MonthlySummaryResponse,
+    PaymentHistoryItem,
+    PaymentTrendItem,
+    PaymentTrendResponse,
     StatusHistoryItem,
     StatusSummaryItem,
     StatusSummaryResponse,
@@ -39,9 +42,11 @@ from app.services.work_order_query_service import (
     list_departments,
     list_labor_lines,
     list_part_lines,
+    list_payment_history,
     list_status_history,
     list_work_orders,
     monthly_summary,
+    payment_trend_summary,
     status_summary,
     trend_summary,
 )
@@ -184,6 +189,33 @@ def get_trend_summary(
     )
 
 
+@router.get("/work-orders/summary/payment-trend", response_model=PaymentTrendResponse)
+def get_payment_trend_summary(
+    date_from: datetime = Query(
+        ...,
+        description="Filters/groups by when a payment change was observed, not a real payment date",
+    ),
+    date_to: datetime = Query(...),
+    departments: str | None = Query(default=None, description="Comma-separated department names"),
+    granularity: str | None = Query(
+        default=None,
+        pattern="^(day|week|month)$",
+        description="Pass the same value /summary/trend resolved to, to align both charts' buckets",
+    ),
+    db: Session = Depends(get_db),
+) -> PaymentTrendResponse:
+    rows, resolved_granularity = payment_trend_summary(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        departments=_split_departments(departments),
+        granularity=granularity,
+    )
+    return PaymentTrendResponse(
+        items=[PaymentTrendItem(**row) for row in rows], granularity=resolved_granularity
+    )
+
+
 @router.get("/work-orders/{work_order_id}", response_model=WorkOrderDetail)
 def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) -> WorkOrderDetail:
     """Header (same fields as the list row) plus labor/parts tabular-section
@@ -211,6 +243,10 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
         ],
         status_history=[
             StatusHistoryItem.model_validate(row) for row in list_status_history(db, work_order_id)
+        ],
+        payment_history=[
+            PaymentHistoryItem.model_validate(row)
+            for row in list_payment_history(db, work_order_id)
         ],
     )
 

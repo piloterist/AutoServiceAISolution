@@ -14,6 +14,7 @@
   --chart-series: #2a78d6; /* sequential hue, step 450 (revenue) */
   --chart-series-2: #eb6834; /* next categorical slot - orange (order count) */
   --chart-series-previous: #c3c2b7; /* previous-period overlay line - neutral, not a data hue */
+  --chart-series-payment: #e0483a; /* payments overlay line - deliberately red, per request */
   --chart-gridline: #e1e0d9;
   --chart-baseline: #c3c2b7;
   --chart-ink-secondary: #52514e;
@@ -43,6 +44,7 @@
     --chart-series: #5b9bf0;
     --chart-series-2: #f0895b;
     --chart-series-previous: #4a4f5c;
+    --chart-series-payment: #ff6b5e;
     --chart-gridline: #262a33;
     --chart-baseline: #3a3f4c;
     --chart-ink-secondary: #b7bcc6;
@@ -65,6 +67,7 @@
   --chart-series: #5b9bf0;
   --chart-series-2: #f0895b;
   --chart-series-previous: #4a4f5c;
+  --chart-series-payment: #ff6b5e;
   --chart-gridline: #262a33;
   --chart-baseline: #3a3f4c;
   --chart-ink-secondary: #b7bcc6;
@@ -853,8 +856,12 @@ main:has(.wide-page) {
   stroke-dasharray: 5 4;
 }
 
-/* Legend for the trend chart's two series (current/previous) - only
-   rendered when a previous-period overlay is actually present, per the
+.chart-line-path-payment {
+  stroke: var(--chart-series-payment);
+}
+
+/* Legend for the trend chart's extra series (previous period, payments) -
+   each entry only rendered when that overlay is actually present, per the
    dataviz skill: a single series needs no legend box. */
 .chart-legend-line {
   display: flex;
@@ -884,6 +891,10 @@ main:has(.wide-page) {
 .chart-legend-key-previous {
   height: 0;
   border-top: 2px dashed var(--chart-series-previous);
+}
+
+.chart-legend-key-payment {
+  background: var(--chart-series-payment);
 }
 
 /* --- Dashboard filters (current + previous period, plain GET form) ---
@@ -1193,6 +1204,29 @@ main:has(.wide-page) {
 .data-table--parts th:nth-child(4),
 .data-table--parts td:nth-child(4) {
   width: 18%;
+}
+
+/* Payment history (История оплат) table - date, then three money columns
+   and a percent column. */
+.data-table--payments th:nth-child(1),
+.data-table--payments td:nth-child(1) {
+  width: 28%;
+}
+.data-table--payments th:nth-child(2),
+.data-table--payments td:nth-child(2) {
+  width: 22%;
+}
+.data-table--payments th:nth-child(3),
+.data-table--payments td:nth-child(3) {
+  width: 20%;
+}
+.data-table--payments th:nth-child(4),
+.data-table--payments td:nth-child(4) {
+  width: 18%;
+}
+.data-table--payments th:nth-child(5),
+.data-table--payments td:nth-child(5) {
+  width: 12%;
 }
 
 /* --- Work order detail: status history timeline --- */

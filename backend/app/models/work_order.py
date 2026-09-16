@@ -82,6 +82,20 @@ class WorkOrder(Base):
     # Money is never stored as float - fixed-precision NUMERIC only.
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
 
+    # Settlement/payment state as of the last import - 5S AUTO's own
+    # РегистрНакопления.ВзаиморасчетыКомпании.Остатки() calculation,
+    # reproduced batched in the 1C export itself (see
+    # 1c/TestExportOrders.bsl) and sent as-is; never recomputed here from
+    # raw payment documents. All nullable - older exports (and any work
+    # order 1C hasn't priced yet) simply don't send these.
+    deal_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    debt_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    paid_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Deliberately not bounded to 0..100 - 5S AUTO's own figure can go
+    # negative or past 100% (overpayment produces debt_amount < 0), and
+    # that's real data worth keeping, not an error to clamp away.
+    payment_percent: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+
     source_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

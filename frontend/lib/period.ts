@@ -75,3 +75,22 @@ export function previousPeriod(dateFrom: string, dateTo: string): { dateFrom: st
     dateTo: fmt(shiftMonths(to, shift)),
   };
 }
+
+/** Mirrors the backend's own auto-detection
+ * (work_order_query_service._resolve_granularity) exactly, so it can be
+ * computed once here and passed explicitly to every trend-shaped call
+ * (revenue trend, payment trend, current period, previous period) - all of
+ * them fetched in parallel, with no "wait for one response to know what to
+ * ask the others for" dependency, and all guaranteed to bucket identically
+ * so their series overlay on the same x-axis. */
+export function resolveGranularity(dateFrom: string, dateTo: string): "day" | "week" | "month" {
+  const from = toUTCDate(dateFrom);
+  const to = toUTCDate(dateTo);
+  // +1: the backend's own date_to is exclusive and gets pushed to the start
+  // of the next day (see backend-api.ts's dateToParam) before this span is
+  // measured there - this counts the same inclusive number of days.
+  const inclusiveSpanDays = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
+  if (inclusiveSpanDays <= 31) return "day";
+  if (inclusiveSpanDays <= 92) return "week";
+  return "month";
+}

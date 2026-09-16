@@ -26,6 +26,14 @@ export type WorkOrderListItem = {
   status: string | null;
   department: string | null;
   amount: string;
+  // Settlement state as of the last import - 5S AUTO's own
+  // ВзаиморасчетыКомпании calculation (see 1c/TestExportOrders.bsl), not
+  // recomputed here. null just means the source export didn't send
+  // payment data for this work order yet.
+  deal_amount: string | null;
+  debt_amount: string | null;
+  paid_amount: string | null;
+  payment_percent: string | null;
 };
 
 export type WorkOrderListResponse = {
@@ -80,6 +88,18 @@ export type TrendSummaryResponse = {
   granularity: "day" | "week" | "month";
 };
 
+export type PaymentTrendItem = {
+  period: string; // "YYYY-MM-DD" - start of the bucket (day/week/month)
+  // Net change in paid_amount observed in this bucket - there is no real
+  // payment date available (see getPaymentTrendSummary below).
+  total_amount: string;
+};
+
+export type PaymentTrendResponse = {
+  items: PaymentTrendItem[];
+  granularity: "day" | "week" | "month";
+};
+
 export type WorkOrderLaborLineItem = {
   operation_name: string | null;
   price: string | null;
@@ -101,10 +121,19 @@ export type StatusHistoryItem = {
   last_seen_at: string | null;
 };
 
+export type PaymentHistoryItem = {
+  observed_at: string;
+  deal_amount: string | null;
+  debt_amount: string | null;
+  paid_amount: string | null;
+  payment_percent: string | null;
+};
+
 export type WorkOrderDetail = WorkOrderListItem & {
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
   status_history: StatusHistoryItem[];
+  payment_history: PaymentHistoryItem[];
 };
 
 function backendToken(): string {
@@ -218,11 +247,34 @@ export function getTrendSummary(params: {
   dateFrom: string;
   dateTo: string;
   departments?: string[];
+  granularity?: "day" | "week" | "month";
 }): Promise<TrendSummaryResponse> {
   return backendGet<TrendSummaryResponse>("/api/v1/work-orders/summary/trend", {
     date_from: params.dateFrom,
     date_to: dateToParam(params.dateTo),
     departments: departmentsParam(params.departments),
+    granularity: params.granularity ?? "",
+  });
+}
+
+/** `granularity` should normally be the value the matching `getTrendSummary`
+ * call resolved to (its response's `granularity` field) - passing it
+ * explicitly here keeps both series bucketed identically so they overlay
+ * on the same x-axis. There is no real payment date in this integration -
+ * see work_order_query_service.payment_trend_summary on the backend for
+ * exactly what "period" means here (when a payment change was *observed*,
+ * not when 1C recorded it). */
+export function getPaymentTrendSummary(params: {
+  dateFrom: string;
+  dateTo: string;
+  departments?: string[];
+  granularity?: "day" | "week" | "month";
+}): Promise<PaymentTrendResponse> {
+  return backendGet<PaymentTrendResponse>("/api/v1/work-orders/summary/payment-trend", {
+    date_from: params.dateFrom,
+    date_to: dateToParam(params.dateTo),
+    departments: departmentsParam(params.departments),
+    granularity: params.granularity ?? "",
   });
 }
 

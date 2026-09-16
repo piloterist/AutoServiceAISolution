@@ -2,11 +2,21 @@
 
 import { useState } from "react";
 
-import type { StatusHistoryItem, WorkOrderLaborLineItem, WorkOrderPartLineItem } from "@/lib/backend-api";
+import type {
+  PaymentHistoryItem,
+  StatusHistoryItem,
+  WorkOrderLaborLineItem,
+  WorkOrderPartLineItem,
+} from "@/lib/backend-api";
 
 function formatMoney(value: string | null): string {
   if (value === null) return "—";
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(value)) + " ₽";
+}
+
+function formatPercent(value: string | null): string {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(value)) + "%";
 }
 
 function formatQuantity(value: string | null): string {
@@ -53,16 +63,18 @@ function formatDuration(ms: number): string {
   return `${minutes} ${pluralize(minutes, "минута", "минуты", "минут")}`;
 }
 
-type Tab = "labor" | "parts" | "history";
+type Tab = "labor" | "parts" | "history" | "payments";
 
 export function WorkOrderLineTabs({
   labor,
   parts,
   statusHistory,
+  paymentHistory,
 }: {
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
   statusHistory: StatusHistoryItem[];
+  paymentHistory: PaymentHistoryItem[];
 }) {
   const [tab, setTab] = useState<Tab>("labor");
   const now = Date.now();
@@ -96,6 +108,15 @@ export function WorkOrderLineTabs({
           onClick={() => setTab("history")}
         >
           История статусов ({statusHistory.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "payments"}
+          className={tab === "payments" ? "tab tab-active" : "tab"}
+          onClick={() => setTab("payments")}
+        >
+          История оплат ({paymentHistory.length})
         </button>
       </div>
 
@@ -194,6 +215,40 @@ export function WorkOrderLineTabs({
             </ol>
           )}
         </>
+      )}
+
+      {tab === "payments" && (
+        <div className="table-wrap">
+          <table className="data-table data-table--payments">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th className="num">Сумма сделки</th>
+                <th className="num">Долг</th>
+                <th className="num">Оплачено</th>
+                <th className="num">% оплаты</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paymentHistory.map((entry, index) => (
+                <tr key={index}>
+                  <td>{formatDateTime(entry.observed_at)}</td>
+                  <td className="num">{formatMoney(entry.deal_amount)}</td>
+                  <td className="num">{formatMoney(entry.debt_amount)}</td>
+                  <td className="num">{formatMoney(entry.paid_amount)}</td>
+                  <td className="num">{formatPercent(entry.payment_percent)}</td>
+                </tr>
+              ))}
+              {paymentHistory.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="table-empty">
+                    История оплат пока не накоплена.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

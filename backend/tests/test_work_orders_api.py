@@ -5,9 +5,11 @@ from sqlalchemy import select
 
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_payment_history import WorkOrderPaymentHistory
 
 LIST_URL = "/api/v1/work-orders"
 SUMMARY_URL = "/api/v1/work-orders/summary/monthly"
+PAYMENT_TREND_URL = "/api/v1/work-orders/summary/payment-trend"
 
 
 def _make_work_order(**overrides) -> WorkOrder:
@@ -313,9 +315,12 @@ def test_get_work_order_detail_returns_header_and_lines(client, db_session, auth
     assert len(body["parts"]) == 1
     assert body["parts"][0]["item_name"] == "Бампер передний"
     assert body["parts"][0]["quantity"] == "1.000"
-    # No status history for a work order that was never run through the
-    # import pipeline (see test_import.py for the tracking itself).
+    # No status/payment history for a work order that was never run through
+    # the import pipeline (see test_import.py for the tracking itself).
     assert body["status_history"] == []
+    assert body["payment_history"] == []
+    assert body["deal_amount"] is None
+    assert body["payment_percent"] is None
 
 
 def test_get_work_order_detail_includes_status_history(client, db_session, auth_headers) -> None:
@@ -370,6 +375,51 @@ def test_get_work_order_detail_includes_status_history(client, db_session, auth_
     assert history[1]["status"] == "Ожидание запчастей"
     assert history[1]["last_seen_at"] is None
     assert history[1]["first_seen_at"] == history[0]["last_seen_at"]
+
+
+def test_get_work_order_detail_includes_payment_history(client, db_session, auth_headers) -> None:
+    import_payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "detail-payment-1",
+        "records": [
+            {
+                "number": "WO-DETAIL-PAYMENT",
+                "date": "2026-09-16T09:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 231710.80,
+                "deal_amount": 231710.80,
+                "debt_amount": 181710.80,
+                "paid_amount": 50000.00,
+                "payment_percent": 21.58,
+            }
+        ],
+    }
+    assert (
+        client.post(
+            "/api/v1/import/work-orders", json=import_payload, headers=auth_headers
+        ).status_code
+        == 200
+    )
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "WO-DETAIL-PAYMENT")
+    ).scalar_one()
+
+    response = client.get(f"{LIST_URL}/{work_order.id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["deal_amount"] == "231710.80"
+    assert body["debt_amount"] == "181710.80"
+    assert body["paid_amount"] == "50000.00"
+    assert body["payment_percent"] == "21.58"
+    assert len(body["payment_history"]) == 1
+    assert body["payment_history"][0]["deal_amount"] == "231710.80"
+    assert body["payment_history"][0]["payment_percent"] == "21.58"
 
 
 def test_get_work_order_detail_missing_returns_404(client, auth_headers) -> None:
@@ -612,6 +662,183 @@ def test_trend_summary_granularity_can_be_overridden(client, db_session, auth_he
 
     assert response.status_code == 200
     assert response.json()["granularity"] == "week"
+
+
+def test_payment_trend_excludes_a_work_orders_first_snapshot(
+    client, db_session, auth_headers
+) -> None:
+    """The very first payment snapshot has nothing to diff against (LAG is
+    NULL) - it must not be counted as "a payment observed now"."""
+    work_order = _make_work_order(external_number="WO-PAY-FIRST")
+    db_session.add(work_order)
+    db_session.commit()
+    db_session.add(
+        WorkOrderPaymentHistory(
+            work_order_id=work_order.id,
+            observed_at=datetime(2026, 6, 5, 10, 0, 0),
+            deal_amount=Decimal("10000.00"),
+            debt_amount=Decimal("4000.00"),
+            paid_amount=Decimal("6000.00"),
+            payment_percent=Decimal("60.00"),
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        PAYMENT_TREND_URL,
+        headers=auth_headers,
+        params={"date_from": "2026-06-01T00:00:00", "date_to": "2026-06-10T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    items = {item["period"]: item for item in response.json()["items"]}
+    assert items["2026-06-05"]["total_amount"] == "0"
+
+
+def test_payment_trend_sums_the_delta_between_snapshots(client, db_session, auth_headers) -> None:
+    work_order = _make_work_order(external_number="WO-PAY-DELTA")
+    db_session.add(work_order)
+    db_session.commit()
+    db_session.add_all(
+        [
+            WorkOrderPaymentHistory(
+                work_order_id=work_order.id,
+                observed_at=datetime(2026, 6, 5, 10, 0, 0),
+                deal_amount=Decimal("10000.00"),
+                debt_amount=Decimal("10000.00"),
+                paid_amount=Decimal("0.00"),
+                payment_percent=Decimal("0.00"),
+            ),
+            WorkOrderPaymentHistory(
+                work_order_id=work_order.id,
+                observed_at=datetime(2026, 6, 7, 10, 0, 0),
+                deal_amount=Decimal("10000.00"),
+                debt_amount=Decimal("4000.00"),
+                paid_amount=Decimal("6000.00"),
+                payment_percent=Decimal("60.00"),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        PAYMENT_TREND_URL,
+        headers=auth_headers,
+        params={"date_from": "2026-06-01T00:00:00", "date_to": "2026-06-10T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    items = {item["period"]: item for item in response.json()["items"]}
+    # The first snapshot (05.06) contributes nothing; the jump to 6000 on
+    # 07.06 is the observed delta.
+    assert items["2026-06-05"]["total_amount"] == "0"
+    assert items["2026-06-07"]["total_amount"] == "6000.00"
+
+
+def test_payment_trend_nets_negative_deltas(client, db_session, auth_headers) -> None:
+    """A correction/reversal in 1C shows up as a negative delta - summed
+    as-is, not floored at zero."""
+    work_order = _make_work_order(external_number="WO-PAY-REVERSAL")
+    db_session.add(work_order)
+    db_session.commit()
+    db_session.add_all(
+        [
+            WorkOrderPaymentHistory(
+                work_order_id=work_order.id,
+                observed_at=datetime(2026, 6, 5, 10, 0, 0),
+                deal_amount=Decimal("10000.00"),
+                debt_amount=Decimal("10000.00"),
+                paid_amount=Decimal("0.00"),
+                payment_percent=Decimal("0.00"),
+            ),
+            WorkOrderPaymentHistory(
+                work_order_id=work_order.id,
+                observed_at=datetime(2026, 6, 6, 10, 0, 0),
+                deal_amount=Decimal("10000.00"),
+                debt_amount=Decimal("2000.00"),
+                paid_amount=Decimal("8000.00"),
+                payment_percent=Decimal("80.00"),
+            ),
+            WorkOrderPaymentHistory(
+                work_order_id=work_order.id,
+                observed_at=datetime(2026, 6, 8, 10, 0, 0),
+                deal_amount=Decimal("10000.00"),
+                debt_amount=Decimal("5000.00"),
+                paid_amount=Decimal("5000.00"),
+                payment_percent=Decimal("50.00"),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        PAYMENT_TREND_URL,
+        headers=auth_headers,
+        params={"date_from": "2026-06-01T00:00:00", "date_to": "2026-06-10T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    items = {item["period"]: item for item in response.json()["items"]}
+    assert items["2026-06-06"]["total_amount"] == "8000.00"
+    assert items["2026-06-08"]["total_amount"] == "-3000.00"
+
+
+def test_payment_trend_filters_by_department(client, db_session, auth_headers) -> None:
+    kuzovnoy = _make_work_order(external_number="WO-PAY-DEPT-1", department="Кузовной цех")
+    malyarny = _make_work_order(external_number="WO-PAY-DEPT-2", department="Малярный цех")
+    db_session.add_all([kuzovnoy, malyarny])
+    db_session.commit()
+    db_session.add_all(
+        [
+            WorkOrderPaymentHistory(
+                work_order_id=kuzovnoy.id,
+                observed_at=datetime(2026, 6, 5, 10, 0, 0),
+                deal_amount=Decimal("5000.00"),
+                debt_amount=Decimal("5000.00"),
+                paid_amount=Decimal("0.00"),
+                payment_percent=Decimal("0.00"),
+            ),
+            WorkOrderPaymentHistory(
+                work_order_id=kuzovnoy.id,
+                observed_at=datetime(2026, 6, 6, 10, 0, 0),
+                deal_amount=Decimal("5000.00"),
+                debt_amount=Decimal("0.00"),
+                paid_amount=Decimal("5000.00"),
+                payment_percent=Decimal("100.00"),
+            ),
+            WorkOrderPaymentHistory(
+                work_order_id=malyarny.id,
+                observed_at=datetime(2026, 6, 5, 10, 0, 0),
+                deal_amount=Decimal("3000.00"),
+                debt_amount=Decimal("3000.00"),
+                paid_amount=Decimal("0.00"),
+                payment_percent=Decimal("0.00"),
+            ),
+            WorkOrderPaymentHistory(
+                work_order_id=malyarny.id,
+                observed_at=datetime(2026, 6, 6, 10, 0, 0),
+                deal_amount=Decimal("3000.00"),
+                debt_amount=Decimal("0.00"),
+                paid_amount=Decimal("3000.00"),
+                payment_percent=Decimal("100.00"),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        PAYMENT_TREND_URL,
+        headers=auth_headers,
+        params={
+            "date_from": "2026-06-01T00:00:00",
+            "date_to": "2026-06-10T00:00:00",
+            "departments": "Кузовной цех",
+        },
+    )
+
+    assert response.status_code == 200
+    items = {item["period"]: item for item in response.json()["items"]}
+    assert items["2026-06-06"]["total_amount"] == "5000.00"
 
 
 def test_status_summary_filters_by_document_date(client, db_session, auth_headers) -> None:

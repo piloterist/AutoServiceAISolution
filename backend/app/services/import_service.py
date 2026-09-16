@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import structlog
 from sqlalchemy import delete, func, select, text, update
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 from app.schemas.import_work_order import ImportWorkOrderRecord, ImportWorkOrdersRequest
 
@@ -55,6 +57,10 @@ def _upsert_work_order(
         "department": record.department,
         "repair_type": record.repair_type,
         "amount": record.amount,
+        "deal_amount": record.deal_amount,
+        "debt_amount": record.debt_amount,
+        "paid_amount": record.paid_amount,
+        "payment_percent": record.payment_percent,
         "source_updated_at": exported_at,
         "raw_payload": record.model_dump(mode="json"),
     }
@@ -134,6 +140,59 @@ def _record_status_history(
     )
 
 
+def _record_payment_history(
+    db: Session,
+    work_order_id: uuid.UUID,
+    deal_amount: Decimal | None,
+    debt_amount: Decimal | None,
+    paid_amount: Decimal | None,
+    payment_percent: Decimal | None,
+    observed_at: datetime,
+) -> None:
+    """Append-only payment snapshot - see
+    models/work_order_payment_history.py.
+
+    No-ops when there's nothing to track: the export sent no payment data
+    at all for this record, or all four values are unchanged from the most
+    recent snapshot (an unchanged payment state on a later import doesn't
+    add a row, same reasoning as `_record_status_history`).
+    """
+    if (
+        deal_amount is None
+        and debt_amount is None
+        and paid_amount is None
+        and payment_percent is None
+    ):
+        return
+
+    last = db.execute(
+        select(WorkOrderPaymentHistory)
+        .where(WorkOrderPaymentHistory.work_order_id == work_order_id)
+        .order_by(WorkOrderPaymentHistory.observed_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if (
+        last is not None
+        and last.deal_amount == deal_amount
+        and last.debt_amount == debt_amount
+        and last.paid_amount == paid_amount
+        and last.payment_percent == payment_percent
+    ):
+        return
+
+    db.add(
+        WorkOrderPaymentHistory(
+            work_order_id=work_order_id,
+            observed_at=observed_at,
+            deal_amount=deal_amount,
+            debt_amount=debt_amount,
+            paid_amount=paid_amount,
+            payment_percent=payment_percent,
+        )
+    )
+
+
 def _replace_line_items(
     db: Session, work_order_id: uuid.UUID, record: ImportWorkOrderRecord
 ) -> None:
@@ -194,6 +253,15 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
             )
             _replace_line_items(db, work_order_id, record)
             _record_status_history(db, work_order_id, previous_status, record.status, observed_at)
+            _record_payment_history(
+                db,
+                work_order_id,
+                record.deal_amount,
+                record.debt_amount,
+                record.paid_amount,
+                record.payment_percent,
+                observed_at,
+            )
             if was_inserted:
                 inserted += 1
             else:

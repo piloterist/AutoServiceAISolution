@@ -27,6 +27,15 @@ class WorkOrderListItem(BaseModel):
     status: str | None
     department: str | None
     amount: Decimal
+    # Settlement state as of the last import - 5S AUTO's own
+    # ВзаиморасчетыКомпании calculation (see
+    # schemas/import_work_order.py), not recomputed here. None on either
+    # field just means the source export didn't send payment data for this
+    # work order yet (older export, or before 1C priced it).
+    deal_amount: Decimal | None
+    debt_amount: Decimal | None
+    paid_amount: Decimal | None
+    payment_percent: Decimal | None
 
     model_config = {"from_attributes": True}
 
@@ -56,6 +65,19 @@ class TrendSummaryItem(BaseModel):
 
 class TrendSummaryResponse(BaseModel):
     items: list[TrendSummaryItem]
+    granularity: str  # "day" | "week" | "month"
+
+
+class PaymentTrendItem(BaseModel):
+    period: str  # "YYYY-MM-DD" - start of the bucket (day/week/month)
+    # Net change in paid_amount observed in this bucket - see
+    # work_order_query_service.payment_trend_summary for exactly what this
+    # does and doesn't mean (there is no real payment date available).
+    total_amount: Decimal
+
+
+class PaymentTrendResponse(BaseModel):
+    items: list[PaymentTrendItem]
     granularity: str  # "day" | "week" | "month"
 
 
@@ -111,11 +133,24 @@ class StatusHistoryItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PaymentHistoryItem(BaseModel):
+    observed_at: datetime
+    deal_amount: Decimal | None
+    debt_amount: Decimal | None
+    paid_amount: Decimal | None
+    payment_percent: Decimal | None
+
+    model_config = {"from_attributes": True}
+
+
 class WorkOrderDetail(WorkOrderListItem):
     """Single work order's header (same fields as the list) plus its labor
-    (Работы) and parts (Товары) tabular-section lines, and its status
-    timeline (oldest first - see models/work_order_status_history.py)."""
+    (Работы) and parts (Товары) tabular-section lines, its status timeline
+    (oldest first - see models/work_order_status_history.py), and its
+    payment/settlement snapshots (oldest first - see
+    models/work_order_payment_history.py)."""
 
     labor: list[WorkOrderLaborLineItem]
     parts: list[WorkOrderPartLineItem]
     status_history: list[StatusHistoryItem]
+    payment_history: list[PaymentHistoryItem]

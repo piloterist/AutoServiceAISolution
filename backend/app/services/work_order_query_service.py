@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 
 
@@ -149,6 +150,26 @@ def _bucket_starts(date_from: datetime, date_to: datetime, granularity: str) -> 
     return starts
 
 
+def _resolve_granularity(date_from: datetime, date_to: datetime, granularity: str | None) -> str:
+    """Auto-detects from the requested period's length when not given
+    explicitly: <=31 days -> day, <=92 days (~3 months) -> week, otherwise
+    -> month. A caller comparing a period against its previous-period
+    counterpart (identical length, by construction) gets the same
+    granularity for both without having to coordinate it itself.
+    """
+    if granularity is None:
+        span_days = (date_to - date_from).days
+        if span_days <= 31:
+            return "day"
+        elif span_days <= 92:
+            return "week"
+        else:
+            return "month"
+    if granularity not in ("day", "week", "month"):
+        raise ValueError(f"Unsupported granularity: {granularity!r}")
+    return granularity
+
+
 def trend_summary(
     db: Session,
     *,
@@ -165,23 +186,8 @@ def trend_summary(
     exists to feed the dashboard's period-over-period trend chart, which
     needs finer buckets than a full month when the selected period itself is
     short (a single month selected would otherwise render as one bar).
-
-    Granularity auto-detects from the requested period's length when not
-    given explicitly: <=31 days -> day, <=92 days (~3 months) -> week,
-    otherwise -> month. A caller comparing a period against its
-    previous-period counterpart (identical length, by construction) gets the
-    same granularity for both without having to coordinate it itself.
     """
-    if granularity is None:
-        span_days = (date_to - date_from).days
-        if span_days <= 31:
-            granularity = "day"
-        elif span_days <= 92:
-            granularity = "week"
-        else:
-            granularity = "month"
-    elif granularity not in ("day", "week", "month"):
-        raise ValueError(f"Unsupported granularity: {granularity!r}")
+    granularity = _resolve_granularity(date_from, date_to, granularity)
 
     filters = _date_range_filters(WorkOrder.closed_date, date_from, date_to)
     filters.append(WorkOrder.closed_date.is_not(None))
@@ -216,6 +222,88 @@ def trend_summary(
         by_period.get(
             bucket.isoformat(),
             {"period": bucket.isoformat(), "work_order_count": 0, "total_amount": Decimal("0")},
+        )
+        for bucket in _bucket_starts(date_from, date_to, granularity)
+    ]
+    return items, granularity
+
+
+def payment_trend_summary(
+    db: Session,
+    *,
+    date_from: datetime,
+    date_to: datetime,
+    departments: list[str] | None = None,
+    granularity: str | None = None,
+) -> tuple[list[dict], str]:
+    """Net change in paid_amount observed per day/week/month, oldest first.
+
+    There is no real "payment date" available through this integration -
+    5S AUTO's own calculation (see 1c/TestExportOrders.bsl) gives a running
+    balance as of each import, not a ledger of individual payment
+    transactions with their own dates. This approximates "when did a
+    payment happen" by diffing each work order's consecutive payment
+    snapshots (work_order_payment_history, via a LAG window function) and
+    bucketing the deltas by when we *observed* the change (observed_at) -
+    only as accurate as how often imports actually run, not the real-world
+    moment 1C recorded the payment.
+
+    A work order's *first-ever* snapshot is deliberately excluded from the
+    delta sum (LAG is NULL there) - it almost always already carries some
+    paid_amount from before this feature started tracking that work order,
+    so counting the whole thing as "a payment observed now" would
+    misattribute historical payments to whatever day tracking happened to
+    start.
+
+    Deltas can be negative (a correction/reversal in 1C) - summed as-is,
+    not floored at zero, so this is a *net* change figure.
+    """
+    granularity = _resolve_granularity(date_from, date_to, granularity)
+
+    previous_paid_amount = func.lag(WorkOrderPaymentHistory.paid_amount).over(
+        partition_by=WorkOrderPaymentHistory.work_order_id,
+        order_by=WorkOrderPaymentHistory.observed_at,
+    )
+    delta = (WorkOrderPaymentHistory.paid_amount - previous_paid_amount).label("delta")
+
+    history_select = select(
+        WorkOrderPaymentHistory.observed_at.label("observed_at"),
+        delta,
+    )
+    if departments:
+        history_select = history_select.join(
+            WorkOrder, WorkOrder.id == WorkOrderPaymentHistory.work_order_id
+        ).where(WorkOrder.department.in_(departments))
+    # The window function must see a work order's *entire* history to
+    # compute each row's delta against its true previous snapshot, even
+    # when that previous snapshot falls outside [date_from, date_to) - so
+    # the date range is only applied in the outer query below, never here.
+    history = history_select.subquery()
+
+    period = func.date_trunc(granularity, history.c.observed_at).label("period")
+
+    rows = db.execute(
+        select(period, func.sum(history.c.delta).label("total_amount"))
+        .where(
+            history.c.delta.is_not(None),
+            history.c.observed_at >= date_from,
+            history.c.observed_at < date_to,
+        )
+        .group_by(period)
+        .order_by(period)
+    ).all()
+
+    by_period = {
+        row.period.date().isoformat(): {
+            "period": row.period.date().isoformat(),
+            "total_amount": row.total_amount,
+        }
+        for row in rows
+    }
+
+    items = [
+        by_period.get(
+            bucket.isoformat(), {"period": bucket.isoformat(), "total_amount": Decimal("0")}
         )
         for bucket in _bucket_starts(date_from, date_to, granularity)
     ]
@@ -361,6 +449,18 @@ def list_status_history(db: Session, work_order_id: UUID) -> list[WorkOrderStatu
         select(WorkOrderStatusHistory)
         .where(WorkOrderStatusHistory.work_order_id == work_order_id)
         .order_by(WorkOrderStatusHistory.first_seen_at)
+    ).scalars()
+    return list(rows)
+
+
+def list_payment_history(db: Session, work_order_id: UUID) -> list[WorkOrderPaymentHistory]:
+    """A work order's payment/settlement snapshots, oldest first - see
+    models/work_order_payment_history.py.
+    """
+    rows = db.execute(
+        select(WorkOrderPaymentHistory)
+        .where(WorkOrderPaymentHistory.work_order_id == work_order_id)
+        .order_by(WorkOrderPaymentHistory.observed_at)
     ).scalars()
     return list(rows)
 

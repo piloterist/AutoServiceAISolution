@@ -8,6 +8,11 @@ export type TrendPoint = {
   total_amount: string;
 };
 
+export type PaymentPoint = {
+  period: string; // "YYYY-MM-DD" - start of the bucket
+  total_amount: string;
+};
+
 const MONTH_LABELS = [
   "янв",
   "фев",
@@ -55,14 +60,24 @@ const CHART_HEIGHT = 260;
  * before" reads directly off the chart instead of requiring the reader to
  * remember last period's numbers. Bucket size (day/week/month) comes from
  * the backend, which auto-detects it from how long the selected period is
- * (see work_order_query_service.trend_summary). */
+ * (see work_order_query_service.trend_summary).
+ *
+ * `payments` (optional) overlays a third, solid red line - the net change
+ * in paid_amount observed per bucket (see
+ * work_order_query_service.payment_trend_summary; there is no real payment
+ * date in this integration, this is an approximation). A payment delta can
+ * be negative (a correction in 1C); the line is clamped at the zero
+ * baseline for its *position* since this chart has no negative axis, but
+ * the real signed value still shows on hover. */
 export function RevenueTrendChart({
   current,
   previous,
+  payments,
   granularity,
 }: {
   current: TrendPoint[];
   previous: TrendPoint[];
+  payments?: PaymentPoint[];
   granularity: "day" | "week" | "month";
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
@@ -73,21 +88,21 @@ export function RevenueTrendChart({
 
   const n = current.length;
 
-  // Scale the axis to what's actually drawn - only the previous-period
-  // points that get rendered (aligned/clipped to the current period's
-  // bucket count below), never the full previous array. Using the full
-  // array here was the bug: if the previous period ever resolved to more
-  // buckets than the current one (a granularity/boundary mismatch), a
-  // point that never appears on the chart could still blow up the axis to
-  // many times the tallest visible bar.
+  // Scale the axis to what's actually drawn - only the previous-period/
+  // payment points that get rendered (aligned/clipped to the current
+  // period's bucket count below), never the full arrays. Using the full
+  // array here was the bug once before: a point that never appears on the
+  // chart could still blow up the axis to many times the tallest visible
+  // bar.
   const currentValues = current.map((p) => Number(p.total_amount));
   const previousValues = previous.slice(0, n).map((p) => Number(p.total_amount));
-  const maxValue = Math.max(...currentValues, ...previousValues, 1);
+  const paymentValues = (payments ?? []).slice(0, n).map((p) => Math.max(0, Number(p.total_amount)));
+  const maxValue = Math.max(...currentValues, ...previousValues, ...paymentValues, 1);
   const niceMax = Math.ceil(maxValue / 4) * 4 || 1;
   const ticks = [0, niceMax / 2, niceMax];
 
   const xPct = (i: number) => (n === 1 ? 50 : (i / (n - 1)) * 100);
-  const yPct = (value: number) => (value / niceMax) * 100;
+  const yPct = (value: number) => (Math.max(0, value) / niceMax) * 100;
 
   const currentPoints = current.map((point, i) => ({
     point,
@@ -103,16 +118,23 @@ export function RevenueTrendChart({
     xPct: xPct(i),
     yPct: yPct(Number(point.total_amount)),
   }));
+  const paymentPoints = (payments ?? []).slice(0, n).map((point, i) => ({
+    point,
+    xPct: xPct(i),
+    yPct: yPct(Number(point.total_amount)),
+  }));
 
   const pathFor = (points: { xPct: number; yPct: number }[]) =>
     points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.xPct} ${100 - p.yPct}`).join(" ");
 
   const currentLine = pathFor(currentPoints);
   const previousLine = previousPoints.length > 1 ? pathFor(previousPoints) : "";
+  const paymentLine = paymentPoints.length > 1 ? pathFor(paymentPoints) : "";
   const areaPath = `${currentLine} L ${currentPoints[n - 1].xPct} 100 L ${currentPoints[0].xPct} 100 Z`;
 
   const hoveredCurrent = hovered !== null ? currentPoints[hovered] : null;
   const hoveredPrevious = hovered !== null ? (previousPoints[hovered] ?? null) : null;
+  const hoveredPayment = hovered !== null ? (paymentPoints[hovered] ?? null) : null;
 
   const handleMove = (event: React.MouseEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -132,16 +154,24 @@ export function RevenueTrendChart({
 
   return (
     <div className="chart-root">
-      {previousLine && (
+      {(previousLine || paymentLine) && (
         <div className="chart-legend-line">
           <span className="chart-legend-item">
             <span className="chart-legend-key chart-legend-key-current" />
             Текущий период
           </span>
-          <span className="chart-legend-item">
-            <span className="chart-legend-key chart-legend-key-previous" />
-            Предыдущий период
-          </span>
+          {previousLine && (
+            <span className="chart-legend-item">
+              <span className="chart-legend-key chart-legend-key-previous" />
+              Предыдущий период
+            </span>
+          )}
+          {paymentLine && (
+            <span className="chart-legend-item">
+              <span className="chart-legend-key chart-legend-key-payment" />
+              Оплаты
+            </span>
+          )}
         </div>
       )}
 
@@ -170,6 +200,13 @@ export function RevenueTrendChart({
               vectorEffect="non-scaling-stroke"
             />
           )}
+          {paymentLine && (
+            <path
+              d={paymentLine}
+              className="chart-line-path chart-line-path-payment"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
           <path d={currentLine} className="chart-line-path" vectorEffect="non-scaling-stroke" />
         </svg>
 
@@ -191,6 +228,11 @@ export function RevenueTrendChart({
             {hoveredPrevious && (
               <span className="chart-tooltip-muted">
                 пред.: {formatAmount(Number(hoveredPrevious.point.total_amount))}
+              </span>
+            )}
+            {hoveredPayment && (
+              <span className="chart-tooltip-muted">
+                оплаты: {formatAmount(Number(hoveredPayment.point.total_amount))}
               </span>
             )}
           </div>
