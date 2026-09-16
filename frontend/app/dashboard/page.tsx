@@ -10,6 +10,7 @@ import {
   type DepartmentSummaryItem,
   getDepartmentSummary,
   getMonthlySummary,
+  getPaymentDepartmentSummary,
   getPaymentTrendSummary,
   getStatusSummary,
   getTrendSummary,
@@ -158,6 +159,7 @@ export default async function DashboardPage({
   let monthlySummary;
   let departmentSummary;
   let departmentSummaryPrevious;
+  let paymentDepartmentSummary;
   let statusSummary;
   let trendCurrent;
   let trendPrevious;
@@ -170,6 +172,7 @@ export default async function DashboardPage({
       monthlyRes,
       deptRes,
       deptPrevRes,
+      paymentDeptRes,
       statusRes,
       trendRes,
       trendPrevRes,
@@ -179,6 +182,7 @@ export default async function DashboardPage({
       getMonthlySummary(yearToDateParams),
       getDepartmentSummary(filterParams),
       getDepartmentSummary(previousFilterParams),
+      getPaymentDepartmentSummary(filterParams),
       getStatusSummary(filterParams),
       getTrendSummary({ ...filterParams, granularity }),
       getTrendSummary({ ...previousFilterParams, granularity }),
@@ -188,6 +192,7 @@ export default async function DashboardPage({
     monthlySummary = monthlyRes;
     departmentSummary = deptRes;
     departmentSummaryPrevious = deptPrevRes;
+    paymentDepartmentSummary = paymentDeptRes;
     statusSummary = statusRes;
     trendCurrent = trendRes;
     trendPrevious = trendPrevRes;
@@ -241,6 +246,14 @@ export default async function DashboardPage({
     value: Number(item.total_amount),
     meta: `${item.work_order_count.toLocaleString("ru-RU")} ${pluralWorkOrders(item.work_order_count)}`,
   }));
+
+  const paymentDepartmentRanked: RankedItem[] = (paymentDepartmentSummary?.items ?? []).map(
+    (item) => ({
+      label: item.department,
+      value: Number(item.total_amount),
+      meta: `${item.work_order_count.toLocaleString("ru-RU")} ${pluralWorkOrders(item.work_order_count)}`,
+    }),
+  );
 
   const statusItems = statusSummary?.items ?? [];
   const totalStatusCount = statusItems.reduce((sum, item) => sum + item.work_order_count, 0);
@@ -349,7 +362,6 @@ export default async function DashboardPage({
               href={paymentsHref}
             />
           </div>
-          <p className="chart-subtitle">«Оплаты» — по реальной дате платежа из 1С</p>
 
           <div className="card">
             <h2 className="chart-title">Заказ-наряды по статусам за период</h2>
@@ -388,6 +400,24 @@ export default async function DashboardPage({
                 </p>
                 <RankedList
                   data={departmentRanked}
+                  kind="amount"
+                  mode="department-filter"
+                  dateFrom={dateFrom}
+                  dateTo={dateTo}
+                  prevDateFrom={previousRange.dateFrom}
+                  prevDateTo={previousRange.dateTo}
+                  selectedDepartments={selectedDepartments}
+                />
+              </div>
+
+              <div className="card">
+                <h2 className="chart-title">Оплаты по подразделениям</h2>
+                <p className="chart-subtitle">
+                  по реальной дате платежа — нажмите на подразделение, чтобы отфильтровать всю
+                  страницу по нему
+                </p>
+                <RankedList
+                  data={paymentDepartmentRanked}
                   kind="amount"
                   mode="department-filter"
                   dateFrom={dateFrom}

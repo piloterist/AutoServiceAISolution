@@ -21,6 +21,7 @@ from app.schemas.work_order import (
     DepartmentSummaryResponse,
     MonthlySummaryItem,
     MonthlySummaryResponse,
+    PaymentEventItem,
     PaymentHistoryItem,
     PaymentTrendItem,
     PaymentTrendResponse,
@@ -42,10 +43,12 @@ from app.services.work_order_query_service import (
     list_departments,
     list_labor_lines,
     list_part_lines,
+    list_payment_events,
     list_payment_history,
     list_status_history,
     list_work_orders,
     monthly_summary,
+    payment_department_summary,
     payment_trend_summary,
     status_summary,
     trend_summary,
@@ -138,6 +141,24 @@ def get_department_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
+    )
+    return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
+
+
+@router.get("/work-orders/summary/payment-by-department", response_model=DepartmentSummaryResponse)
+def get_payment_department_summary(
+    date_from: datetime | None = Query(
+        default=None, description="Filters by the real payment date (paid_at)"
+    ),
+    date_to: datetime | None = Query(default=None),
+    departments: str | None = Query(default=None, description="Comma-separated department names"),
+    db: Session = Depends(get_db),
+) -> DepartmentSummaryResponse:
+    rows = payment_department_summary(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        departments=_split_departments(departments),
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
 
@@ -253,6 +274,9 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
         payment_history=[
             PaymentHistoryItem.model_validate(row)
             for row in list_payment_history(db, work_order_id)
+        ],
+        payment_events=[
+            PaymentEventItem.model_validate(row) for row in list_payment_events(db, work_order_id)
         ],
     )
 

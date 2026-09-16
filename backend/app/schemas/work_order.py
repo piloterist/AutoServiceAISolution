@@ -143,14 +143,27 @@ class PaymentHistoryItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PaymentEventItem(BaseModel):
+    """A real, dated payment - see models/work_order_payment_event.py."""
+
+    paid_at: datetime
+    amount: Decimal
+    source_document_type: str | None
+    source_document_number: str | None
+
+    model_config = {"from_attributes": True}
+
+
 class WorkOrderDetail(WorkOrderListItem):
     """Single work order's header (same fields as the list) plus its labor
     (Работы) and parts (Товары) tabular-section lines, its status timeline
-    (oldest first - see models/work_order_status_history.py), and its
-    payment/settlement snapshots (oldest first - see
-    models/work_order_payment_history.py)."""
+    (oldest first - see models/work_order_status_history.py), its payment/
+    settlement snapshots (oldest first - see
+    models/work_order_payment_history.py), and its real dated payments
+    (oldest first - see models/work_order_payment_event.py)."""
 
     labor: list[WorkOrderLaborLineItem]
     parts: list[WorkOrderPartLineItem]
     status_history: list[StatusHistoryItem]
     payment_history: list[PaymentHistoryItem]
+    payment_events: list[PaymentEventItem]

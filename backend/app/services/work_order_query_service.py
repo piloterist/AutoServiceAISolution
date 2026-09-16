@@ -345,6 +345,50 @@ def department_summary(
     ]
 
 
+def payment_department_summary(
+    db: Session,
+    *,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    departments: list[str] | None = None,
+) -> list[dict]:
+    """Total real payments received per department, for a period - the
+    payments-tile analogue of department_summary. Grouped/filtered by
+    work_order_payment_events.paid_at (the real 1C payment date), not
+    closed_date. `work_order_count` is the number of distinct work orders
+    with a payment in range for that department, not a count of payment
+    events.
+    """
+    filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, date_from, date_to)
+    filters.append(WorkOrder.department.is_not(None))
+    filters.append(WorkOrder.department != "")
+    if departments:
+        filters.append(WorkOrder.department.in_(departments))
+
+    rows = db.execute(
+        select(
+            WorkOrder.department,
+            func.count(func.distinct(WorkOrderPaymentEvent.work_order_id)).label(
+                "work_order_count"
+            ),
+            func.sum(WorkOrderPaymentEvent.amount).label("total_amount"),
+        )
+        .join(WorkOrder, WorkOrder.id == WorkOrderPaymentEvent.work_order_id)
+        .where(*filters)
+        .group_by(WorkOrder.department)
+        .order_by(func.sum(WorkOrderPaymentEvent.amount).desc())
+    ).all()
+
+    return [
+        {
+            "department": row.department,
+            "work_order_count": row.work_order_count,
+            "total_amount": row.total_amount,
+        }
+        for row in rows
+    ]
+
+
 def status_summary(
     db: Session,
     *,
@@ -450,6 +494,21 @@ def list_payment_history(db: Session, work_order_id: UUID) -> list[WorkOrderPaym
         select(WorkOrderPaymentHistory)
         .where(WorkOrderPaymentHistory.work_order_id == work_order_id)
         .order_by(WorkOrderPaymentHistory.observed_at)
+    ).scalars()
+    return list(rows)
+
+
+def list_payment_events(db: Session, work_order_id: UUID) -> list[WorkOrderPaymentEvent]:
+    """A work order's real, dated payments, oldest first - see
+    models/work_order_payment_event.py. This is what the detail page's
+    "История оплат" tab shows - unlike payment_history (a periodic balance
+    snapshot dated by when we *observed* it), paid_at here is the actual 1C
+    payment date.
+    """
+    rows = db.execute(
+        select(WorkOrderPaymentEvent)
+        .where(WorkOrderPaymentEvent.work_order_id == work_order_id)
+        .order_by(WorkOrderPaymentEvent.paid_at)
     ).scalars()
     return list(rows)
 

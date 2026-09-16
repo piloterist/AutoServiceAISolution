@@ -383,9 +383,7 @@ def test_import_accepts_missing_payment_events_as_empty(
     assert _payment_events(db_session, work_order.id) == []
 
 
-def test_import_payment_events_is_idempotent_on_reimport(
-    client, db_session, auth_headers
-) -> None:
+def test_import_payment_events_is_idempotent_on_reimport(client, db_session, auth_headers) -> None:
     """A full historical re-export resends every payment for every work
     order every time - re-importing the same (work_order, document, line)
     must not create a duplicate row."""

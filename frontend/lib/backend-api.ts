@@ -129,11 +129,20 @@ export type PaymentHistoryItem = {
   payment_percent: string | null;
 };
 
+export type PaymentEventItem = {
+  // The real 1C payment date - not when we happened to import/observe it.
+  paid_at: string;
+  amount: string;
+  source_document_type: string | null;
+  source_document_number: string | null;
+};
+
 export type WorkOrderDetail = WorkOrderListItem & {
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
   status_history: StatusHistoryItem[];
   payment_history: PaymentHistoryItem[];
+  payment_events: PaymentEventItem[];
 };
 
 function backendToken(): string {
@@ -233,6 +242,22 @@ export function getDepartmentSummary(
     date_to: dateToParam(params?.dateTo),
     departments: departmentsParam(params?.departments),
   });
+}
+
+/** Same shape as getDepartmentSummary, but grouped/filtered by the real
+ * payment date (paid_at on work_order_payment_events) instead of
+ * closed_date - the "Оплаты по подразделениям" sidebar card. */
+export function getPaymentDepartmentSummary(
+  params?: PeriodAndDepartmentParams,
+): Promise<DepartmentSummaryResponse> {
+  return backendGet<DepartmentSummaryResponse>(
+    "/api/v1/work-orders/summary/payment-by-department",
+    {
+      date_from: params?.dateFrom ?? "",
+      date_to: dateToParam(params?.dateTo),
+      departments: departmentsParam(params?.departments),
+    },
+  );
 }
 
 export function getDepartments(): Promise<DepartmentListResponse> {

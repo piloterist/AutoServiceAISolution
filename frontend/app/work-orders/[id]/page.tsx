@@ -111,7 +111,7 @@ export default async function WorkOrderDetailPage({
               labor={workOrder.labor}
               parts={workOrder.parts}
               statusHistory={workOrder.status_history}
-              paymentHistory={workOrder.payment_history}
+              paymentEvents={workOrder.payment_events}
             />
           </div>
         </>

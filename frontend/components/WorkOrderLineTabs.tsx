@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 import type {
-  PaymentHistoryItem,
+  PaymentEventItem,
   StatusHistoryItem,
   WorkOrderLaborLineItem,
   WorkOrderPartLineItem,
@@ -12,11 +12,6 @@ import type {
 function formatMoney(value: string | null): string {
   if (value === null) return "—";
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(value)) + " ₽";
-}
-
-function formatPercent(value: string | null): string {
-  if (value === null) return "—";
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(value)) + "%";
 }
 
 function formatQuantity(value: string | null): string {
@@ -69,12 +64,14 @@ export function WorkOrderLineTabs({
   labor,
   parts,
   statusHistory,
-  paymentHistory,
+  paymentEvents,
 }: {
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
   statusHistory: StatusHistoryItem[];
-  paymentHistory: PaymentHistoryItem[];
+  /** Real, dated payments (work_order_payment_events) - each row's date is
+   * the actual 1C payment date, not when we happened to observe it. */
+  paymentEvents: PaymentEventItem[];
 }) {
   const [tab, setTab] = useState<Tab>("labor");
   const now = Date.now();
@@ -116,7 +113,7 @@ export function WorkOrderLineTabs({
           className={tab === "payments" ? "tab tab-active" : "tab"}
           onClick={() => setTab("payments")}
         >
-          История оплат ({paymentHistory.length})
+          История оплат ({paymentEvents.length})
         </button>
       </div>
 
@@ -223,25 +220,25 @@ export function WorkOrderLineTabs({
             <thead>
               <tr>
                 <th>Дата</th>
-                <th className="num">Сумма сделки</th>
-                <th className="num">Долг</th>
-                <th className="num">Оплачено</th>
-                <th className="num">% оплаты</th>
+                <th className="num">Сумма</th>
+                <th>Документ</th>
               </tr>
             </thead>
             <tbody>
-              {paymentHistory.map((entry, index) => (
+              {paymentEvents.map((entry, index) => (
                 <tr key={index}>
-                  <td>{formatDateTime(entry.observed_at)}</td>
-                  <td className="num">{formatMoney(entry.deal_amount)}</td>
-                  <td className="num">{formatMoney(entry.debt_amount)}</td>
-                  <td className="num">{formatMoney(entry.paid_amount)}</td>
-                  <td className="num">{formatPercent(entry.payment_percent)}</td>
+                  <td>{formatDateTime(entry.paid_at)}</td>
+                  <td className="num">{formatMoney(entry.amount)}</td>
+                  <td>
+                    {[entry.source_document_type, entry.source_document_number]
+                      .filter(Boolean)
+                      .join(" ") || "—"}
+                  </td>
                 </tr>
               ))}
-              {paymentHistory.length === 0 && (
+              {paymentEvents.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="table-empty">
+                  <td colSpan={3} className="table-empty">
                     История оплат пока не накоплена.
                   </td>
                 </tr>
