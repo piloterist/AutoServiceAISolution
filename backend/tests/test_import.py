@@ -180,6 +180,49 @@ def test_import_stores_status_department_labor_and_parts(client, db_session, aut
     assert len(part_lines_after) == 0
 
 
+def test_import_stores_repair_type(client, db_session, auth_headers) -> None:
+    """ЗаказНаряд.ВидРемонта - captured starting now (see
+    schemas/import_work_order.py) but not yet exposed on any read endpoint;
+    this only proves it's actually reaching the work_orders row."""
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "repair-type-test-1",
+        "records": [
+            {
+                "number": "REPAIR-TYPE-0001",
+                "date": "2026-09-16T09:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 3000,
+                "repair_type": "Аварийный ремонт",
+            }
+        ],
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "REPAIR-TYPE-0001")
+    ).scalar_one()
+    assert work_order.repair_type == "Аварийный ремонт"
+
+
+def test_import_accepts_missing_repair_type_as_null(
+    client, db_session, auth_headers, sample_import_payload
+) -> None:
+    response = client.post(IMPORT_URL, json=sample_import_payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PS00010196")
+    ).scalar_one()
+    assert work_order.repair_type is None
+
+
 def test_import_stores_the_four_document_dates(client, db_session, auth_headers) -> None:
     payload = {
         "source": "alpha-auto",

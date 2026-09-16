@@ -34,10 +34,17 @@ class ImportWorkOrderRecord(BaseModel):
     payer: str | None = None
     car: str | None = None
     amount: Decimal
-    # Plain text passthrough - no hardcoded status/department values here,
-    # whatever the client's 1C sends is stored as-is (see ARCHITECTURE.md).
+    # Plain text passthrough - no hardcoded status/department/repair-type
+    # values here, whatever the client's 1C sends is stored as-is (see
+    # ARCHITECTURE.md).
     status: str | None = None
     department: str | None = None
+    # ЗаказНаряд.ВидРемонта - a work order attribute (accident repair,
+    # scheduled maintenance, warranty, etc; exact values are per-client
+    # 1C data, never hardcoded here). Captured starting now but not yet
+    # wired into any read endpoint/UI - just accumulating data for when
+    # that's built.
+    repair_type: str | None = None
     # Four more document dates (ЗаказНаряд.ДатаСоздания/ДатаНачала/
     # ДатаОкончания/ДатаЗакрытия), distinct from `date` above. All optional -
     # 1C sends null instead of its "empty date" sentinel when a field isn't

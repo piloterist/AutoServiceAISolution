@@ -53,6 +53,7 @@ def _upsert_work_order(
         "vehicle_description": record.car,
         "status": record.status,
         "department": record.department,
+        "repair_type": record.repair_type,
         "amount": record.amount,
         "source_updated_at": exported_at,
         "raw_payload": record.model_dump(mode="json"),
