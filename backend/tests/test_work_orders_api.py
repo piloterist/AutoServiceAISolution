@@ -69,6 +69,34 @@ def test_list_work_orders_filters_by_date_range(client, db_session, auth_headers
     assert [item["external_number"] for item in body["items"]] == ["WO-JULY"]
 
 
+def test_list_work_orders_filters_by_paid_range(client, db_session, auth_headers) -> None:
+    """paid_from/paid_to restricts to work orders with a real payment event
+    in that range - what the dashboard's "Оплаты за период" tile links to."""
+    paid = _make_work_order(external_number="WO-PAID", document_date=datetime(2026, 1, 1))
+    unpaid = _make_work_order(external_number="WO-UNPAID", document_date=datetime(2026, 1, 1))
+    db_session.add_all([paid, unpaid])
+    db_session.commit()
+    db_session.add(
+        WorkOrderPaymentEvent(
+            work_order_id=paid.id,
+            paid_at=datetime(2026, 6, 5, 10, 0, 0),
+            amount=Decimal("1000.00"),
+            source_document_id="77777777-7777-7777-7777-777777777777",
+        )
+    )
+    db_session.commit()
+
+    response = client.get(
+        LIST_URL,
+        headers=auth_headers,
+        params={"paid_from": "2026-06-01T00:00:00", "paid_to": "2026-07-01T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [item["external_number"] for item in body["items"]] == ["WO-PAID"]
+
+
 def test_monthly_summary_groups_and_sums_by_month(client, db_session, auth_headers) -> None:
     db_session.add(
         _make_work_order(

@@ -14,6 +14,14 @@ type SearchParams = {
   closed_from?: string;
   closed_to?: string;
   departments?: string;
+  // Distinct from date_from/date_to (document_date) - restricts to work
+  // orders with a real payment (paid_at) in this range, e.g. arriving from
+  // the dashboard's "Оплаты за период" tile. Has to be applied server-side
+  // (unlike the other filters, which filter the already-fetched full list
+  // client-side in WorkOrdersTable) since payment events aren't part of
+  // the list payload.
+  paid_from?: string;
+  paid_to?: string;
 };
 
 export default async function WorkOrdersPage({
@@ -27,7 +35,11 @@ export default async function WorkOrdersPage({
   let error: string | null = null;
 
   try {
-    data = await getWorkOrders({ limit: 5000 });
+    data = await getWorkOrders({
+      limit: 5000,
+      paidFrom: params.paid_from,
+      paidTo: params.paid_to,
+    });
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
   }
@@ -51,6 +63,8 @@ export default async function WorkOrdersPage({
           initialClosedFrom={params.closed_from}
           initialClosedTo={params.closed_to}
           initialDepartment={params.departments}
+          paidFrom={params.paid_from}
+          paidTo={params.paid_to}
         />
       )}
     </div>

@@ -193,12 +193,23 @@ function dateToParam(dateTo?: string): string {
 }
 
 export function getWorkOrders(
-  params?: PeriodAndDepartmentParams & { limit?: number; offset?: number },
+  params?: PeriodAndDepartmentParams & {
+    /** Restricts to work orders with a real payment (paid_at) in this
+     * range - what the dashboard's "Оплаты за период" tile links to (see
+     * work_order_query_service.list_work_orders on the backend). Distinct
+     * from dateFrom/dateTo, which filter by document_date. */
+    paidFrom?: string;
+    paidTo?: string;
+    limit?: number;
+    offset?: number;
+  },
 ): Promise<WorkOrderListResponse> {
   return backendGet<WorkOrderListResponse>("/api/v1/work-orders", {
     date_from: params?.dateFrom ?? "",
     date_to: dateToParam(params?.dateTo),
     departments: departmentsParam(params?.departments),
+    paid_from: params?.paidFrom ?? "",
+    paid_to: dateToParam(params?.paidTo),
     limit: params?.limit ? String(params.limit) : "",
     offset: params?.offset ? String(params.offset) : "",
   });

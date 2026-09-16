@@ -19,6 +19,30 @@ function formatAmount(amount: string | number): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(value) + " ₽";
 }
 
+function formatAmountOrDash(amount: string | null): string {
+  if (amount === null) return "—";
+  return formatAmount(amount);
+}
+
+function formatPercentOrDash(percent: string | null): string {
+  if (percent === null) return "—";
+  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(percent)) + "%";
+}
+
+type PaymentFilter = "all" | "full" | "partial" | "none";
+
+/** "Оплата" filter categories, derived from the same payment_percent 5S
+ * AUTO already computes (see WorkOrderListItem) - not a new calculation.
+ * A null payment_percent (no payment data from 1C yet) counts as "Без
+ * оплаты", same as an explicit 0. */
+function matchesPaymentFilter(percent: string | null, filter: PaymentFilter): boolean {
+  if (filter === "all") return true;
+  const value = percent === null ? 0 : Number(percent);
+  if (filter === "none") return value <= 0;
+  if (filter === "partial") return value > 0 && value < 100;
+  return value >= 100; // "full"
+}
+
 /** `iso` falls within [dateFrom, dateTo] - dateTo is treated as inclusive of
  * that whole day (a plain <input type="date"> picker gives no time
  * component, and "по 13.09" should include everything on the 13th). A null
@@ -53,6 +77,8 @@ type Row = {
   status: string;
   department: string;
   amount: string;
+  paidAmount: string;
+  paymentPercent: string;
 };
 
 type ColumnKey =
@@ -63,7 +89,9 @@ type ColumnKey =
   | "customer"
   | "status"
   | "department"
-  | "amount";
+  | "amount"
+  | "paidAmount"
+  | "paymentPercent";
 
 const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "createdDate", label: "Дата создания" },
@@ -74,6 +102,8 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "status", label: "Статус" },
   { key: "department", label: "Подразделение" },
   { key: "amount", label: "Сумма", numeric: true },
+  { key: "paidAmount", label: "Сумма оплаты", numeric: true },
+  { key: "paymentPercent", label: "% оплаты", numeric: true },
 ];
 
 export function WorkOrdersTable({
@@ -84,6 +114,8 @@ export function WorkOrdersTable({
   initialClosedFrom,
   initialClosedTo,
   initialDepartment,
+  paidFrom,
+  paidTo,
 }: {
   items: WorkOrderListItem[];
   /** Pre-applied filters, e.g. arriving from a click on the dashboard's
@@ -98,6 +130,13 @@ export function WorkOrdersTable({
   initialClosedFrom?: string;
   initialClosedTo?: string;
   initialDepartment?: string;
+  /** Set when `items` already arrived pre-filtered by real payment date
+   * (the dashboard's "Оплаты за период" tile) - unlike the other initial*
+   * filters above, this one was applied server-side (see
+   * app/work-orders/page.tsx), so it's only used here to show a banner,
+   * not to filter `rows` again. */
+  paidFrom?: string;
+  paidTo?: string;
 }) {
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -110,6 +149,8 @@ export function WorkOrdersTable({
     status: "",
     department: initialDepartment ?? "",
     amount: "",
+    paidAmount: "",
+    paymentPercent: "",
   });
   // Status has its own checkbox dropdown (below) instead of the generic
   // per-column text filter every other column gets - a free-text substring
@@ -121,6 +162,7 @@ export function WorkOrdersTable({
   const [dateTo, setDateTo] = useState(initialDateTo ?? "");
   const [closedFrom, setClosedFrom] = useState(initialClosedFrom ?? "");
   const [closedTo, setClosedTo] = useState(initialClosedTo ?? "");
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
 
   const rows: Row[] = useMemo(
     () =>
@@ -134,6 +176,8 @@ export function WorkOrdersTable({
         status: item.status ?? "",
         department: item.department ?? "",
         amount: formatAmount(item.amount),
+        paidAmount: formatAmountOrDash(item.paid_amount),
+        paymentPercent: formatPercentOrDash(item.payment_percent),
       })),
     [items],
   );
@@ -178,10 +222,21 @@ export function WorkOrdersTable({
 
       if (!isWithinDateRange(row.item.document_date, dateFrom, dateTo)) return false;
       if (!isWithinDateRange(row.item.closed_date, closedFrom, closedTo)) return false;
+      if (!matchesPaymentFilter(row.item.payment_percent, paymentFilter)) return false;
 
       return true;
     });
-  }, [rows, search, columnFilters, selectedStatuses, dateFrom, dateTo, closedFrom, closedTo]);
+  }, [
+    rows,
+    search,
+    columnFilters,
+    selectedStatuses,
+    dateFrom,
+    dateTo,
+    closedFrom,
+    closedTo,
+    paymentFilter,
+  ]);
 
   // Recomputes with filteredRows - the whole point is that it tracks
   // whatever's currently visible, not the unfiltered total.
@@ -192,7 +247,27 @@ export function WorkOrdersTable({
 
   return (
     <div className="wide-page">
+      {(paidFrom || paidTo) && (
+        <p className="chart-subtitle">
+          Показаны заказ-наряды с оплатами за период {paidFrom || "…"} – {paidTo || "…"}
+        </p>
+      )}
+
       <div className="toolbar">
+        <label className="payment-filter">
+          <span className="period-filter-label">Оплата</span>
+          <select
+            value={paymentFilter}
+            onChange={(event) => setPaymentFilter(event.target.value as PaymentFilter)}
+            aria-label="Фильтр по оплате"
+          >
+            <option value="all">Все</option>
+            <option value="full">Полная оплата</option>
+            <option value="partial">Частичная оплата</option>
+            <option value="none">Без оплаты</option>
+          </select>
+        </label>
+
         <details className="status-filter">
           <summary>
             Статус{selectedStatuses.length > 0 ? ` (${selectedStatuses.length})` : ""}
@@ -337,6 +412,8 @@ export function WorkOrdersTable({
                 <td>{row.status || "—"}</td>
                 <td>{row.department || "—"}</td>
                 <td className="num">{row.amount}</td>
+                <td className="num">{row.paidAmount}</td>
+                <td className="num">{row.paymentPercent}</td>
               </tr>
             ))}
             {filteredRows.length === 0 && (

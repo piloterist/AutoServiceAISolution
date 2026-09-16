@@ -67,6 +67,10 @@ def get_work_orders(
     date_from: datetime | None = Query(default=None),
     date_to: datetime | None = Query(default=None),
     departments: str | None = Query(default=None, description="Comma-separated department names"),
+    paid_from: datetime | None = Query(
+        default=None, description="Restrict to work orders with a real payment (paid_at) in range"
+    ),
+    paid_to: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -76,6 +80,8 @@ def get_work_orders(
         date_from=date_from,
         date_to=date_to,
         departments=_split_departments(departments),
+        paid_from=paid_from,
+        paid_to=paid_to,
         limit=limit,
         offset=offset,
     )

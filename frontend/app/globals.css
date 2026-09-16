@@ -225,7 +225,7 @@ main {
 /* Pages that need more than the default 960px content width (data tables
    with many/wide columns) opt in via this class on their root element. */
 main:has(.wide-page) {
-  max-width: 1400px;
+  max-width: 1600px;
 }
 
 .search-input {
@@ -330,6 +330,21 @@ main:has(.wide-page) {
   gap: 0.75rem;
 }
 
+.payment-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.payment-filter select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--surface);
+}
+
 /* Two period-filter blocks now sit side by side (document date, closed
    date) - the label says which date field each one filters by, since
    they'd otherwise be indistinguishable "С/По" pairs. */
@@ -402,47 +417,56 @@ main:has(.wide-page) {
   letter-spacing: 0.02em;
 }
 
-/* Column widths (Work Orders table specifically - 8 columns): short
+/* Column widths (Work Orders table specifically - 10 columns): short
    fixed-ish fields get just enough room, the long free-text vehicle
    description gets the most (table-layout: fixed makes these percentages
    apply consistently instead of auto-sizing to content, which is what was
    forcing horizontal scroll before).
    1 Дата создания | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
-   5 Контрагент | 6 Статус | 7 Подразделение | 8 Сумма
+   5 Контрагент | 6 Статус | 7 Подразделение | 8 Сумма | 9 Сумма оплаты |
+   10 % оплаты
    (Дата начала dropped from the list view - it's always equal to Дата
    закрытия in practice, so showing both is redundant; still captured in
    the DB/import contract, just not displayed here.) */
 .data-table--work-orders th:nth-child(1),
 .data-table--work-orders td:nth-child(1) {
-  width: 10%;
+  width: 8%;
 }
 .data-table--work-orders th:nth-child(2),
 .data-table--work-orders td:nth-child(2) {
-  width: 10%;
+  width: 8%;
 }
 .data-table--work-orders th:nth-child(3),
 .data-table--work-orders td:nth-child(3) {
-  width: 9%;
+  width: 8%;
 }
 .data-table--work-orders th:nth-child(4),
 .data-table--work-orders td:nth-child(4) {
-  width: 24%;
+  width: 20%;
 }
 .data-table--work-orders th:nth-child(5),
 .data-table--work-orders td:nth-child(5) {
-  width: 15%;
+  width: 13%;
 }
 .data-table--work-orders th:nth-child(6),
 .data-table--work-orders td:nth-child(6) {
-  width: 9%;
+  width: 8%;
 }
 .data-table--work-orders th:nth-child(7),
 .data-table--work-orders td:nth-child(7) {
-  width: 13%;
+  width: 11%;
 }
 .data-table--work-orders th:nth-child(8),
 .data-table--work-orders td:nth-child(8) {
-  width: 10%;
+  width: 8%;
+}
+.data-table--work-orders th:nth-child(9),
+.data-table--work-orders td:nth-child(9) {
+  width: 8%;
+}
+.data-table--work-orders th:nth-child(10),
+.data-table--work-orders td:nth-child(10) {
+  width: 8%;
 }
 
 .filter-row th {

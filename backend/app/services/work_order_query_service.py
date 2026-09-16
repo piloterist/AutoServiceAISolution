@@ -38,6 +38,8 @@ def list_work_orders(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     departments: list[str] | None = None,
+    paid_from: datetime | None = None,
+    paid_to: datetime | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[WorkOrder], int]:
@@ -46,10 +48,23 @@ def list_work_orders(
     The date range here is against `document_date` (browsing/listing by
     document date) - see `monthly_summary`/`department_summary` for the
     revenue-reporting queries, which filter by `closed_date` instead.
+
+    `paid_from`/`paid_to`, when given, additionally restrict this to work
+    orders with at least one real payment (work_order_payment_events.paid_at)
+    in that range - this is what the dashboard's "Оплаты за период" tile
+    links to, so clicking it shows exactly the orders that make up that
+    figure, not orders merely opened/closed in the period.
     """
     filters = _date_range_filters(WorkOrder.document_date, date_from, date_to)
     if departments:
         filters.append(WorkOrder.department.in_(departments))
+    if paid_from is not None or paid_to is not None:
+        payment_filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, paid_from, paid_to)
+        filters.append(
+            select(WorkOrderPaymentEvent.id)
+            .where(WorkOrderPaymentEvent.work_order_id == WorkOrder.id, *payment_filters)
+            .exists()
+        )
 
     base_query = select(WorkOrder).where(*filters)
 

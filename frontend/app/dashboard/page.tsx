@@ -273,6 +273,17 @@ export default async function DashboardPage({
     return `/work-orders?${params.toString()}`;
   })();
 
+  // Same reasoning as revenueHref, but filtered by real payment date
+  // (paid_from/paid_to) instead of closed_date - so clicking the tile shows
+  // exactly the work orders whose payments make up this figure.
+  const paymentsHref = (() => {
+    const params = new URLSearchParams();
+    params.set("paid_from", dateFrom);
+    params.set("paid_to", dateTo);
+    if (selectedDepartments[0]) params.set("departments", selectedDepartments[0]);
+    return `/work-orders?${params.toString()}`;
+  })();
+
   return (
     <div className="wide-page">
       <div className="dashboard-header">
@@ -335,6 +346,7 @@ export default async function DashboardPage({
               value={`${totalPayments.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`}
               deltaPct={paymentsDeltaPct}
               sparkline={paymentsSpark}
+              href={paymentsHref}
             />
           </div>
           <p className="chart-subtitle">«Оплаты» — по реальной дате платежа из 1С</p>
