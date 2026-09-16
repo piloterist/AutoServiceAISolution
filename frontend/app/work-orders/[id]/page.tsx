@@ -21,7 +21,7 @@ function formatAmount(amount: string | null): string {
 }
 
 function formatPercent(percent: string | null): string {
-  if (percent === null) return "—";
+  if (percent === null || Number(percent) === 0) return "—";
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(percent)) + "%";
 }
 

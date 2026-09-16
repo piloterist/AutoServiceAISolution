@@ -24,8 +24,12 @@ function formatAmountOrDash(amount: string | null): string {
   return formatAmount(amount);
 }
 
+/** 0% and "no payment data at all" (null) both mean "no payment" - shown
+ * identically as "—" instead of some rows reading "0%" and others "—" for
+ * the same underlying state. Doesn't affect matchesPaymentFilter below,
+ * which already treats null as 0. */
 function formatPercentOrDash(percent: string | null): string {
-  if (percent === null) return "—";
+  if (percent === null || Number(percent) === 0) return "—";
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(percent)) + "%";
 }
 
