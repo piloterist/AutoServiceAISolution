@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 
@@ -312,6 +313,114 @@ def test_import_allows_negative_and_over_100_payment_percent(
     ).scalar_one()
     assert work_order.debt_amount == Decimal("-2000.00")
     assert work_order.payment_percent == Decimal("120.00")
+
+
+def _payment_events(db_session, work_order_id) -> list[WorkOrderPaymentEvent]:
+    return list(
+        db_session.execute(
+            select(WorkOrderPaymentEvent)
+            .where(WorkOrderPaymentEvent.work_order_id == work_order_id)
+            .order_by(WorkOrderPaymentEvent.paid_at)
+        ).scalars()
+    )
+
+
+def test_import_stores_payment_events(client, db_session, auth_headers) -> None:
+    """payment_events - the real dated ledger from
+    РегистрНакопления.ВзаиморасчетыКомпании (see 1c/TestExportOrders.bsl's
+    payments batch query), distinct from the deal/debt/paid snapshot."""
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "payment-events-test-1",
+        "records": [
+            {
+                "number": "PAYMENT-EVT-0001",
+                "date": "2026-09-16T09:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 1139200,
+                "payment_events": [
+                    {
+                        "paid_at": "2026-05-20T14:05:21",
+                        "amount": 500000.00,
+                        "source_document_id": "a1b2c3d4-0000-0000-0000-000000000001",
+                        "source_document_type": "Чек на оплату",
+                        "source_document_number": "ЭП00000251",
+                        "line_number": 1,
+                    }
+                ],
+            }
+        ],
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-EVT-0001")
+    ).scalar_one()
+    events = _payment_events(db_session, work_order.id)
+    assert len(events) == 1
+    assert events[0].amount == Decimal("500000.00")
+    assert events[0].paid_at == datetime(2026, 5, 20, 14, 5, 21, tzinfo=UTC)
+    assert events[0].source_document_type == "Чек на оплату"
+
+
+def test_import_accepts_missing_payment_events_as_empty(
+    client, db_session, auth_headers, sample_import_payload
+) -> None:
+    """Backward compatibility - an older export with no payment_events at
+    all must keep importing exactly as before, with no rows created."""
+    response = client.post(IMPORT_URL, json=sample_import_payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PS00010196")
+    ).scalar_one()
+    assert _payment_events(db_session, work_order.id) == []
+
+
+def test_import_payment_events_is_idempotent_on_reimport(
+    client, db_session, auth_headers
+) -> None:
+    """A full historical re-export resends every payment for every work
+    order every time - re-importing the same (work_order, document, line)
+    must not create a duplicate row."""
+    record = {
+        "number": "PAYMENT-EVT-DUP",
+        "date": "2026-09-16T09:00:00",
+        "customer": "Test Customer",
+        "car": "VW TIGUAN",
+        "amount": 500000,
+        "payment_events": [
+            {
+                "paid_at": "2026-05-20T14:05:21",
+                "amount": 500000.00,
+                "source_document_id": "a1b2c3d4-0000-0000-0000-000000000002",
+                "line_number": 1,
+            }
+        ],
+    }
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "payment-events-dup-1",
+        "records": [record],
+    }
+
+    assert client.post(IMPORT_URL, json=payload, headers=auth_headers).status_code == 200
+    payload["batch_id"] = "payment-events-dup-2"
+    assert client.post(IMPORT_URL, json=payload, headers=auth_headers).status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-EVT-DUP")
+    ).scalar_one()
+    assert len(_payment_events(db_session, work_order.id)) == 1
 
 
 def _payment_history(db_session, work_order_id) -> list[WorkOrderPaymentHistory]:

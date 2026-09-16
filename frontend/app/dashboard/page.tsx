@@ -216,9 +216,8 @@ export default async function DashboardPage({
     prevTotalCount > 0 ? ((totalCount - prevTotalCount) / prevTotalCount) * 100 : null;
   const avgDeltaPct = prevAvgAmount > 0 ? ((avgAmount - prevAvgAmount) / prevAvgAmount) * 100 : null;
 
-  // Net change in paid_amount observed in-period - there is no real payment
-  // date in this integration (see getPaymentTrendSummary), this is the
-  // closest available approximation.
+  // Sum of real payments received in-period, by their actual 1C payment
+  // date (see getPaymentTrendSummary).
   const totalPayments = paymentTrendCurrentItems.reduce(
     (sum, item) => sum + Number(item.total_amount),
     0,
@@ -338,10 +337,7 @@ export default async function DashboardPage({
               sparkline={paymentsSpark}
             />
           </div>
-          <p className="chart-subtitle">
-            «Оплаты» — изменение суммы оплаты, замеченное при очередной выгрузке из 1С; точной даты
-            платежа система не получает
-          </p>
+          <p className="chart-subtitle">«Оплаты» — по реальной дате платежа из 1С</p>
 
           <div className="card">
             <h2 className="chart-title">Заказ-наряды по статусам за период</h2>

@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
-from app.models.work_order_payment_history import WorkOrderPaymentHistory
+from app.models.work_order_payment_event import WorkOrderPaymentEvent
 
 LIST_URL = "/api/v1/work-orders"
 SUMMARY_URL = "/api/v1/work-orders/summary/monthly"
@@ -664,22 +664,21 @@ def test_trend_summary_granularity_can_be_overridden(client, db_session, auth_he
     assert response.json()["granularity"] == "week"
 
 
-def test_payment_trend_excludes_a_work_orders_first_snapshot(
-    client, db_session, auth_headers
-) -> None:
-    """The very first payment snapshot has nothing to diff against (LAG is
-    NULL) - it must not be counted as "a payment observed now"."""
-    work_order = _make_work_order(external_number="WO-PAY-FIRST")
+def test_payment_trend_sums_real_payment_events_by_date(client, db_session, auth_headers) -> None:
+    """Sourced from work_order_payment_events (real, dated payment
+    movements - see models/work_order_payment_event.py), not a diff of
+    periodic balance snapshots."""
+    work_order = _make_work_order(external_number="WO-PAY-EVENT")
     db_session.add(work_order)
     db_session.commit()
     db_session.add(
-        WorkOrderPaymentHistory(
+        WorkOrderPaymentEvent(
             work_order_id=work_order.id,
-            observed_at=datetime(2026, 6, 5, 10, 0, 0),
-            deal_amount=Decimal("10000.00"),
-            debt_amount=Decimal("4000.00"),
-            paid_amount=Decimal("6000.00"),
-            payment_percent=Decimal("60.00"),
+            paid_at=datetime(2026, 6, 5, 14, 5, 21),
+            amount=Decimal("6000.00"),
+            source_document_id="11111111-1111-1111-1111-111111111111",
+            source_document_type="Чек на оплату",
+            source_document_number="ЭП00000251",
         )
     )
     db_session.commit()
@@ -692,30 +691,34 @@ def test_payment_trend_excludes_a_work_orders_first_snapshot(
 
     assert response.status_code == 200
     items = {item["period"]: item for item in response.json()["items"]}
-    assert items["2026-06-05"]["total_amount"] == "0"
+    assert items["2026-06-05"]["total_amount"] == "6000.00"
 
 
-def test_payment_trend_sums_the_delta_between_snapshots(client, db_session, auth_headers) -> None:
-    work_order = _make_work_order(external_number="WO-PAY-DELTA")
+def test_payment_trend_sums_multiple_events_in_the_same_bucket(
+    client, db_session, auth_headers
+) -> None:
+    work_order = _make_work_order(external_number="WO-PAY-MULTI")
     db_session.add(work_order)
     db_session.commit()
     db_session.add_all(
         [
-            WorkOrderPaymentHistory(
+            WorkOrderPaymentEvent(
                 work_order_id=work_order.id,
-                observed_at=datetime(2026, 6, 5, 10, 0, 0),
-                deal_amount=Decimal("10000.00"),
-                debt_amount=Decimal("10000.00"),
-                paid_amount=Decimal("0.00"),
-                payment_percent=Decimal("0.00"),
+                paid_at=datetime(2026, 6, 5, 10, 0, 0),
+                amount=Decimal("4000.00"),
+                source_document_id="22222222-2222-2222-2222-222222222222",
             ),
-            WorkOrderPaymentHistory(
+            WorkOrderPaymentEvent(
                 work_order_id=work_order.id,
-                observed_at=datetime(2026, 6, 7, 10, 0, 0),
-                deal_amount=Decimal("10000.00"),
-                debt_amount=Decimal("4000.00"),
-                paid_amount=Decimal("6000.00"),
-                payment_percent=Decimal("60.00"),
+                paid_at=datetime(2026, 6, 5, 16, 0, 0),
+                amount=Decimal("2000.00"),
+                source_document_id="33333333-3333-3333-3333-333333333333",
+            ),
+            WorkOrderPaymentEvent(
+                work_order_id=work_order.id,
+                paid_at=datetime(2026, 6, 7, 9, 0, 0),
+                amount=Decimal("1000.00"),
+                source_document_id="44444444-4444-4444-4444-444444444444",
             ),
         ]
     )
@@ -729,58 +732,8 @@ def test_payment_trend_sums_the_delta_between_snapshots(client, db_session, auth
 
     assert response.status_code == 200
     items = {item["period"]: item for item in response.json()["items"]}
-    # The first snapshot (05.06) contributes nothing; the jump to 6000 on
-    # 07.06 is the observed delta.
-    assert items["2026-06-05"]["total_amount"] == "0"
-    assert items["2026-06-07"]["total_amount"] == "6000.00"
-
-
-def test_payment_trend_nets_negative_deltas(client, db_session, auth_headers) -> None:
-    """A correction/reversal in 1C shows up as a negative delta - summed
-    as-is, not floored at zero."""
-    work_order = _make_work_order(external_number="WO-PAY-REVERSAL")
-    db_session.add(work_order)
-    db_session.commit()
-    db_session.add_all(
-        [
-            WorkOrderPaymentHistory(
-                work_order_id=work_order.id,
-                observed_at=datetime(2026, 6, 5, 10, 0, 0),
-                deal_amount=Decimal("10000.00"),
-                debt_amount=Decimal("10000.00"),
-                paid_amount=Decimal("0.00"),
-                payment_percent=Decimal("0.00"),
-            ),
-            WorkOrderPaymentHistory(
-                work_order_id=work_order.id,
-                observed_at=datetime(2026, 6, 6, 10, 0, 0),
-                deal_amount=Decimal("10000.00"),
-                debt_amount=Decimal("2000.00"),
-                paid_amount=Decimal("8000.00"),
-                payment_percent=Decimal("80.00"),
-            ),
-            WorkOrderPaymentHistory(
-                work_order_id=work_order.id,
-                observed_at=datetime(2026, 6, 8, 10, 0, 0),
-                deal_amount=Decimal("10000.00"),
-                debt_amount=Decimal("5000.00"),
-                paid_amount=Decimal("5000.00"),
-                payment_percent=Decimal("50.00"),
-            ),
-        ]
-    )
-    db_session.commit()
-
-    response = client.get(
-        PAYMENT_TREND_URL,
-        headers=auth_headers,
-        params={"date_from": "2026-06-01T00:00:00", "date_to": "2026-06-10T00:00:00"},
-    )
-
-    assert response.status_code == 200
-    items = {item["period"]: item for item in response.json()["items"]}
-    assert items["2026-06-06"]["total_amount"] == "8000.00"
-    assert items["2026-06-08"]["total_amount"] == "-3000.00"
+    assert items["2026-06-05"]["total_amount"] == "6000.00"
+    assert items["2026-06-07"]["total_amount"] == "1000.00"
 
 
 def test_payment_trend_filters_by_department(client, db_session, auth_headers) -> None:
@@ -790,37 +743,17 @@ def test_payment_trend_filters_by_department(client, db_session, auth_headers) -
     db_session.commit()
     db_session.add_all(
         [
-            WorkOrderPaymentHistory(
+            WorkOrderPaymentEvent(
                 work_order_id=kuzovnoy.id,
-                observed_at=datetime(2026, 6, 5, 10, 0, 0),
-                deal_amount=Decimal("5000.00"),
-                debt_amount=Decimal("5000.00"),
-                paid_amount=Decimal("0.00"),
-                payment_percent=Decimal("0.00"),
+                paid_at=datetime(2026, 6, 6, 10, 0, 0),
+                amount=Decimal("5000.00"),
+                source_document_id="55555555-5555-5555-5555-555555555555",
             ),
-            WorkOrderPaymentHistory(
-                work_order_id=kuzovnoy.id,
-                observed_at=datetime(2026, 6, 6, 10, 0, 0),
-                deal_amount=Decimal("5000.00"),
-                debt_amount=Decimal("0.00"),
-                paid_amount=Decimal("5000.00"),
-                payment_percent=Decimal("100.00"),
-            ),
-            WorkOrderPaymentHistory(
+            WorkOrderPaymentEvent(
                 work_order_id=malyarny.id,
-                observed_at=datetime(2026, 6, 5, 10, 0, 0),
-                deal_amount=Decimal("3000.00"),
-                debt_amount=Decimal("3000.00"),
-                paid_amount=Decimal("0.00"),
-                payment_percent=Decimal("0.00"),
-            ),
-            WorkOrderPaymentHistory(
-                work_order_id=malyarny.id,
-                observed_at=datetime(2026, 6, 6, 10, 0, 0),
-                deal_amount=Decimal("3000.00"),
-                debt_amount=Decimal("0.00"),
-                paid_amount=Decimal("3000.00"),
-                payment_percent=Decimal("100.00"),
+                paid_at=datetime(2026, 6, 6, 10, 0, 0),
+                amount=Decimal("3000.00"),
+                source_document_id="66666666-6666-6666-6666-666666666666",
             ),
         ]
     )

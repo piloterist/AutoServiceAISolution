@@ -20,9 +20,14 @@ from sqlalchemy.orm import Session
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
-from app.schemas.import_work_order import ImportWorkOrderRecord, ImportWorkOrdersRequest
+from app.schemas.import_work_order import (
+    ImportPaymentEventRecord,
+    ImportWorkOrderRecord,
+    ImportWorkOrdersRequest,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -193,6 +198,46 @@ def _record_payment_history(
     )
 
 
+def _record_payment_events(
+    db: Session,
+    work_order_id: uuid.UUID,
+    events: list[ImportPaymentEventRecord],
+) -> None:
+    """Idempotently insert real dated payment movements - see
+    models/work_order_payment_event.py.
+
+    A bulk INSERT ... ON CONFLICT DO NOTHING rather than a per-event
+    existence check: a full historical re-export re-sends every payment
+    for every work order every time (that's how the historical backfill
+    works - see the payments batch query in 1c/TestExportOrders.bsl), so
+    this needs to stay cheap at a few thousand rows per batch, not do one
+    SELECT per event.
+    """
+    if not events:
+        return
+
+    rows = [
+        {
+            "id": uuid.uuid4(),
+            "work_order_id": work_order_id,
+            "paid_at": event.paid_at,
+            "amount": event.amount,
+            "source_document_id": event.source_document_id,
+            "source_document_type": event.source_document_type,
+            "source_document_number": event.source_document_number,
+            "line_number": event.line_number,
+        }
+        for event in events
+    ]
+
+    table = WorkOrderPaymentEvent.__table__
+    stmt = pg_insert(table).values(rows)
+    stmt = stmt.on_conflict_do_nothing(
+        index_elements=[table.c.work_order_id, table.c.source_document_id, table.c.line_number]
+    )
+    db.execute(stmt)
+
+
 def _replace_line_items(
     db: Session, work_order_id: uuid.UUID, record: ImportWorkOrderRecord
 ) -> None:
@@ -262,6 +307,7 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
                 record.payment_percent,
                 observed_at,
             )
+            _record_payment_events(db, work_order_id, record.payment_events)
             if was_inserted:
                 inserted += 1
             else:

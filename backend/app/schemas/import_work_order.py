@@ -23,6 +23,22 @@ class ImportPartLineRecord(BaseModel):
     amount: Decimal | None = None
 
 
+class ImportPaymentEventRecord(BaseModel):
+    """One real, dated payment movement toward this work order's settlement -
+    a raw РегистрНакопления.ВзаиморасчетыКомпании row (ВидДвижения=Расход,
+    an actual money-in event), not the Остатки() running-balance snapshot
+    above. See 1c/TestExportOrders.bsl's payments batch query and
+    models/work_order_payment_event.py for how "this row means a real
+    payment" was derived from the register's own structure."""
+
+    paid_at: datetime
+    amount: Decimal
+    source_document_id: str
+    source_document_type: str | None = None
+    source_document_number: str | None = None
+    line_number: int = 1
+
+
 class ImportWorkOrderRecord(BaseModel):
     """One Alpha-Auto work order as sent by the 1C export job."""
 
@@ -73,6 +89,10 @@ class ImportWorkOrderRecord(BaseModel):
     # allows a negative percent or one past 100% (overpayment), and that's
     # real data worth keeping for analytics, not an error to normalize away.
     payment_percent: Decimal | None = None
+    # Real dated payment ledger for this work order - empty when the export
+    # doesn't send it (older BSL versions, or a work order with no payments
+    # yet). See ImportPaymentEventRecord above.
+    payment_events: list[ImportPaymentEventRecord] = Field(default_factory=list)
 
 
 class ImportWorkOrdersRequest(BaseModel):

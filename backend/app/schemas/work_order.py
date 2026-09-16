@@ -70,9 +70,9 @@ class TrendSummaryResponse(BaseModel):
 
 class PaymentTrendItem(BaseModel):
     period: str  # "YYYY-MM-DD" - start of the bucket (day/week/month)
-    # Net change in paid_amount observed in this bucket - see
-    # work_order_query_service.payment_trend_summary for exactly what this
-    # does and doesn't mean (there is no real payment date available).
+    # Sum of real payment amounts (work_order_payment_events.amount) whose
+    # paid_at falls in this bucket - see
+    # work_order_query_service.payment_trend_summary.
     total_amount: Decimal
 
 

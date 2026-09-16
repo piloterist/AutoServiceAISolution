@@ -193,7 +193,7 @@ def get_trend_summary(
 def get_payment_trend_summary(
     date_from: datetime = Query(
         ...,
-        description="Filters/groups by when a payment change was observed, not a real payment date",
+        description="Filters/groups by the real payment date (paid_at)",
     ),
     date_to: datetime = Query(...),
     departments: str | None = Query(default=None, description="Comma-separated department names"),

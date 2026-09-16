@@ -90,8 +90,8 @@ export type TrendSummaryResponse = {
 
 export type PaymentTrendItem = {
   period: string; // "YYYY-MM-DD" - start of the bucket (day/week/month)
-  // Net change in paid_amount observed in this bucket - there is no real
-  // payment date available (see getPaymentTrendSummary below).
+  // Sum of real payment amounts whose actual 1C payment date falls in this
+  // bucket (see getPaymentTrendSummary below).
   total_amount: string;
 };
 
@@ -260,10 +260,9 @@ export function getTrendSummary(params: {
 /** `granularity` should normally be the value the matching `getTrendSummary`
  * call resolved to (its response's `granularity` field) - passing it
  * explicitly here keeps both series bucketed identically so they overlay
- * on the same x-axis. There is no real payment date in this integration -
- * see work_order_query_service.payment_trend_summary on the backend for
- * exactly what "period" means here (when a payment change was *observed*,
- * not when 1C recorded it). */
+ * on the same x-axis. "period" here is the real 1C payment date (paid_at on
+ * work_order_payment_events), not an import/observation timestamp - see
+ * work_order_query_service.payment_trend_summary on the backend. */
 export function getPaymentTrendSummary(params: {
   dateFrom: string;
   dateTo: string;

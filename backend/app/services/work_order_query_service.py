@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 
@@ -236,59 +237,32 @@ def payment_trend_summary(
     departments: list[str] | None = None,
     granularity: str | None = None,
 ) -> tuple[list[dict], str]:
-    """Net change in paid_amount observed per day/week/month, oldest first.
+    """Total real payments received per day/week/month, oldest first.
 
-    There is no real "payment date" available through this integration -
-    5S AUTO's own calculation (see 1c/TestExportOrders.bsl) gives a running
-    balance as of each import, not a ledger of individual payment
-    transactions with their own dates. This approximates "when did a
-    payment happen" by diffing each work order's consecutive payment
-    snapshots (work_order_payment_history, via a LAG window function) and
-    bucketing the deltas by when we *observed* the change (observed_at) -
-    only as accurate as how often imports actually run, not the real-world
-    moment 1C recorded the payment.
-
-    A work order's *first-ever* snapshot is deliberately excluded from the
-    delta sum (LAG is NULL there) - it almost always already carries some
-    paid_amount from before this feature started tracking that work order,
-    so counting the whole thing as "a payment observed now" would
-    misattribute historical payments to whatever day tracking happened to
-    start.
-
-    Deltas can be negative (a correction/reversal in 1C) - summed as-is,
-    not floored at zero, so this is a *net* change figure.
+    Sourced from work_order_payment_events - a ledger of individual, dated
+    payment movements from РегистрНакопления.ВзаиморасчетыКомпании
+    (ВидДвижения=Расход rows that represent actual money in), not an
+    approximation. See models/work_order_payment_event.py and
+    1c/TestExportOrders.bsl's payments batch query for how "this row is a
+    real payment, dated `paid_at`" was derived from the register's own
+    structure - this used to be a diff of periodic balance snapshots
+    (work_order_payment_history) with no real date to bucket by; that
+    approximation is gone now that 1C sends the real ledger.
     """
     granularity = _resolve_granularity(date_from, date_to, granularity)
 
-    previous_paid_amount = func.lag(WorkOrderPaymentHistory.paid_amount).over(
-        partition_by=WorkOrderPaymentHistory.work_order_id,
-        order_by=WorkOrderPaymentHistory.observed_at,
-    )
-    delta = (WorkOrderPaymentHistory.paid_amount - previous_paid_amount).label("delta")
-
-    history_select = select(
-        WorkOrderPaymentHistory.observed_at.label("observed_at"),
-        delta,
-    )
+    filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, date_from, date_to)
+    query = select(WorkOrderPaymentEvent.paid_at, WorkOrderPaymentEvent.amount)
     if departments:
-        history_select = history_select.join(
-            WorkOrder, WorkOrder.id == WorkOrderPaymentHistory.work_order_id
-        ).where(WorkOrder.department.in_(departments))
-    # The window function must see a work order's *entire* history to
-    # compute each row's delta against its true previous snapshot, even
-    # when that previous snapshot falls outside [date_from, date_to) - so
-    # the date range is only applied in the outer query below, never here.
-    history = history_select.subquery()
+        query = query.join(WorkOrder, WorkOrder.id == WorkOrderPaymentEvent.work_order_id).where(
+            WorkOrder.department.in_(departments)
+        )
+    query = query.where(*filters).subquery()
 
-    period = func.date_trunc(granularity, history.c.observed_at).label("period")
+    period = func.date_trunc(granularity, query.c.paid_at).label("period")
 
     rows = db.execute(
-        select(period, func.sum(history.c.delta).label("total_amount"))
-        .where(
-            history.c.delta.is_not(None),
-            history.c.observed_at >= date_from,
-            history.c.observed_at < date_to,
-        )
+        select(period, func.sum(query.c.amount).label("total_amount"))
         .group_by(period)
         .order_by(period)
     ).all()

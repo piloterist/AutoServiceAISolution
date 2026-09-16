@@ -62,11 +62,10 @@ const CHART_HEIGHT = 260;
  * the backend, which auto-detects it from how long the selected period is
  * (see work_order_query_service.trend_summary).
  *
- * `payments` (optional) overlays a third, solid red line - the net change
- * in paid_amount observed per bucket (see
- * work_order_query_service.payment_trend_summary; there is no real payment
- * date in this integration, this is an approximation). A payment delta can
- * be negative (a correction in 1C); the line is clamped at the zero
+ * `payments` (optional) overlays a third, solid red line - real payments
+ * received per bucket, summed by their actual 1C payment date (see
+ * work_order_query_service.payment_trend_summary). A bucket total can be
+ * negative (a correction/reversal in 1C); the line is clamped at the zero
  * baseline for its *position* since this chart has no negative axis, but
  * the real signed value still shows on hover. */
 export function RevenueTrendChart({
