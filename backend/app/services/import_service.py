@@ -9,7 +9,7 @@ per-client branching - that belongs to future configuration-driven layers
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 import structlog
 from sqlalchemy import delete, func, select, text, update
@@ -176,6 +176,14 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
     updated = 0
     status = "success"
     error_message: str | None = None
+    # This backend's own clock, not `payload.exported_at` - the 1C export
+    # sends that as a naive local (MSK) timestamp with no timezone info, so
+    # storing it as-is mislabels it as UTC and every status-history
+    # timestamp reads ~3 hours ahead of the real time. `received_at` on
+    # ImportBatch already uses this same "our own clock" convention (see
+    # below) - this keeps status history consistent with it. One timestamp
+    # for the whole batch, not per-record, so nothing skews within a batch.
+    observed_at = datetime.now(UTC)
 
     try:
         for record in payload.records:
@@ -184,9 +192,7 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
                 db, payload.source, payload.exported_at, record
             )
             _replace_line_items(db, work_order_id, record)
-            _record_status_history(
-                db, work_order_id, previous_status, record.status, payload.exported_at
-            )
+            _record_status_history(db, work_order_id, previous_status, record.status, observed_at)
             if was_inserted:
                 inserted += 1
             else:

@@ -247,7 +247,9 @@ def _status_history(db_session, work_order_id) -> list[WorkOrderStatusHistory]:
 
 
 def test_status_history_opens_a_segment_on_first_import(client, db_session, auth_headers) -> None:
+    before = datetime.now(UTC)
     _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
+    after = datetime.now(UTC)
 
     work_order = db_session.execute(
         select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
@@ -256,7 +258,11 @@ def test_status_history_opens_a_segment_on_first_import(client, db_session, auth
 
     assert len(rows) == 1
     assert rows[0].status == "В работе"
-    assert rows[0].first_seen_at == datetime(2026, 9, 10, 6, 0, 0, tzinfo=UTC)
+    # Timestamped with the server's own clock at processing time, not the
+    # request's `exported_at` - 1C sends that as a naive local (MSK)
+    # timestamp with no timezone info, so storing it as-is would mislabel
+    # it as UTC.
+    assert before <= rows[0].first_seen_at <= after
     assert rows[0].last_seen_at is None
 
 
@@ -283,7 +289,9 @@ def test_status_history_transition_closes_old_row_and_opens_new_one(
     a new open segment."""
     _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
     _import_status(client, auth_headers, "В работе", "2026-09-11T06:00:00", "hist-2")
+    before_transition = datetime.now(UTC)
     _import_status(client, auth_headers, "Ожидание запчастей", "2026-09-12T06:00:00", "hist-3")
+    after_transition = datetime.now(UTC)
 
     work_order = db_session.execute(
         select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
@@ -292,10 +300,12 @@ def test_status_history_transition_closes_old_row_and_opens_new_one(
 
     assert len(rows) == 2
     assert rows[0].status == "В работе"
-    assert rows[0].first_seen_at == datetime(2026, 9, 10, 6, 0, 0, tzinfo=UTC)
-    assert rows[0].last_seen_at == datetime(2026, 9, 12, 6, 0, 0, tzinfo=UTC)
+    assert rows[0].last_seen_at is not None
+    assert before_transition <= rows[0].last_seen_at <= after_transition
     assert rows[1].status == "Ожидание запчастей"
-    assert rows[1].first_seen_at == datetime(2026, 9, 12, 6, 0, 0, tzinfo=UTC)
+    # The close of the old segment and the open of the new one share the
+    # same "observed at" timestamp - one batch, one processing moment.
+    assert rows[1].first_seen_at == rows[0].last_seen_at
     assert rows[1].last_seen_at is None
 
 

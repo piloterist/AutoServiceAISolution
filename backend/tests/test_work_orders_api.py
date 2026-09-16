@@ -363,9 +363,13 @@ def test_get_work_order_detail_includes_status_history(client, db_session, auth_
     history = response.json()["status_history"]
     assert len(history) == 2
     assert history[0]["status"] == "В работе"
-    assert history[0]["last_seen_at"] == "2026-09-12T06:00:00Z"
+    # Timestamped with the server's own clock at processing time, not the
+    # request's `exported_at` (2026-09-12) - see import_service.py.
+    assert history[0]["last_seen_at"] is not None
+    assert not history[0]["last_seen_at"].startswith("2026-09-12")
     assert history[1]["status"] == "Ожидание запчастей"
     assert history[1]["last_seen_at"] is None
+    assert history[1]["first_seen_at"] == history[0]["last_seen_at"]
 
 
 def test_get_work_order_detail_missing_returns_404(client, auth_headers) -> None:
