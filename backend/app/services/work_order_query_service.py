@@ -478,6 +478,20 @@ def list_departments(db: Session) -> list[str]:
     return [row[0] for row in rows]
 
 
+def list_repair_types(db: Session) -> list[str]:
+    """Distinct repair_type (ЗаказНаряд.ВидРемонта) values actually present
+    in the data - same reasoning as list_departments. Feeds the Settings
+    page's "Вид ремонта для страховых" dropdown, among other uses.
+    """
+    rows = db.execute(
+        select(WorkOrder.repair_type)
+        .where(WorkOrder.repair_type.is_not(None), WorkOrder.repair_type != "")
+        .distinct()
+        .order_by(WorkOrder.repair_type)
+    ).all()
+    return [row[0] for row in rows]
+
+
 def get_work_order(db: Session, work_order_id: UUID) -> WorkOrder | None:
     """Single work order by id, or None if it doesn't exist - the header
     shown on the work order detail page (same fields as the list row)."""

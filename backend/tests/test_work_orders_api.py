@@ -256,6 +256,19 @@ def test_get_departments_returns_distinct_values(client, db_session, auth_header
     assert response.json()["departments"] == ["Кузовной цех", "Малярный цех"]
 
 
+def test_get_repair_types_returns_distinct_values(client, db_session, auth_headers) -> None:
+    db_session.add(_make_work_order(external_number="WO-A", repair_type="Аварийный ремонт"))
+    db_session.add(_make_work_order(external_number="WO-B", repair_type="Аварийный ремонт"))
+    db_session.add(_make_work_order(external_number="WO-C", repair_type="Гарантийный ремонт"))
+    db_session.add(_make_work_order(external_number="WO-D", repair_type=None))
+    db_session.commit()
+
+    response = client.get(f"{LIST_URL}/repair-types", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["repair_types"] == ["Аварийный ремонт", "Гарантийный ремонт"]
+
+
 def test_department_summary_groups_and_sums(client, db_session, auth_headers) -> None:
     db_session.add(
         _make_work_order(

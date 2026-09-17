@@ -77,6 +77,18 @@ export type DepartmentListResponse = {
   departments: string[];
 };
 
+export type RepairTypeListResponse = {
+  repair_types: string[];
+};
+
+export type AppSettings = {
+  // ЗаказНаряд.ВидРемонта value that identifies an insurance-company
+  // repair - one of the values from getRepairTypes(), or null if not
+  // configured yet.
+  insurance_repair_type: string | null;
+  exclude_internal_insurance: boolean;
+};
+
 export type StatusSummaryItem = {
   status: string;
   work_order_count: number;
@@ -185,6 +197,24 @@ async function backendGet<T>(path: string, params?: Record<string, string>): Pro
   return res.json() as Promise<T>;
 }
 
+async function backendPut<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(new URL(path, API_URL), {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${backendToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Backend request failed: ${res.status} ${await res.text()}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
 type PeriodAndDepartmentParams = {
   dateFrom?: string;
   dateTo?: string;
@@ -282,6 +312,18 @@ export function getPaymentDepartmentSummary(
 
 export function getDepartments(): Promise<DepartmentListResponse> {
   return backendGet<DepartmentListResponse>("/api/v1/work-orders/departments");
+}
+
+export function getRepairTypes(): Promise<RepairTypeListResponse> {
+  return backendGet<RepairTypeListResponse>("/api/v1/work-orders/repair-types");
+}
+
+export function getAppSettings(): Promise<AppSettings> {
+  return backendGet<AppSettings>("/api/v1/settings");
+}
+
+export function updateAppSettings(settings: AppSettings): Promise<AppSettings> {
+  return backendPut<AppSettings>("/api/v1/settings", settings);
 }
 
 export function getStatusSummary(

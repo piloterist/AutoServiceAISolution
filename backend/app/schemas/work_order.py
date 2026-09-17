@@ -107,6 +107,10 @@ class DepartmentListResponse(BaseModel):
     departments: list[str]
 
 
+class RepairTypeListResponse(BaseModel):
+    repair_types: list[str]
+
+
 class StatusSummaryItem(BaseModel):
     status: str
     work_order_count: int

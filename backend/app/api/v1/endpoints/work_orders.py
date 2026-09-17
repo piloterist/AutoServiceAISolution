@@ -25,6 +25,7 @@ from app.schemas.work_order import (
     PaymentHistoryItem,
     PaymentTrendItem,
     PaymentTrendResponse,
+    RepairTypeListResponse,
     RevenuePaidSummaryResponse,
     StatusHistoryItem,
     StatusSummaryItem,
@@ -46,6 +47,7 @@ from app.services.work_order_query_service import (
     list_part_lines,
     list_payment_events,
     list_payment_history,
+    list_repair_types,
     list_status_history,
     list_work_orders,
     monthly_summary,
@@ -101,6 +103,11 @@ def get_work_orders(
 @router.get("/work-orders/departments", response_model=DepartmentListResponse)
 def get_departments(db: Session = Depends(get_db)) -> DepartmentListResponse:
     return DepartmentListResponse(departments=list_departments(db))
+
+
+@router.get("/work-orders/repair-types", response_model=RepairTypeListResponse)
+def get_repair_types(db: Session = Depends(get_db)) -> RepairTypeListResponse:
+    return RepairTypeListResponse(repair_types=list_repair_types(db))
 
 
 @router.get("/work-orders/summary/monthly", response_model=MonthlySummaryResponse)
