@@ -35,14 +35,22 @@ export default async function WorkOrdersPage({
   let error: string | null = null;
 
   try {
+    // Comfortably above the real row count - this page fetches everything
+    // once and filters client-side (see WorkOrdersTable), so a limit that's
+    // too low silently drops older records from every filter/search, not
+    // just from the visible list. 5000 did exactly that once the export
+    // history grew past it. truncated (below) is a safety net in case this
+    // number is ever outgrown again.
     data = await getWorkOrders({
-      limit: 5000,
+      limit: 50_000,
       paidFrom: params.paid_from,
       paidTo: params.paid_to,
     });
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
   }
+
+  const truncated = data ? data.total > data.items.length : false;
 
   return (
     <div>
@@ -51,6 +59,16 @@ export default async function WorkOrdersPage({
       {error && (
         <div className="card" style={{ borderColor: "var(--down)" }}>
           <p>Не удалось загрузить данные: {error}</p>
+        </div>
+      )}
+
+      {truncated && (
+        <div className="card" style={{ borderColor: "var(--down)" }}>
+          <p>
+            Загружено {data!.items.length.toLocaleString("ru-RU")} из{" "}
+            {data!.total.toLocaleString("ru-RU")} заказ-нарядов — фильтры и поиск сейчас работают
+            только по загруженной части. Сообщите разработчику, лимит нужно увеличить.
+          </p>
         </div>
       )}
 

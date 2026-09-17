@@ -78,7 +78,13 @@ def get_work_orders(
         default=None, description="Restrict to work orders with a real payment (paid_at) in range"
     ),
     paid_to: datetime | None = Query(default=None),
-    limit: int = Query(default=100, ge=1, le=5000),
+    # The work orders list page fetches everything in one call and filters
+    # client-side (see WorkOrdersTable) so its own filters stay correct
+    # across the whole dataset - it needs a limit comfortably above the
+    # real row count, not a tight pagination-style cap. 5000 silently
+    # truncated once the export history grew past it (see 1c/TestExportOrders.bsl's
+    # 2025-01-01 start date change).
+    limit: int = Query(default=100, ge=1, le=100_000),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> WorkOrderListResponse:
