@@ -186,13 +186,18 @@ export function WorkOrderLineTabs({
           ) : (
             <ol className="status-timeline">
               {statusHistory.map((entry, index) => {
-                const isOpen = entry.last_seen_at === null;
-                const endMs = isOpen ? now : new Date(entry.last_seen_at as string).getTime();
-                const durationMs = endMs - new Date(entry.first_seen_at).getTime();
+                // Real 1C status-change events, not stored segments - "how
+                // long was it in this status" is the gap to the *next*
+                // real event (or to now, for the last/current one), not a
+                // separately-tracked end boundary.
+                const next = statusHistory[index + 1];
+                const isOpen = next === undefined;
+                const endMs = isOpen ? now : new Date(next.changed_at).getTime();
+                const durationMs = endMs - new Date(entry.changed_at).getTime();
 
                 return (
                   <li
-                    key={index}
+                    key={entry.version_number}
                     className={isOpen ? "status-timeline-item status-timeline-item-open" : "status-timeline-item"}
                   >
                     <span className="status-timeline-dot" />
@@ -202,9 +207,9 @@ export function WorkOrderLineTabs({
                         <span className="status-timeline-duration">{formatDuration(durationMs)}</span>
                       </div>
                       <div className="status-timeline-range">
-                        {formatDateTime(entry.first_seen_at)} →{" "}
-                        {isOpen ? "сейчас" : formatDateTime(entry.last_seen_at as string)}
+                        {formatDateTime(entry.changed_at)} → {isOpen ? "сейчас" : formatDateTime(next.changed_at)}
                       </div>
+                      {entry.author && <div className="status-timeline-author">{entry.author}</div>}
                     </div>
                   </li>
                 );

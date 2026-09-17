@@ -515,14 +515,14 @@ def list_part_lines(db: Session, work_order_id: UUID) -> list[WorkOrderPartLine]
 
 
 def list_status_history(db: Session, work_order_id: UUID) -> list[WorkOrderStatusHistory]:
-    """A work order's status timeline, oldest first - see
-    models/work_order_status_history.py. The currently-open segment (if
-    any) is the last row and has `last_seen_at is None`.
+    """A work order's real status change history, oldest first - see
+    models/work_order_status_history.py. Sourced from 1C's own version
+    log, not built from import diffs.
     """
     rows = db.execute(
         select(WorkOrderStatusHistory)
         .where(WorkOrderStatusHistory.work_order_id == work_order_id)
-        .order_by(WorkOrderStatusHistory.first_seen_at)
+        .order_by(WorkOrderStatusHistory.changed_at)
     ).scalars()
     return list(rows)
 

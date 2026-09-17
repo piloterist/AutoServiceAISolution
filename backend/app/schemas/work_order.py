@@ -142,12 +142,17 @@ class WorkOrderPartLineItem(BaseModel):
 
 
 class StatusHistoryItem(BaseModel):
+    """A real status change, sourced from 1C's own
+    РегистрСведений.пп_ВерсииОбъектов version log - see
+    models/work_order_status_history.py. `version_number`/`status_uuid`
+    are technical/traceability fields, not required for display (the UI
+    shows changed_at/author/status)."""
+
     status: str
-    first_seen_at: datetime
-    # None = this is the currently-open segment (still the work order's
-    # status as of the most recent import) - the frontend computes its
-    # duration against "now", not a value from here.
-    last_seen_at: datetime | None
+    changed_at: datetime
+    author: str | None
+    version_number: int
+    status_uuid: str | None
 
     model_config = {"from_attributes": True}
 

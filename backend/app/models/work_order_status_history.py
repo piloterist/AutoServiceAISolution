@@ -1,24 +1,30 @@
-"""Append-only timeline of a Work Order's status transitions.
+"""Real status change history, sourced from 1C's own object version log
+(РегистрСведений.пп_ВерсииОбъектов), not built by this application.
 
-Populated during import (see services/import_service.py), not written to
-directly anywhere else: whenever a record's incoming status differs from
-whatever segment is currently open for that work order, the open segment is
-closed (`last_seen_at` set) and a new one is opened (`last_seen_at` left
-NULL). An unchanged status on a later import does nothing - the existing
-open segment already covers it.
+Replaces the earlier mechanism, which inferred status changes by diffing
+consecutive imports (comparing the incoming status against whatever the
+work order's status was before the previous import) and timestamped them
+with this backend's own clock. That approach could only ever be as precise
+as how often imports happened to run, and had no notion of *who* changed
+the status. 1C's version history gives the real moment (ДатаВерсии) and
+the real author (АвторВерсии) directly - see 1c/TestExportOrders.bsl for
+how it's read (strictly read-only against 1C) and
+services/import_service.py for how it's turned into rows here.
 
-Example: first seen "В работе" on 10.09 -> one open row. Same status again
-on 11.09 -> no new row (nothing changed). "Ожидание запчастей" on 12.09 ->
-the "В работе" row is closed at 12.09, and a new open row starts there.
-
-This is what lets the work order detail page show "spent 2 days in В
-работе, 6 hours in Ожидание запчастей, ...".
+One row per real status CHANGE, not per object version - a new
+пп_ВерсииОбъектов version can exist because any requisite changed (amount,
+labor lines, comment, ...), not just Состояние, so consecutive versions
+that resolve to the same status collapse into a single row (see
+_record_status_history in import_service.py). `version_number` is the
+1C НомерВерсии of the version where this status first appeared - the
+natural idempotency key together with work_order_id, since a full
+re-export re-sends the whole available version history every time.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +33,11 @@ from app.db.base import Base
 
 class WorkOrderStatusHistory(Base):
     __tablename__ = "work_order_status_history"
+    __table_args__ = (
+        UniqueConstraint(
+            "work_order_id", "version_number", name="uq_work_order_status_history_version"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     work_order_id: Mapped[uuid.UUID] = mapped_column(
@@ -36,18 +47,25 @@ class WorkOrderStatusHistory(Base):
         index=True,
     )
 
+    # 1C РегистрСведений.пп_ВерсииОбъектов.НомерВерсии.
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 1C ДатаВерсии - the real moment this status became effective. Never
+    # an import/observation/export timestamp.
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    # 1C АвторВерсии, as plain text (whatever 1C sends) - nullable since a
+    # version can in principle come back without one.
+    author: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Plain text, whatever the source sends - same reasoning as
     # WorkOrder.status (client-specific values, never hardcoded here).
     status: Mapped[str] = mapped_column(String(100), nullable=False)
-
-    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    # NULL = this is the currently-open segment (the work order's status as
-    # of the most recent import). Indexed since _record_status_history
-    # looks this up by work_order_id + "is the open segment" on every
-    # import.
-    last_seen_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, index=True
-    )
+    # UUID (as text) of Справочник.ВидыСостоянийЗаказНарядов that `status`
+    # was resolved from - a technical/traceability field, not shown in the
+    # UI (see StatusHistoryItem).
+    status_uuid: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
-        return f"<WorkOrderStatusHistory {self.work_order_id} {self.status!r}>"
+        return (
+            f"<WorkOrderStatusHistory {self.work_order_id} v{self.version_number} {self.status!r}>"
+        )

@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,7 @@ from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 from app.schemas.import_work_order import (
     ImportPaymentEventRecord,
+    ImportStatusHistoryRecord,
     ImportWorkOrderRecord,
     ImportWorkOrdersRequest,
 )
@@ -96,54 +97,94 @@ def _upsert_work_order(
     return row["id"], bool(row["inserted"])
 
 
-def _lookup_current_status(db: Session, source: str, external_number: str) -> str | None:
-    """The work order's status as it stood *before* this import - looked up
-    before `_upsert_work_order` overwrites it, since the raw ON CONFLICT
-    UPDATE's RETURNING only ever gives the post-update row. None both when
-    the work order doesn't exist yet and when it exists but has no status
-    set - both cases are "nothing to compare against" for
-    `_record_status_history`.
-    """
-    return db.execute(
-        select(WorkOrder.status).where(
-            WorkOrder.source_system == source, WorkOrder.external_number == external_number
-        )
-    ).scalar_one_or_none()
-
-
 def _record_status_history(
     db: Session,
     work_order_id: uuid.UUID,
-    previous_status: str | None,
-    new_status: str | None,
-    observed_at: datetime,
+    versions: list[ImportStatusHistoryRecord],
 ) -> None:
-    """Append-only status timeline - see models/work_order_status_history.py.
+    """Real status history from 1C's own РегистрСведений.пп_ВерсииОбъектов
+    version log (see 1c/TestExportOrders.bsl) - replaces the old mechanism
+    that inferred status changes by diffing consecutive imports.
 
-    No-ops when there's nothing to track: no incoming status at all, or the
-    status didn't actually change (an unchanged status on a later import
-    just means the currently-open segment still applies - it does not get a
-    new row, only a genuine transition does).
+    `versions` is every available object version for this work order,
+    unfiltered and in whatever order 1C sent them: a version can exist
+    because ANY requisite changed, not just Состояние, so this sorts by
+    version_number and collapses consecutive versions that resolve to the
+    same status into a single row - the first version, or the first
+    version *after* a genuine change, only. A version with no resolvable
+    status (see ImportStatusHistoryRecord) is skipped entirely, not
+    treated as "no status" - it neither closes nor opens anything, the
+    comparison just carries on to the next version as if it wasn't there.
+
+    Idempotent: an INSERT ... ON CONFLICT (work_order_id, version_number)
+    DO UPDATE, since a full re-export re-sends the whole available version
+    history every time - existing rows get refreshed in place (harmless if
+    unchanged), new ones get added, nothing is duplicated.
+
+    Also reconciles *stale* rows within this payload's own version_number
+    range: if an earlier import saw versions {1, 3} (version 2 missing -
+    e.g. a transient read error) and stored a row for 3 (looked like a
+    real transition at the time), then a later import that fills the gap
+    and sees {1, 2, 3} where 2 and 3 share a status must end up with just
+    {1, 2} - the stale row for 3 has to go. Only rows *inside* the
+    min..max version_number this payload actually covers are eligible for
+    deletion, and only when this payload resolved at least one real
+    status (an empty `rows` - e.g. every version in range failed to read
+    this time - leaves existing rows alone rather than risk deleting good
+    data over a transient failure); versions outside that range (earlier
+    or later history this payload doesn't know about) are never touched,
+    which is what keeps a partial/incremental payload safe.
     """
-    if not new_status or previous_status == new_status:
+    if not versions:
         return
 
+    ordered = sorted(versions, key=lambda v: v.version_number)
+
+    rows = []
+    previous_status: str | None = None
+    for version in ordered:
+        if not version.status:
+            continue
+        if version.status == previous_status:
+            continue
+        previous_status = version.status
+        rows.append(
+            {
+                "id": uuid.uuid4(),
+                "work_order_id": work_order_id,
+                "version_number": version.version_number,
+                "changed_at": version.changed_at,
+                "author": version.author,
+                "status": version.status,
+                "status_uuid": version.status_uuid,
+            }
+        )
+
+    if not rows:
+        return
+
+    kept_version_numbers = [row["version_number"] for row in rows]
     db.execute(
-        update(WorkOrderStatusHistory)
-        .where(
+        delete(WorkOrderStatusHistory).where(
             WorkOrderStatusHistory.work_order_id == work_order_id,
-            WorkOrderStatusHistory.last_seen_at.is_(None),
-        )
-        .values(last_seen_at=observed_at)
-    )
-    db.add(
-        WorkOrderStatusHistory(
-            work_order_id=work_order_id,
-            status=new_status,
-            first_seen_at=observed_at,
-            last_seen_at=None,
+            WorkOrderStatusHistory.version_number >= ordered[0].version_number,
+            WorkOrderStatusHistory.version_number <= ordered[-1].version_number,
+            WorkOrderStatusHistory.version_number.not_in(kept_version_numbers),
         )
     )
+
+    table = WorkOrderStatusHistory.__table__
+    stmt = pg_insert(table).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[table.c.work_order_id, table.c.version_number],
+        set_={
+            "changed_at": stmt.excluded.changed_at,
+            "author": stmt.excluded.author,
+            "status": stmt.excluded.status,
+            "status_uuid": stmt.excluded.status_uuid,
+        },
+    )
+    db.execute(stmt)
 
 
 def _record_payment_history(
@@ -284,21 +325,19 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
     error_message: str | None = None
     # This backend's own clock, not `payload.exported_at` - the 1C export
     # sends that as a naive local (MSK) timestamp with no timezone info, so
-    # storing it as-is mislabels it as UTC and every status-history
-    # timestamp reads ~3 hours ahead of the real time. `received_at` on
-    # ImportBatch already uses this same "our own clock" convention (see
-    # below) - this keeps status history consistent with it. One timestamp
-    # for the whole batch, not per-record, so nothing skews within a batch.
+    # storing it as-is mislabels it as UTC. Used for payment_history's
+    # "observed at" snapshots only now - status history is timestamped
+    # with 1C's own ДатаВерсии instead (see _record_status_history), not
+    # this backend's clock.
     observed_at = datetime.now(UTC)
 
     try:
         for record in payload.records:
-            previous_status = _lookup_current_status(db, payload.source, record.number)
             work_order_id, was_inserted = _upsert_work_order(
                 db, payload.source, payload.exported_at, record
             )
             _replace_line_items(db, work_order_id, record)
-            _record_status_history(db, work_order_id, previous_status, record.status, observed_at)
+            _record_status_history(db, work_order_id, record.status_history)
             _record_payment_history(
                 db,
                 work_order_id,

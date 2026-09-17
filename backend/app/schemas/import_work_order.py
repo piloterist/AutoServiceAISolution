@@ -39,6 +39,29 @@ class ImportPaymentEventRecord(BaseModel):
     line_number: int = 1
 
 
+class ImportStatusHistoryRecord(BaseModel):
+    """One РегистрСведений.пп_ВерсииОбъектов version of this work order,
+    with its resolved Справочник.ВидыСостоянийЗаказНарядов status - see
+    1c/TestExportOrders.bsl for how this is read (strictly read-only
+    against 1C: Запрос.Выполнить() + ХранилищеЗначения.Получить(), never
+    Объект.Записать()).
+
+    Not every version is a real status change - a version can exist
+    because ANY requisite changed (amount, labor lines, comment, ...), not
+    just Состояние. `status` is None when this specific version's snapshot
+    didn't resolve to a status (missing/unreadable/corrupt - see
+    services/import_service.py for how those are skipped, not treated as
+    "no status"). Send every available version unfiltered - the backend
+    collapses consecutive versions with the same status into a single
+    status_history row."""
+
+    version_number: int
+    changed_at: datetime
+    author: str | None = None
+    status: str | None = None
+    status_uuid: str | None = None
+
+
 class ImportWorkOrderRecord(BaseModel):
     """One Alpha-Auto work order as sent by the 1C export job."""
 
@@ -94,6 +117,11 @@ class ImportWorkOrderRecord(BaseModel):
     # doesn't send it (older BSL versions, or a work order with no payments
     # yet). See ImportPaymentEventRecord above.
     payment_events: list[ImportPaymentEventRecord] = Field(default_factory=list)
+    # Real status change history from 1C's own version log - replaces the
+    # old import-diff-based mechanism entirely. Empty when the export
+    # doesn't send it (older BSL versions, or a work order with no
+    # available version history in 1C). See ImportStatusHistoryRecord above.
+    status_history: list[ImportStatusHistoryRecord] = Field(default_factory=list)
 
 
 class ImportWorkOrdersRequest(BaseModel):

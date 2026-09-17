@@ -139,11 +139,16 @@ export type WorkOrderPartLineItem = {
 };
 
 export type StatusHistoryItem = {
+  // A real status change, sourced from 1C's own
+  // РегистрСведений.пп_ВерсииОбъектов version log (see
+  // models/work_order_status_history.py on the backend) - changed_at is
+  // 1C's own ДатаВерсии, never an import/observation timestamp.
   status: string;
-  first_seen_at: string;
-  // null = the currently-open segment (still the work order's status as of
-  // the most recent import).
-  last_seen_at: string | null;
+  changed_at: string;
+  author: string | null;
+  // Technical/traceability fields - not shown in the UI.
+  version_number: number;
+  status_uuid: string | null;
 };
 
 export type PaymentHistoryItem = {

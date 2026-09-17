@@ -629,21 +629,42 @@ def test_import_stores_the_four_document_dates(client, db_session, auth_headers)
     assert work_order.closed_date == datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
 
 
-def _import_status(client, auth_headers, status, exported_at, batch_id) -> None:
+def _version(
+    version_number,
+    changed_at,
+    status,
+    author="Ледяев Дмитрий Юрьевич",
+    status_uuid="57da537c-ad25-11e9-80d5-de6a32a93df3",
+) -> dict:
+    """One РегистрСведений.пп_ВерсииОбъектов entry, as the 1C export sends
+    it (see ImportStatusHistoryRecord)."""
+    return {
+        "version_number": version_number,
+        "changed_at": changed_at,
+        "author": author,
+        "status": status,
+        "status_uuid": status_uuid,
+    }
+
+
+def _import_with_status_history(
+    client, auth_headers, batch_id, status_history, number="HIST-0001", status=None
+) -> None:
     payload = {
         "source": "alpha-auto",
         "branch": "kahovka",
         "entity": "work_orders",
-        "exported_at": exported_at,
+        "exported_at": "2026-09-18T06:00:00",
         "batch_id": batch_id,
         "records": [
             {
-                "number": "HIST-0001",
+                "number": number,
                 "date": "2026-09-10T06:00:00",
                 "customer": "Test Customer",
                 "car": "VW TIGUAN",
                 "amount": 1000,
                 "status": status,
+                "status_history": status_history,
             }
         ],
     }
@@ -656,89 +677,379 @@ def _status_history(db_session, work_order_id) -> list[WorkOrderStatusHistory]:
         db_session.execute(
             select(WorkOrderStatusHistory)
             .where(WorkOrderStatusHistory.work_order_id == work_order_id)
-            .order_by(WorkOrderStatusHistory.first_seen_at)
+            .order_by(WorkOrderStatusHistory.version_number)
         ).scalars()
     )
 
 
-def test_status_history_opens_a_segment_on_first_import(client, db_session, auth_headers) -> None:
-    before = datetime.now(UTC)
-    _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
-    after = datetime.now(UTC)
-
-    work_order = db_session.execute(
-        select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
+def _get_work_order(db_session, number: str) -> WorkOrder:
+    return db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == number)
     ).scalar_one()
-    rows = _status_history(db_session, work_order.id)
-
-    assert len(rows) == 1
-    assert rows[0].status == "В работе"
-    # Timestamped with the server's own clock at processing time, not the
-    # request's `exported_at` - 1C sends that as a naive local (MSK)
-    # timestamp with no timezone info, so storing it as-is would mislabel
-    # it as UTC.
-    assert before <= rows[0].first_seen_at <= after
-    assert rows[0].last_seen_at is None
 
 
-def test_status_history_unchanged_status_does_not_add_a_row(
-    client, db_session, auth_headers
-) -> None:
-    _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
-    _import_status(client, auth_headers, "В работе", "2026-09-11T06:00:00", "hist-2")
+def test_status_history_first_import_creates_events(client, db_session, auth_headers) -> None:
+    """Scenario 1 (first import) - every version with a resolvable status
+    becomes a row, since there's nothing earlier to compare against."""
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-1",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-16T15:17:13", "Выполнен"),
+        ],
+    )
 
-    work_order = db_session.execute(
-        select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
-    ).scalar_one()
-    rows = _status_history(db_session, work_order.id)
-
-    assert len(rows) == 1
-    assert rows[0].last_seen_at is None
-
-
-def test_status_history_transition_closes_old_row_and_opens_new_one(
-    client, db_session, auth_headers
-) -> None:
-    """The exact scenario from the spec: В работе (10.09) -> unchanged
-    (11.09, no-op) -> Ожидание запчастей (12.09) closes В работе and opens
-    a new open segment."""
-    _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
-    _import_status(client, auth_headers, "В работе", "2026-09-11T06:00:00", "hist-2")
-    before_transition = datetime.now(UTC)
-    _import_status(client, auth_headers, "Ожидание запчастей", "2026-09-12T06:00:00", "hist-3")
-    after_transition = datetime.now(UTC)
-
-    work_order = db_session.execute(
-        select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
-    ).scalar_one()
+    work_order = _get_work_order(db_session, "HIST-0001")
     rows = _status_history(db_session, work_order.id)
 
     assert len(rows) == 2
+    assert rows[0].version_number == 1
     assert rows[0].status == "В работе"
-    assert rows[0].last_seen_at is not None
-    assert before_transition <= rows[0].last_seen_at <= after_transition
-    assert rows[1].status == "Ожидание запчастей"
-    # The close of the old segment and the open of the new one share the
-    # same "observed at" timestamp - one batch, one processing moment.
-    assert rows[1].first_seen_at == rows[0].last_seen_at
-    assert rows[1].last_seen_at is None
+    assert rows[1].version_number == 2
+    assert rows[1].status == "Выполнен"
 
 
-def test_status_history_ignores_a_missing_status(client, db_session, auth_headers) -> None:
-    """No status on the incoming record - nothing to track, and the
-    previously-open segment (if any) stays open rather than being closed
-    out by a non-status."""
-    _import_status(client, auth_headers, "В работе", "2026-09-10T06:00:00", "hist-1")
-    _import_status(client, auth_headers, None, "2026-09-11T06:00:00", "hist-2")
+def test_status_history_reimport_of_identical_payload_creates_no_duplicates(
+    client, db_session, auth_headers
+) -> None:
+    """Scenario 2 - a full re-export resends the same available version
+    history every time; re-importing it must not duplicate rows."""
+    versions = [
+        _version(1, "2026-09-16T15:17:03", "В работе"),
+        _version(2, "2026-09-16T15:17:13", "Выполнен"),
+    ]
+    _import_with_status_history(client, auth_headers, "hist-1", versions)
+    _import_with_status_history(client, auth_headers, "hist-2", versions)
 
-    work_order = db_session.execute(
-        select(WorkOrder).where(WorkOrder.external_number == "HIST-0001")
-    ).scalar_one()
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert len(rows) == 2
+
+
+def test_status_history_collapses_consecutive_same_status_versions(
+    client, db_session, auth_headers
+) -> None:
+    """Scenario 5, the exact sequence from the spec: v1/v2/v3 all "В
+    работе" collapse to one row, only the transitions to "Выполнен" and
+    "Закрыт" get their own row."""
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-1",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-16T16:00:00", "В работе"),
+            _version(3, "2026-09-16T17:00:00", "В работе"),
+            _version(4, "2026-09-16T18:00:00", "Выполнен"),
+            _version(5, "2026-09-17T09:00:00", "Выполнен"),
+            _version(6, "2026-09-17T12:59:06", "Закрыт"),
+        ],
+    )
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert [(row.version_number, row.status) for row in rows] == [
+        (1, "В работе"),
+        (4, "Выполнен"),
+        (6, "Закрыт"),
+    ]
+
+
+def test_status_history_new_version_with_new_status_adds_an_event(
+    client, db_session, auth_headers
+) -> None:
+    """Scenario 3."""
+    _import_with_status_history(
+        client, auth_headers, "hist-1", [_version(1, "2026-09-16T15:17:03", "В работе")]
+    )
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-2",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-17T12:59:06", "Закрыт"),
+        ],
+    )
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert [(row.version_number, row.status) for row in rows] == [
+        (1, "В работе"),
+        (2, "Закрыт"),
+    ]
+
+
+def test_status_history_new_version_with_same_status_adds_no_event(
+    client, db_session, auth_headers
+) -> None:
+    """Scenario 4."""
+    _import_with_status_history(
+        client, auth_headers, "hist-1", [_version(1, "2026-09-16T15:17:03", "В работе")]
+    )
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-2",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-16T16:00:00", "В работе"),
+        ],
+    )
+
+    work_order = _get_work_order(db_session, "HIST-0001")
     rows = _status_history(db_session, work_order.id)
 
     assert len(rows) == 1
-    assert rows[0].status == "В работе"
-    assert rows[0].last_seen_at is None
+    assert rows[0].version_number == 1
+
+
+def test_status_history_multiple_new_versions_between_imports(
+    client, db_session, auth_headers
+) -> None:
+    """Scenario 6 - several new versions arrive at once, some real
+    transitions among them, some not."""
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-1",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-16T15:17:13", "Выполнен"),
+        ],
+    )
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-2",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-16T15:17:13", "Выполнен"),
+            _version(3, "2026-09-16T20:00:00", "Выполнен"),  # no-op
+            _version(4, "2026-09-17T08:00:00", "Согласование"),  # real change
+            _version(5, "2026-09-17T12:59:06", "Закрыт"),  # real change
+        ],
+    )
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert [(row.version_number, row.status) for row in rows] == [
+        (1, "В работе"),
+        (2, "Выполнен"),
+        (4, "Согласование"),
+        (5, "Закрыт"),
+    ]
+
+
+def test_status_history_handles_many_versions(client, db_session, auth_headers) -> None:
+    """Scenario 8 - an old work order with a long version history (mostly
+    unrelated edits, a handful of real status changes)."""
+    versions = []
+    for i in range(1, 21):
+        status = "В работе" if i < 15 else "Закрыт"
+        versions.append(_version(i, f"2026-01-{i:02d}T10:00:00", status))
+    _import_with_status_history(client, auth_headers, "hist-1", versions)
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert [(row.version_number, row.status) for row in rows] == [
+        (1, "В работе"),
+        (15, "Закрыт"),
+    ]
+
+
+def test_status_history_empty_when_no_versions_sent(client, db_session, auth_headers) -> None:
+    """Scenario 9 - a work order with nothing in
+    пп_ВерсииОбъектов (or an older export that doesn't send this field at
+    all) must not error, just have no history rows."""
+    _import_with_status_history(client, auth_headers, "hist-1", [])
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    assert _status_history(db_session, work_order.id) == []
+
+
+def test_status_history_skips_a_version_without_a_resolvable_status(
+    client, db_session, auth_headers
+) -> None:
+    """Scenarios 10-12: a version with no status (1C couldn't resolve
+    Состояние/its UUID, or the BSL export skipped a broken version and
+    just sent status=None) is skipped entirely - it doesn't create a row,
+    doesn't reset the "previous status" comparison, and doesn't stop the
+    other versions in the same batch from being processed."""
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-1",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-16T16:00:00", None, status_uuid=None),  # unresolvable
+            _version(3, "2026-09-16T17:00:00", "В работе"),  # same as v1 - still a no-op
+            _version(4, "2026-09-17T12:59:06", "Закрыт"),
+        ],
+    )
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert [(row.version_number, row.status) for row in rows] == [
+        (1, "В работе"),
+        (4, "Закрыт"),
+    ]
+
+
+def test_status_history_importing_one_work_order_does_not_affect_another(
+    client, db_session, auth_headers
+) -> None:
+    """Scenario 13."""
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-1",
+        [_version(1, "2026-09-16T15:17:03", "В работе")],
+        number="HIST-A",
+    )
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-2",
+        [_version(1, "2026-09-16T15:17:03", "Закрыт")],
+        number="HIST-B",
+    )
+
+    work_order_a = _get_work_order(db_session, "HIST-A")
+    work_order_b = _get_work_order(db_session, "HIST-B")
+
+    assert [row.status for row in _status_history(db_session, work_order_a.id)] == ["В работе"]
+    assert [row.status for row in _status_history(db_session, work_order_b.id)] == ["Закрыт"]
+
+
+def test_status_history_partial_reimport_keeps_earlier_history(
+    client, db_session, auth_headers
+) -> None:
+    """Scenario 14 - a later import that only knows about a newer slice of
+    the version history (e.g. a scoped/partial export) must not delete the
+    rows an earlier, fuller import already created; this is an incremental
+    upsert, not delete-then-insert (see _record_status_history)."""
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-1",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-16T15:17:13", "Выполнен"),
+        ],
+    )
+    _import_with_status_history(
+        client, auth_headers, "hist-2", [_version(3, "2026-09-17T12:59:06", "Закрыт")]
+    )
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert [(row.version_number, row.status) for row in rows] == [
+        (1, "В работе"),
+        (2, "Выполнен"),
+        (3, "Закрыт"),
+    ]
+
+
+def test_status_history_reconciles_a_stale_row_when_a_gap_is_filled(
+    client, db_session, auth_headers
+) -> None:
+    """A version that looked like a real transition when an earlier import
+    had a gap in its available history (version 2 missing, say a
+    transient read error) must be reconciled away once a later import
+    fills that gap and shows it was actually a no-op (same status as the
+    version now known to precede it) - not left behind as a stale row."""
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-1",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(3, "2026-09-17T09:00:00", "Выполнен"),
+        ],
+    )
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    assert [
+        (row.version_number, row.status) for row in _status_history(db_session, work_order.id)
+    ] == [
+        (1, "В работе"),
+        (3, "Выполнен"),
+    ]
+
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-2",
+        [
+            _version(1, "2026-09-16T15:17:03", "В работе"),
+            _version(2, "2026-09-16T20:00:00", "Выполнен"),
+            _version(3, "2026-09-17T09:00:00", "Выполнен"),
+        ],
+    )
+
+    rows = _status_history(db_session, work_order.id)
+    assert [(row.version_number, row.status) for row in rows] == [
+        (1, "В работе"),
+        (2, "Выполнен"),
+    ]
+
+
+def test_status_history_changed_at_comes_from_version_date_not_import_time(
+    client, db_session, auth_headers
+) -> None:
+    """Scenarios 15-16 - changed_at is 1C's own ДатаВерсии, verbatim,
+    never the request's exported_at or this backend's own clock."""
+    before_import = datetime.now(UTC)
+    _import_with_status_history(
+        client, auth_headers, "hist-1", [_version(1, "2026-09-16T15:17:03", "В работе")]
+    )
+    after_import = datetime.now(UTC)
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert rows[0].changed_at == datetime(2026, 9, 16, 15, 17, 3, tzinfo=UTC)
+    assert rows[0].changed_at < before_import
+    assert rows[0].changed_at < after_import
+
+
+def test_status_history_stores_author(client, db_session, auth_headers) -> None:
+    """Scenario 17."""
+    _import_with_status_history(
+        client,
+        auth_headers,
+        "hist-1",
+        [_version(1, "2026-09-16T15:17:03", "В работе", author="Ледяев Дмитрий Юрьевич")],
+    )
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    rows = _status_history(db_session, work_order.id)
+
+    assert rows[0].author == "Ледяев Дмитрий Юрьевич"
+
+
+def test_status_history_old_diff_based_mechanism_no_longer_fires(
+    client, db_session, auth_headers
+) -> None:
+    """Scenario 18 - the work order's plain `status` field changing
+    between imports (the old mechanism's trigger) must NOT create a
+    status_history row on its own when status_history isn't sent."""
+    _import_with_status_history(client, auth_headers, "hist-1", [], status="В работе")
+    _import_with_status_history(client, auth_headers, "hist-2", [], status="Закрыт")
+
+    work_order = _get_work_order(db_session, "HIST-0001")
+    assert work_order.status == "Закрыт"  # the current-status field still updates as normal
+    assert _status_history(db_session, work_order.id) == []
 
 
 def test_import_accepts_missing_document_dates_as_null(

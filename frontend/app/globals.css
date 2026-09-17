@@ -1452,6 +1452,12 @@ main:has(.wide-page) {
   color: var(--text-muted);
 }
 
+.status-timeline-author {
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* --- Dashboard status chip grid (categorical - identity encoding) ---
    A mosaic of small tiles instead of a ranked list - suits a dimension
    (status) with no inherent "biggest is most important" ordering the way
