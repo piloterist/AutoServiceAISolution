@@ -77,6 +77,14 @@ export default async function WorkOrderDetailPage({
               <span>{workOrder.customer_name || "—"}</span>
             </div>
             <div className="detail-field">
+              <span className="detail-label">Организация</span>
+              <span>{workOrder.organization || "—"}</span>
+            </div>
+            <div className="detail-field">
+              <span className="detail-label">Плательщик</span>
+              <span>{workOrder.payer_name || "—"}</span>
+            </div>
+            <div className="detail-field">
               <span className="detail-label">Автомобиль</span>
               <span>{workOrder.vehicle_description || "—"}</span>
             </div>
@@ -87,6 +95,10 @@ export default async function WorkOrderDetailPage({
             <div className="detail-field">
               <span className="detail-label">Подразделение</span>
               <span>{workOrder.department || "—"}</span>
+            </div>
+            <div className="detail-field">
+              <span className="detail-label">Вид ремонта</span>
+              <span>{workOrder.repair_type || "—"}</span>
             </div>
             <div className="detail-field">
               <span className="detail-label">Сумма</span>

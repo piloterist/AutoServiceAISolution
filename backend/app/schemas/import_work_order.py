@@ -57,10 +57,11 @@ class ImportWorkOrderRecord(BaseModel):
     department: str | None = None
     # ЗаказНаряд.ВидРемонта - a work order attribute (accident repair,
     # scheduled maintenance, warranty, etc; exact values are per-client
-    # 1C data, never hardcoded here). Captured starting now but not yet
-    # wired into any read endpoint/UI - just accumulating data for when
-    # that's built.
+    # 1C data, never hardcoded here). Shown on the work order detail page.
     repair_type: str | None = None
+    # ЗаказНаряд.Организация - which of the client's own legal entities the
+    # work order was raised under.
+    organization: str | None = None
     # Four more document dates (ЗаказНаряд.ДатаСоздания/ДатаНачала/
     # ДатаОкончания/ДатаЗакрытия), distinct from `date` above. All optional -
     # 1C sends null instead of its "empty date" sentinel when a field isn't

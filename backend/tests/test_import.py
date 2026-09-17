@@ -225,6 +225,36 @@ def test_import_accepts_missing_repair_type_as_null(
     assert work_order.repair_type is None
 
 
+def test_import_stores_organization_and_payer(client, db_session, auth_headers) -> None:
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-17T10:00:00",
+        "batch_id": "org-payer-test-1",
+        "records": [
+            {
+                "number": "ORG-PAYER-0001",
+                "date": "2026-09-17T09:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 3000,
+                "organization": "ООО Пан Моторс",
+                "payer": "СПАО Ингосстрах",
+            }
+        ],
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "ORG-PAYER-0001")
+    ).scalar_one()
+    assert work_order.organization == "ООО Пан Моторс"
+    assert work_order.payer_name == "СПАО Ингосстрах"
+
+
 def test_import_stores_payment_fields(client, db_session, auth_headers) -> None:
     """deal_amount/debt_amount/paid_amount/payment_percent - computed by the
     1C export itself (5S AUTO's own ВзаиморасчетыКомпании logic), just

@@ -75,9 +75,11 @@ class WorkOrder(Base):
     # configuration/data, never baked into the core - see ARCHITECTURE.md).
     status: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     department: Mapped[str | None] = mapped_column(String(150), nullable=True, index=True)
-    # ЗаказНаряд.ВидРемонта - captured starting now (see
-    # schemas/import_work_order.py) but not yet read/displayed anywhere.
+    # ЗаказНаряд.ВидРемонта - shown on the work order detail page.
     repair_type: Mapped[str | None] = mapped_column(String(150), nullable=True, index=True)
+    # ЗаказНаряд.Организация - which of the client's own legal entities the
+    # work order was raised under (relevant for multi-entity operations).
+    organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Money is never stored as float - fixed-precision NUMERIC only.
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)

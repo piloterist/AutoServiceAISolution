@@ -29,6 +29,9 @@ class WorkOrderListItem(BaseModel):
     # ЗаказНаряд.ВидРемонта - accident repair, scheduled maintenance,
     # warranty, etc; exact values are per-client 1C data, never hardcoded.
     repair_type: str | None
+    # ЗаказНаряд.Организация - which of the client's own legal entities the
+    # work order was raised under.
+    organization: str | None
     amount: Decimal
     # Settlement state as of the last import - 5S AUTO's own
     # ВзаиморасчетыКомпании calculation (see

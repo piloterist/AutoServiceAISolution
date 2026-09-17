@@ -61,6 +61,7 @@ def _upsert_work_order(
         "status": record.status,
         "department": record.department,
         "repair_type": record.repair_type,
+        "organization": record.organization,
         "amount": record.amount,
         "deal_amount": record.deal_amount,
         "debt_amount": record.debt_amount,

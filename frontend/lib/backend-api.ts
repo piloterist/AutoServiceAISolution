@@ -28,6 +28,9 @@ export type WorkOrderListItem = {
   // ЗаказНаряд.ВидРемонта - accident repair, scheduled maintenance,
   // warranty, etc; exact values are per-client 1C data.
   repair_type: string | null;
+  // ЗаказНаряд.Организация - which of the client's own legal entities the
+  // work order was raised under.
+  organization: string | null;
   amount: string;
   // Settlement state as of the last import - 5S AUTO's own
   // ВзаиморасчетыКомпании calculation (see 1c/TestExportOrders.bsl), not
