@@ -382,65 +382,65 @@ export default async function DashboardPage({
             <StatusChipGrid data={statusChips} dateFrom={dateFrom} dateTo={dateTo} />
           </div>
 
+          {/* 4 direct grid children (not two nested flex columns) so the
+              desktop layout can pair them up by grid row - card 1 with
+              card 3, card 2 with card 4 - and have each pair stretch to
+              the same height. See .dashboard-grid in globals.css. */}
           <div className="dashboard-grid">
-            <div className="dashboard-main">
-              <div className="card">
-                <h2 className="chart-title">Динамика выручки</h2>
-                <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
-                <RevenueTrendChart
-                  current={trendCurrentItems}
-                  previous={trendPreviousItems}
-                  payments={paymentTrendCurrentItems}
-                  granularity={granularity}
-                />
-              </div>
-
-              <div className="card">
-                <h2 className="chart-title">Заказ-нарядов по месяцам</h2>
-                <p className="chart-subtitle">
-                  по дате закрытия заказ-наряда — с начала года по текущий месяц, независимо от периода
-                  выше
-                </p>
-                <MonthlyBarChart data={monthlySummary?.items ?? []} metric="count" colorSlot="series-2" />
-              </div>
+            <div className="card">
+              <h2 className="chart-title">Динамика выручки</h2>
+              <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
+              <RevenueTrendChart
+                current={trendCurrentItems}
+                previous={trendPreviousItems}
+                payments={paymentTrendCurrentItems}
+                granularity={granularity}
+              />
             </div>
 
-            <div className="dashboard-sidebar">
-              <div className="card">
-                <h2 className="chart-title">Выручка по подразделениям</h2>
-                <p className="chart-subtitle">
-                  по дате закрытия заказ-наряда — нажмите на подразделение, чтобы отфильтровать всю
-                  страницу по нему
-                </p>
-                <RankedList
-                  data={departmentRanked}
-                  kind="amount"
-                  mode="department-filter"
-                  dateFrom={dateFrom}
-                  dateTo={dateTo}
-                  prevDateFrom={previousRange.dateFrom}
-                  prevDateTo={previousRange.dateTo}
-                  selectedDepartments={selectedDepartments}
-                />
-              </div>
+            <div className="card">
+              <h2 className="chart-title">Заказ-нарядов по месяцам</h2>
+              <p className="chart-subtitle">
+                по дате закрытия заказ-наряда — с начала года по текущий месяц, независимо от периода
+                выше
+              </p>
+              <MonthlyBarChart data={monthlySummary?.items ?? []} metric="count" colorSlot="series-2" />
+            </div>
 
-              <div className="card">
-                <h2 className="chart-title">Оплаты по подразделениям</h2>
-                <p className="chart-subtitle">
-                  по реальной дате платежа — нажмите на подразделение, чтобы отфильтровать всю
-                  страницу по нему
-                </p>
-                <RankedList
-                  data={paymentDepartmentRanked}
-                  kind="amount"
-                  mode="department-filter"
-                  dateFrom={dateFrom}
-                  dateTo={dateTo}
-                  prevDateFrom={previousRange.dateFrom}
-                  prevDateTo={previousRange.dateTo}
-                  selectedDepartments={selectedDepartments}
-                />
-              </div>
+            <div className="card">
+              <h2 className="chart-title">Выручка по подразделениям</h2>
+              <p className="chart-subtitle">
+                по дате закрытия заказ-наряда — нажмите на подразделение, чтобы отфильтровать всю
+                страницу по нему
+              </p>
+              <RankedList
+                data={departmentRanked}
+                kind="amount"
+                mode="department-filter"
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                prevDateFrom={previousRange.dateFrom}
+                prevDateTo={previousRange.dateTo}
+                selectedDepartments={selectedDepartments}
+              />
+            </div>
+
+            <div className="card">
+              <h2 className="chart-title">Оплаты по подразделениям</h2>
+              <p className="chart-subtitle">
+                по реальной дате платежа — нажмите на подразделение, чтобы отфильтровать всю
+                страницу по нему
+              </p>
+              <RankedList
+                data={paymentDepartmentRanked}
+                kind="amount"
+                mode="department-filter"
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                prevDateFrom={previousRange.dateFrom}
+                prevDateTo={previousRange.dateTo}
+                selectedDepartments={selectedDepartments}
+              />
             </div>
           </div>
         </>

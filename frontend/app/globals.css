@@ -775,36 +775,57 @@ main:has(.wide-page) {
 }
 
 /* --- Dashboard grid: an executive-overview layout, not a plain scroll ---
-   Mobile (default): everything stacks in one column, reading order = DOM
-   order (trend/count charts, then the two ranked lists).
-   Desktop (>=960px): a wide "main" column (trend + monthly-count, the
-   time-series charts) beside a narrower "sidebar" column (the two ranked
-   lists, department/status breakdowns) - the common BI-dashboard split
-   between "what's changing" and "how it breaks down". */
+   4 direct grid children in DOM order: [trend chart, monthly-count chart,
+   revenue-by-department, payments-by-department] - see the JSX comment
+   in app/dashboard/page.tsx for why there's no wrapper div per column.
+   Mobile (default): single column, so the 4 cards just stack in that DOM
+   order (charts first, then the two ranked lists).
+   Desktop (>=960px): a wide "main" column (the two time-series charts)
+   beside a narrower "sidebar" column (the two ranked lists) - the common
+   BI-dashboard split between "what's changing" and "how it breaks down" -
+   explicitly paired by grid row (card 1 with card 3, card 2 with card 4)
+   and stretched, so each pair starts and ends at the same height instead
+   of the ranked list's content-driven height leaving a gap next to its
+   paired chart. */
 .dashboard-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1rem;
-  align-items: start;
 }
 
-.dashboard-main,
-.dashboard-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-/* Cards inside the grid space themselves via the flex `gap` above - reset
-   the generic adjacent-card margin so spacing isn't doubled. */
-.dashboard-main > .card + .card,
-.dashboard-sidebar > .card + .card {
+/* Cards space themselves via the grid `gap` above, not the generic
+   adjacent-card margin (which would also fire between column 1's last
+   card and column 2's first card, despite them not being visually
+   adjacent once explicitly placed below). */
+.dashboard-grid > .card {
   margin-top: 0;
 }
 
 @media (min-width: 960px) {
   .dashboard-grid {
     grid-template-columns: 2fr 1fr;
+    grid-template-rows: auto auto;
+    align-items: stretch;
+  }
+
+  .dashboard-grid > .card:nth-child(1) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .dashboard-grid > .card:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .dashboard-grid > .card:nth-child(3) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .dashboard-grid > .card:nth-child(4) {
+    grid-column: 2;
+    grid-row: 2;
   }
 }
 
