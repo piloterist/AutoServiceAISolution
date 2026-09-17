@@ -12,6 +12,7 @@ import {
   getMonthlySummary,
   getPaymentDepartmentSummary,
   getPaymentTrendSummary,
+  getRevenuePaidSummary,
   getStatusSummary,
   getTrendSummary,
 } from "@/lib/backend-api";
@@ -160,6 +161,7 @@ export default async function DashboardPage({
   let departmentSummary;
   let departmentSummaryPrevious;
   let paymentDepartmentSummary;
+  let revenuePaidSummary;
   let statusSummary;
   let trendCurrent;
   let trendPrevious;
@@ -173,6 +175,7 @@ export default async function DashboardPage({
       deptRes,
       deptPrevRes,
       paymentDeptRes,
+      revenuePaidRes,
       statusRes,
       trendRes,
       trendPrevRes,
@@ -183,6 +186,7 @@ export default async function DashboardPage({
       getDepartmentSummary(filterParams),
       getDepartmentSummary(previousFilterParams),
       getPaymentDepartmentSummary(filterParams),
+      getRevenuePaidSummary(filterParams),
       getStatusSummary(filterParams),
       getTrendSummary({ ...filterParams, granularity }),
       getTrendSummary({ ...previousFilterParams, granularity }),
@@ -193,6 +197,7 @@ export default async function DashboardPage({
     departmentSummary = deptRes;
     departmentSummaryPrevious = deptPrevRes;
     paymentDepartmentSummary = paymentDeptRes;
+    revenuePaidSummary = revenuePaidRes;
     statusSummary = statusRes;
     trendCurrent = trendRes;
     trendPrevious = trendPrevRes;
@@ -214,6 +219,14 @@ export default async function DashboardPage({
   const prevTotalAmount = trendPreviousItems.reduce((sum, item) => sum + Number(item.total_amount), 0);
   const prevTotalCount = trendPreviousItems.reduce((sum, item) => sum + item.work_order_count, 0);
   const prevAvgAmount = prevTotalCount > 0 ? prevTotalAmount / prevTotalCount : 0;
+
+  // Of the revenue total above, how much is actually paid (see
+  // getRevenuePaidSummary) - the small badge on the revenue tile.
+  const revenuePaidAmount = Number(revenuePaidSummary?.total_amount ?? 0);
+  const revenuePaidBadge =
+    revenuePaidAmount > 0
+      ? `Оплачено ${revenuePaidAmount.toLocaleString("ru-RU", { maximumFractionDigits: 0 })} ₽`
+      : undefined;
 
   const revenueDeltaPct =
     prevTotalAmount > 0 ? ((totalAmount - prevTotalAmount) / prevTotalAmount) * 100 : null;
@@ -341,6 +354,7 @@ export default async function DashboardPage({
               deltaPct={revenueDeltaPct}
               sparkline={revenueSpark}
               href={revenueHref}
+              badge={revenuePaidBadge}
             />
             <StatTile
               label="Закрытых заказ-нарядов"

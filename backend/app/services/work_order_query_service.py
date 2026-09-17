@@ -131,6 +131,33 @@ def monthly_summary(
     ]
 
 
+def revenue_paid_amount(
+    db: Session,
+    *,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    departments: list[str] | None = None,
+    revenue_statuses: list[str] | None = None,
+) -> Decimal:
+    """Of the work orders that make up the revenue figure for this period
+    (same closed_date/department/revenue_statuses filter as
+    monthly_summary/trend_summary), how much of their amount is actually
+    paid - sums WorkOrder.paid_amount (the current 5S AUTO snapshot), not
+    the payment_events ledger, since the point is "how much of *this*
+    revenue total is paid", not a dated trend.
+    """
+    filters = _date_range_filters(WorkOrder.closed_date, date_from, date_to)
+    filters.append(WorkOrder.closed_date.is_not(None))
+    if departments:
+        filters.append(WorkOrder.department.in_(departments))
+    if revenue_statuses:
+        filters.append(WorkOrder.status.in_(revenue_statuses))
+
+    return db.execute(
+        select(func.coalesce(func.sum(WorkOrder.paid_amount), 0)).where(*filters)
+    ).scalar_one()
+
+
 def _bucket_starts(date_from: datetime, date_to: datetime, granularity: str) -> list[date]:
     """Every bucket start `date_trunc(granularity, closed_date)` would emit
     within [date_from, date_to) - including ones no work order closed in.

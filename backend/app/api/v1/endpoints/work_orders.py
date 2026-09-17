@@ -25,6 +25,7 @@ from app.schemas.work_order import (
     PaymentHistoryItem,
     PaymentTrendItem,
     PaymentTrendResponse,
+    RevenuePaidSummaryResponse,
     StatusHistoryItem,
     StatusSummaryItem,
     StatusSummaryResponse,
@@ -50,6 +51,7 @@ from app.services.work_order_query_service import (
     monthly_summary,
     payment_department_summary,
     payment_trend_summary,
+    revenue_paid_amount,
     status_summary,
     trend_summary,
 )
@@ -123,6 +125,26 @@ def get_monthly_summary(
         revenue_statuses=revenue_statuses or None,
     )
     return MonthlySummaryResponse(items=[MonthlySummaryItem(**row) for row in rows])
+
+
+@router.get("/work-orders/summary/revenue-paid", response_model=RevenuePaidSummaryResponse)
+def get_revenue_paid_summary(
+    date_from: datetime | None = Query(
+        default=None, description="Filters by closed_date (ДатаЗакрытия), not document_date"
+    ),
+    date_to: datetime | None = Query(default=None),
+    departments: str | None = Query(default=None, description="Comma-separated department names"),
+    db: Session = Depends(get_db),
+) -> RevenuePaidSummaryResponse:
+    revenue_statuses = get_settings().revenue_statuses_list
+    total = revenue_paid_amount(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        departments=_split_departments(departments),
+        revenue_statuses=revenue_statuses or None,
+    )
+    return RevenuePaidSummaryResponse(total_amount=total)
 
 
 @router.get("/work-orders/summary/by-department", response_model=DepartmentSummaryResponse)

@@ -26,6 +26,9 @@ class WorkOrderListItem(BaseModel):
     vehicle_description: str | None
     status: str | None
     department: str | None
+    # ЗаказНаряд.ВидРемонта - accident repair, scheduled maintenance,
+    # warranty, etc; exact values are per-client 1C data, never hardcoded.
+    repair_type: str | None
     amount: Decimal
     # Settlement state as of the last import - 5S AUTO's own
     # ВзаиморасчетыКомпании calculation (see
@@ -79,6 +82,15 @@ class PaymentTrendItem(BaseModel):
 class PaymentTrendResponse(BaseModel):
     items: list[PaymentTrendItem]
     granularity: str  # "day" | "week" | "month"
+
+
+class RevenuePaidSummaryResponse(BaseModel):
+    # Of the work orders that make up the revenue figure for this period
+    # (same closed_date/department/revenue_statuses filter as
+    # monthly_summary), how much of their amount is actually paid
+    # (sum of WorkOrder.paid_amount) - the small badge on the "Выручка за
+    # период" tile.
+    total_amount: Decimal
 
 
 class DepartmentSummaryItem(BaseModel):

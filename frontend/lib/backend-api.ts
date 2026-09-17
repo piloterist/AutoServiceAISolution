@@ -25,6 +25,9 @@ export type WorkOrderListItem = {
   vehicle_description: string | null;
   status: string | null;
   department: string | null;
+  // ЗаказНаряд.ВидРемонта - accident repair, scheduled maintenance,
+  // warranty, etc; exact values are per-client 1C data.
+  repair_type: string | null;
   amount: string;
   // Settlement state as of the last import - 5S AUTO's own
   // ВзаиморасчетыКомпании calculation (see 1c/TestExportOrders.bsl), not
@@ -51,6 +54,13 @@ export type MonthlySummaryItem = {
 
 export type MonthlySummaryResponse = {
   items: MonthlySummaryItem[];
+};
+
+export type RevenuePaidSummaryResponse = {
+  // Of the work orders making up the revenue figure for this period, how
+  // much of their amount is actually paid - the small badge on the
+  // "Выручка за период" tile.
+  total_amount: string;
 };
 
 export type DepartmentSummaryItem = {
@@ -228,6 +238,16 @@ export function getMonthlySummary(
   params?: PeriodAndDepartmentParams,
 ): Promise<MonthlySummaryResponse> {
   return backendGet<MonthlySummaryResponse>("/api/v1/work-orders/summary/monthly", {
+    date_from: params?.dateFrom ?? "",
+    date_to: dateToParam(params?.dateTo),
+    departments: departmentsParam(params?.departments),
+  });
+}
+
+export function getRevenuePaidSummary(
+  params?: PeriodAndDepartmentParams,
+): Promise<RevenuePaidSummaryResponse> {
+  return backendGet<RevenuePaidSummaryResponse>("/api/v1/work-orders/summary/revenue-paid", {
     date_from: params?.dateFrom ?? "",
     date_to: dateToParam(params?.dateTo),
     departments: departmentsParam(params?.departments),

@@ -80,6 +80,7 @@ type Row = {
   customer: string;
   status: string;
   department: string;
+  repairType: string;
   amount: string;
   paidAmount: string;
   paymentPercent: string;
@@ -93,6 +94,7 @@ type ColumnKey =
   | "customer"
   | "status"
   | "department"
+  | "repairType"
   | "amount"
   | "paidAmount"
   | "paymentPercent";
@@ -105,10 +107,46 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "customer", label: "Контрагент" },
   { key: "status", label: "Статус" },
   { key: "department", label: "Подразделение" },
+  { key: "repairType", label: "Вид ремонта" },
   { key: "amount", label: "Сумма", numeric: true },
   { key: "paidAmount", label: "Сумма оплаты", numeric: true },
   { key: "paymentPercent", label: "% оплаты", numeric: true },
 ];
+
+/** Plain numeric string for spreadsheet paste (no "₽"/"%"/thousands
+ * separators) - Excel/Sheets only recognize a pasted cell as a real number
+ * when it looks like one, not when it's pre-formatted for display. */
+function exportNumber(value: string | null): string {
+  if (value === null) return "";
+  const n = Number(value);
+  return Number.isFinite(n) ? String(n) : "";
+}
+
+/** Tab-separated export of the currently visible rows (header + one line
+ * per row), for pasting straight into Excel/Sheets as real columns. Dates
+ * and text stay exactly as shown on screen (Excel's RU locale reads
+ * "dd.mm.yyyy" as a real date); amounts/percent are re-derived from the
+ * raw values instead of the display strings, since those carry a "₽"/"%"/
+ * thousands separators that would paste as text, not numbers. */
+function buildClipboardText(rows: Row[]): string {
+  const header = COLUMNS.map((col) => col.label).join("\t");
+  const lines = rows.map((row) =>
+    [
+      row.createdDate,
+      row.closedDate,
+      row.number,
+      row.vehicle || "—",
+      row.customer || "—",
+      row.status || "—",
+      row.department || "—",
+      row.repairType || "—",
+      exportNumber(row.item.amount),
+      exportNumber(row.item.paid_amount),
+      exportNumber(row.item.payment_percent),
+    ].join("\t"),
+  );
+  return [header, ...lines].join("\n");
+}
 
 export function WorkOrdersTable({
   items,
@@ -152,6 +190,7 @@ export function WorkOrdersTable({
     customer: "",
     status: "",
     department: initialDepartment ?? "",
+    repairType: "",
     amount: "",
     paidAmount: "",
     paymentPercent: "",
@@ -179,6 +218,7 @@ export function WorkOrdersTable({
         customer: item.customer_name ?? "",
         status: item.status ?? "",
         department: item.department ?? "",
+        repairType: item.repair_type ?? "",
         amount: formatAmount(item.amount),
         paidAmount: formatAmountOrDash(item.paid_amount),
         paymentPercent: formatPercentOrDash(item.payment_percent),
@@ -248,6 +288,18 @@ export function WorkOrdersTable({
     () => filteredRows.reduce((sum, row) => sum + Number(row.item.amount), 0),
     [filteredRows],
   );
+
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(buildClipboardText(filteredRows));
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+    setTimeout(() => setCopyState("idle"), 2000);
+  };
 
   return (
     <div className="wide-page">
@@ -361,6 +413,9 @@ export function WorkOrdersTable({
           Показано {filteredRows.length} из {items.length}
         </span>
         <span className="table-meta-total">Сумма: {formatAmount(filteredAmount)}</span>
+        <button type="button" className="copy-button" onClick={handleCopy}>
+          {copyState === "copied" ? "Скопировано ✓" : copyState === "error" ? "Не удалось скопировать" : "Скопировать"}
+        </button>
       </div>
 
       <div className="table-wrap">
@@ -415,6 +470,7 @@ export function WorkOrdersTable({
                 <td>{row.customer || "—"}</td>
                 <td>{row.status || "—"}</td>
                 <td>{row.department || "—"}</td>
+                <td>{row.repairType || "—"}</td>
                 <td className="num">{row.amount}</td>
                 <td className="num">{row.paidAmount}</td>
                 <td className="num">{row.paymentPercent}</td>

@@ -36,6 +36,7 @@ export function StatTile({
   deltaPct,
   sparkline,
   href,
+  badge,
 }: {
   label: string;
   /** Pre-formatted - the caller decides currency/count formatting. */
@@ -49,6 +50,10 @@ export function StatTile({
    * figure - so the number is always one click away from being checkable,
    * not just asserted. */
   href?: string;
+  /** Small secondary pill under the value, e.g. "Оплачено 3 200 000 ₽" on
+   * the revenue tile - a related figure that doesn't deserve its own tile
+   * but is worth surfacing without a click-through. */
+  badge?: string;
 }) {
   const { line, area, endX, endY } = buildSparkline(sparkline);
   const isUp = deltaPct !== null && deltaPct >= 0;
@@ -73,6 +78,7 @@ export function StatTile({
           </svg>
         )}
       </div>
+      {badge && <span className="stat-badge">{badge}</span>}
     </>
   );
 
