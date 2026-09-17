@@ -494,63 +494,80 @@ main:has(.wide-page) {
   letter-spacing: 0.02em;
 }
 
-/* Column widths (Work Orders table specifically - 11 columns): short
-   fixed-ish fields get just enough room, the long free-text vehicle
-   description gets the most (table-layout: fixed makes these percentages
-   apply consistently instead of auto-sizing to content, which is what was
-   forcing horizontal scroll before).
-   1 Дата создания | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
-   5 Контрагент | 6 Статус | 7 Подразделение | 8 Вид ремонта | 9 Сумма |
-   10 Сумма оплаты | 11 % оплаты
-   (Дата начала dropped from the list view - it's always equal to Дата
-   закрытия in practice, so showing both is redundant; still captured in
-   the DB/import contract, just not displayed here.) */
-.data-table--work-orders th:nth-child(1),
-.data-table--work-orders td:nth-child(1) {
-  width: 7%;
-}
-.data-table--work-orders th:nth-child(2),
-.data-table--work-orders td:nth-child(2) {
-  width: 7%;
-}
-.data-table--work-orders th:nth-child(3),
-.data-table--work-orders td:nth-child(3) {
-  width: 7%;
-}
-.data-table--work-orders th:nth-child(4),
-.data-table--work-orders td:nth-child(4) {
-  width: 18%;
-}
-.data-table--work-orders th:nth-child(5),
-.data-table--work-orders td:nth-child(5) {
-  width: 12%;
-}
-.data-table--work-orders th:nth-child(6),
-.data-table--work-orders td:nth-child(6) {
-  width: 7%;
-}
-.data-table--work-orders th:nth-child(7),
-.data-table--work-orders td:nth-child(7) {
-  width: 10%;
-}
-.data-table--work-orders th:nth-child(8),
-.data-table--work-orders td:nth-child(8) {
-  width: 10%;
-}
-.data-table--work-orders th:nth-child(9),
-.data-table--work-orders td:nth-child(9) {
-  width: 7%;
-}
-.data-table--work-orders th:nth-child(10),
-.data-table--work-orders td:nth-child(10) {
-  width: 8%;
-}
-.data-table--work-orders th:nth-child(11),
-.data-table--work-orders td:nth-child(11) {
-  width: 7%;
+/* --- Virtualized Work Orders table ---
+   Not a real <table> - a virtualizer has to absolutely-position each row
+   at a computed pixel offset (rows scroll in/out of the DOM as you
+   scroll), which native <table> row-flow layout can't do. Each row
+   (header, filter row, body row) is its own CSS grid with an identical
+   grid-template-columns (set inline from GRID_TEMPLATE_COLUMNS in
+   WorkOrdersTable.tsx, single-sourced there), which is what keeps the
+   columns aligned across rows instead of one shared table layout. */
+
+.vt-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: auto;
+  /* Its own scrollbar, independent of the page - lets the virtualizer know
+     a fixed viewport height to measure "what's visible" against. */
+  max-height: 70vh;
 }
 
-.filter-row th {
+.vt-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+}
+
+.vt-body {
+  position: relative;
+  width: 100%;
+}
+
+.vt-row {
+  display: grid;
+  align-items: start;
+}
+
+.vt-row--body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  cursor: pointer;
+}
+
+.vt-row--body:hover {
+  background: var(--bg);
+}
+
+.vt-row--body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.vt-cell {
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: break-word;
+  font-size: 0.9rem;
+}
+
+.vt-cell--num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vt-header .vt-cell {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.filter-row .vt-cell {
   padding: 0.4rem 0.5rem;
   background: var(--bg);
 }
@@ -570,21 +587,6 @@ main:has(.wide-page) {
 
 .data-table tbody tr:last-child td {
   border-bottom: none;
-}
-
-/* Rows that open a detail page on click (see WorkOrdersTable) - hover/focus
-   feedback so it reads as clickable, keyboard-focusable via tabIndex+role. */
-.row-clickable {
-  cursor: pointer;
-}
-
-.row-clickable:hover {
-  background: var(--bg);
-}
-
-.row-clickable:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 .data-table td.num,

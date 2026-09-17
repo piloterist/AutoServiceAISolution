@@ -1,9 +1,21 @@
 "use client";
 
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type { WorkOrderListItem } from "@/lib/backend-api";
+
+// Column widths as a CSS grid template (percentages), applied identically to
+// the header row, the filter row and every virtualized body row so they
+// stay aligned - see the "Virtualized Work Orders table" CSS in globals.css
+// for why this is grid-per-row rather than a real <table>: a virtualizer
+// has to absolutely-position each row by a computed offset, which a native
+// <table>'s row-flow layout doesn't support.
+// 1 Дата создания | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
+// 5 Контрагент | 6 Статус | 7 Подразделение | 8 Вид ремонта | 9 Сумма |
+// 10 Сумма оплаты | 11 % оплаты
+const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 18% 12% 7% 10% 10% 7% 8% 7%";
 
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
@@ -301,6 +313,21 @@ export function WorkOrdersTable({
     setTimeout(() => setCopyState("idle"), 2000);
   };
 
+  // Only the ~20-30 rows actually in view get mounted in the DOM - with
+  // several thousand work orders (and growing), rendering every row at
+  // once was what made the page sluggish. Filtering itself is untouched
+  // (still runs over the full `rows` array above) - this only changes how
+  // the *result* gets rendered. Row height is measured dynamically
+  // (measureElement), not fixed, since a long "Автомобиль"/"Контрагент"
+  // value can wrap to two lines.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredRows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 46,
+    overscan: 12,
+  });
+
   return (
     <div className="wide-page">
       {(paidFrom || paidTo) && (
@@ -418,73 +445,116 @@ export function WorkOrdersTable({
         </button>
       </div>
 
-      <div className="table-wrap">
-        <table className="data-table data-table--work-orders">
-          <thead>
-            <tr>
-              {COLUMNS.map((col) => (
-                <th key={col.key} className={col.numeric ? "num" : undefined}>
-                  {col.label}
-                </th>
-              ))}
-            </tr>
-            <tr className="filter-row">
-              {COLUMNS.map((col) =>
-                col.key === "status" ? (
-                  <th key={col.key} />
-                ) : (
-                  <th key={col.key} className={col.numeric ? "num" : undefined}>
-                    <input
-                      type="text"
-                      value={columnFilters[col.key]}
-                      onChange={(event) =>
-                        setColumnFilters((prev) => ({ ...prev, [col.key]: event.target.value }))
-                      }
-                      placeholder="Фильтр"
-                      aria-label={`Фильтр по полю ${col.label}`}
-                    />
-                  </th>
-                ),
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredRows.map((row) => (
-              <tr
-                key={row.item.id}
-                className="row-clickable"
-                role="link"
-                tabIndex={0}
-                onClick={() => router.push(`/work-orders/${row.item.id}`)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    router.push(`/work-orders/${row.item.id}`);
-                  }
-                }}
+      <div className="vt-wrap" ref={scrollRef} role="table" aria-label="Заказ-наряды">
+        <div className="vt-header" role="rowgroup">
+          <div className="vt-row" role="row" style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}>
+            {COLUMNS.map((col) => (
+              <div
+                key={col.key}
+                role="columnheader"
+                className={col.numeric ? "vt-cell vt-cell--num" : "vt-cell"}
               >
-                <td>{row.createdDate}</td>
-                <td>{row.closedDate}</td>
-                <td>{row.number}</td>
-                <td>{row.vehicle || "—"}</td>
-                <td>{row.customer || "—"}</td>
-                <td>{row.status || "—"}</td>
-                <td>{row.department || "—"}</td>
-                <td>{row.repairType || "—"}</td>
-                <td className="num">{row.amount}</td>
-                <td className="num">{row.paidAmount}</td>
-                <td className="num">{row.paymentPercent}</td>
-              </tr>
+                {col.label}
+              </div>
             ))}
-            {filteredRows.length === 0 && (
-              <tr>
-                <td colSpan={COLUMNS.length} className="table-empty">
-                  Ничего не найдено.
-                </td>
-              </tr>
+          </div>
+          <div
+            className="vt-row filter-row"
+            role="row"
+            style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
+          >
+            {COLUMNS.map((col) =>
+              col.key === "status" ? (
+                <div key={col.key} className="vt-cell" role="columnheader" />
+              ) : (
+                <div
+                  key={col.key}
+                  role="columnheader"
+                  className={col.numeric ? "vt-cell vt-cell--num" : "vt-cell"}
+                >
+                  <input
+                    type="text"
+                    value={columnFilters[col.key]}
+                    onChange={(event) =>
+                      setColumnFilters((prev) => ({ ...prev, [col.key]: event.target.value }))
+                    }
+                    placeholder="Фильтр"
+                    aria-label={`Фильтр по полю ${col.label}`}
+                  />
+                </div>
+              ),
             )}
-          </tbody>
-        </table>
+          </div>
+        </div>
+
+        {filteredRows.length === 0 ? (
+          <p className="table-empty">Ничего не найдено.</p>
+        ) : (
+          <div
+            className="vt-body"
+            role="rowgroup"
+            style={{ height: rowVirtualizer.getTotalSize() }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = filteredRows[virtualRow.index];
+              return (
+                <div
+                  key={row.item.id}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  className="vt-row vt-row--body"
+                  role="row"
+                  tabIndex={0}
+                  style={{
+                    gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                  onClick={() => router.push(`/work-orders/${row.item.id}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      router.push(`/work-orders/${row.item.id}`);
+                    }
+                  }}
+                >
+                  <div className="vt-cell" role="gridcell">
+                    {row.createdDate}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.closedDate}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.number}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.vehicle || "—"}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.customer || "—"}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.status || "—"}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.department || "—"}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.repairType || "—"}
+                  </div>
+                  <div className="vt-cell vt-cell--num" role="gridcell">
+                    {row.amount}
+                  </div>
+                  <div className="vt-cell vt-cell--num" role="gridcell">
+                    {row.paidAmount}
+                  </div>
+                  <div className="vt-cell vt-cell--num" role="gridcell">
+                    {row.paymentPercent}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
