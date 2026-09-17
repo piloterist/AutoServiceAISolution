@@ -527,7 +527,10 @@ main:has(.wide-page) {
 
 .vt-row {
   display: grid;
-  align-items: start;
+  /* Grid's default (stretch), not "start" - every cell fills the row's
+     full height so borders line up in a continuous row even when one
+     cell has no content (e.g. the empty Статус filter cell, which uses a
+     dropdown elsewhere instead of a text filter). */
 }
 
 .vt-row--body {
