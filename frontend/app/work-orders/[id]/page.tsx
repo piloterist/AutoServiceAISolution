@@ -82,7 +82,7 @@ export default async function WorkOrderDetailPage({
             </div>
             <div className="detail-field">
               <span className="detail-label">Плательщик</span>
-              <span>{workOrder.payer_name || "—"}</span>
+              <span>{workOrder.customer_name || "—"}</span>
             </div>
             <div className="detail-field">
               <span className="detail-label">Автомобиль</span>
