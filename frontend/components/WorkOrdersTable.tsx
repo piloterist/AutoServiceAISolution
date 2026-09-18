@@ -16,7 +16,7 @@ import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } fro
 // 1 Дата создания | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
 // 5 Контрагент | 6 Статус | 7 Внутренний | 8 Подразделение | 9 Вид ремонта |
 // 10 Сумма | 11 Сумма оплаты | 12 % оплаты
-const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 16% 10% 7% 6% 9% 9% 7% 8% 7%";
+const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 14% 9% 7% 9% 9% 9% 7% 8% 7%";
 
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
@@ -138,6 +138,54 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "paidAmount", label: "Сумма оплаты", numeric: true },
   { key: "paymentPercent", label: "% оплаты", numeric: true },
 ];
+
+type PersistedFilters = {
+  search: string;
+  columnFilters: Record<ColumnKey, string>;
+  selectedStatuses: string[];
+  dateFrom: string;
+  dateTo: string;
+  closedFrom: string;
+  closedTo: string;
+  paymentFilter: PaymentFilter;
+  internalFilter: InternalFilter;
+};
+
+const FILTERS_STORAGE_KEY = "work-orders-filters:v1";
+
+/** So filters survive "open a work order, then go back" - without this,
+ * every click into a row and back reset the whole toolbar, since
+ * WorkOrdersTable unmounts and remounts fresh on each visit to the list
+ * (see lib/work-orders-cache.ts for the same reasoning applied to the
+ * loaded data itself). sessionStorage, not state lifted higher up - it
+ * needs to survive a full remount, but only for this tab/session, and
+ * silently no-ops server-side (SSR) and in a private-browsing tab that
+ * blocks it, same as the data cache. */
+function readPersistedFilters(): PersistedFilters | null {
+  try {
+    const raw = sessionStorage.getItem(FILTERS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as PersistedFilters) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedFilters(filters: PersistedFilters): void {
+  try {
+    sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  } catch {
+    // Ignore (private browsing, quota) - filters just won't survive a
+    // remount this time, same degradation as the data cache.
+  }
+}
+
+function clearPersistedFilters(): void {
+  try {
+    sessionStorage.removeItem(FILTERS_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 /** Plain numeric string for spreadsheet paste (no "₽"/"%"/thousands
  * separators) - Excel/Sheets only recognize a pasted cell as a real number
@@ -263,33 +311,100 @@ export function WorkOrdersTable({
     };
   }, [paidFrom, paidTo]);
 
-  const [search, setSearch] = useState("");
-  const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>({
-    createdDate: "",
-    closedDate: "",
-    number: "",
-    vehicle: "",
-    customer: "",
+  // A link with real filter params (e.g. a dashboard status chip or the
+  // revenue tile) always wins for this visit; otherwise restore whatever
+  // was last set, from sessionStorage (see readPersistedFilters above) -
+  // recomputed fresh each render, but only the very first render's result
+  // is ever used, since every field below only reads it inside a lazy
+  // useState initializer.
+  const hasUrlFilters = Boolean(
+    initialStatus || initialDateFrom || initialDateTo || initialClosedFrom || initialClosedTo,
+  );
+  const persisted = hasUrlFilters ? null : readPersistedFilters();
+
+  const [search, setSearch] = useState(() => persisted?.search ?? "");
+  const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>(() => ({
+    createdDate: persisted?.columnFilters.createdDate ?? "",
+    closedDate: persisted?.columnFilters.closedDate ?? "",
+    number: persisted?.columnFilters.number ?? "",
+    vehicle: persisted?.columnFilters.vehicle ?? "",
+    customer: persisted?.columnFilters.customer ?? "",
     status: "",
     internal: "",
-    department: initialDepartment ?? "",
-    repairType: "",
-    amount: "",
-    paidAmount: "",
-    paymentPercent: "",
-  });
+    department: initialDepartment ?? persisted?.columnFilters.department ?? "",
+    repairType: persisted?.columnFilters.repairType ?? "",
+    amount: persisted?.columnFilters.amount ?? "",
+    paidAmount: persisted?.columnFilters.paidAmount ?? "",
+    paymentPercent: persisted?.columnFilters.paymentPercent ?? "",
+  }));
   // Status has its own checkbox dropdown (below) instead of the generic
   // per-column text filter every other column gets - a free-text substring
   // match makes little sense against a small fixed set of status values.
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(
-    initialStatus ? [initialStatus] : [],
+    () => (initialStatus ? [initialStatus] : persisted?.selectedStatuses ?? []),
   );
-  const [dateFrom, setDateFrom] = useState(initialDateFrom ?? "");
-  const [dateTo, setDateTo] = useState(initialDateTo ?? "");
-  const [closedFrom, setClosedFrom] = useState(initialClosedFrom ?? "");
-  const [closedTo, setClosedTo] = useState(initialClosedTo ?? "");
-  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
-  const [internalFilter, setInternalFilter] = useState<InternalFilter>("all");
+  const [dateFrom, setDateFrom] = useState(() => initialDateFrom ?? persisted?.dateFrom ?? "");
+  const [dateTo, setDateTo] = useState(() => initialDateTo ?? persisted?.dateTo ?? "");
+  const [closedFrom, setClosedFrom] = useState(
+    () => initialClosedFrom ?? persisted?.closedFrom ?? "",
+  );
+  const [closedTo, setClosedTo] = useState(() => initialClosedTo ?? persisted?.closedTo ?? "");
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>(
+    () => persisted?.paymentFilter ?? "all",
+  );
+  const [internalFilter, setInternalFilter] = useState<InternalFilter>(
+    () => persisted?.internalFilter ?? "all",
+  );
+
+  useEffect(() => {
+    writePersistedFilters({
+      search,
+      columnFilters,
+      selectedStatuses,
+      dateFrom,
+      dateTo,
+      closedFrom,
+      closedTo,
+      paymentFilter,
+      internalFilter,
+    });
+  }, [
+    search,
+    columnFilters,
+    selectedStatuses,
+    dateFrom,
+    dateTo,
+    closedFrom,
+    closedTo,
+    paymentFilter,
+    internalFilter,
+  ]);
+
+  const resetFilters = () => {
+    setSearch("");
+    setColumnFilters({
+      createdDate: "",
+      closedDate: "",
+      number: "",
+      vehicle: "",
+      customer: "",
+      status: "",
+      internal: "",
+      department: "",
+      repairType: "",
+      amount: "",
+      paidAmount: "",
+      paymentPercent: "",
+    });
+    setSelectedStatuses([]);
+    setDateFrom("");
+    setDateTo("");
+    setClosedFrom("");
+    setClosedTo("");
+    setPaymentFilter("all");
+    setInternalFilter("all");
+    clearPersistedFilters();
+  };
 
   const rows: Row[] = useMemo(
     () =>
@@ -444,19 +559,6 @@ export function WorkOrdersTable({
           </select>
         </label>
 
-        <label className="payment-filter">
-          <span className="period-filter-label">Внутренний</span>
-          <select
-            value={internalFilter}
-            onChange={(event) => setInternalFilter(event.target.value as InternalFilter)}
-            aria-label="Фильтр по признаку внутренний"
-          >
-            <option value="all">Все</option>
-            <option value="internal">Только внутренние</option>
-            <option value="external">Только внешние</option>
-          </select>
-        </label>
-
         <details className="status-filter">
           <summary>
             Статус{selectedStatuses.length > 0 ? ` (${selectedStatuses.length})` : ""}
@@ -530,6 +632,10 @@ export function WorkOrdersTable({
             />
           </label>
         </div>
+
+        <button type="button" className="filters-reset" onClick={resetFilters}>
+          Сбросить
+        </button>
       </div>
 
       <input
@@ -571,8 +677,20 @@ export function WorkOrdersTable({
             style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
           >
             {COLUMNS.map((col) =>
-              col.key === "status" || col.key === "internal" ? (
+              col.key === "status" ? (
                 <div key={col.key} className="vt-cell" role="columnheader" />
+              ) : col.key === "internal" ? (
+                <div key={col.key} className="vt-cell" role="columnheader">
+                  <select
+                    value={internalFilter}
+                    onChange={(event) => setInternalFilter(event.target.value as InternalFilter)}
+                    aria-label="Фильтр по полю Внутренний"
+                  >
+                    <option value="all">Все</option>
+                    <option value="internal">Внутр.</option>
+                    <option value="external">Внешн.</option>
+                  </select>
+                </div>
               ) : (
                 <div
                   key={col.key}

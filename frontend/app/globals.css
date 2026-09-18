@@ -256,6 +256,11 @@ main:has(.wide-page) {
 .status-filter summary {
   cursor: pointer;
   list-style: none;
+  /* Without this, <summary>'s default block sizing stretches it wider
+     than its text (unlike the sibling Оплата/Внутренний <select>s, which
+     naturally shrink to content) - forces the same "size to content"
+     behavior so all three toolbar controls line up visually. */
+  width: max-content;
   padding: 0.6rem 0.9rem;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -582,9 +587,9 @@ main:has(.wide-page) {
 .vt-header .vt-cell {
   color: var(--text-muted);
   font-weight: 600;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
 }
 
 .filter-row .vt-cell {
@@ -592,7 +597,8 @@ main:has(.wide-page) {
   background: var(--bg);
 }
 
-.filter-row input {
+.filter-row input,
+.filter-row select {
   width: 100%;
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--border);
@@ -603,6 +609,25 @@ main:has(.wide-page) {
   letter-spacing: normal;
   color: var(--text);
   background: var(--surface);
+}
+
+.filters-reset {
+  align-self: flex-start;
+  /* Sits at the end of the (wrapping) toolbar row, pushed to its right
+     edge - "to the right of Оплата/Внутренний/Статус etc." */
+  margin-left: auto;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.filters-reset:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
 }
 
 .data-table tbody tr:last-child td {
