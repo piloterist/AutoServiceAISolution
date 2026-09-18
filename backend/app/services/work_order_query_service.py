@@ -86,6 +86,7 @@ def monthly_summary(
     date_to: datetime | None = None,
     departments: list[str] | None = None,
     revenue_statuses: list[str] | None = None,
+    exclude_internal: bool = False,
 ) -> list[dict]:
     """Total amount and count of work orders per calendar month, oldest first.
 
@@ -100,6 +101,10 @@ def monthly_summary(
     status value(s) that count as recognized revenue (e.g. "Закрыт").
     Configured via Settings.revenue_statuses, not hardcoded here (see
     ARCHITECTURE.md).
+
+    `exclude_internal`, when True (AppSettings.exclude_internal_orders -
+    see services/internal_order_rules.py), drops WorkOrder.is_internal
+    rows entirely, as if they didn't exist.
     """
     filters = _date_range_filters(WorkOrder.closed_date, date_from, date_to)
     filters.append(WorkOrder.closed_date.is_not(None))
@@ -107,6 +112,8 @@ def monthly_summary(
         filters.append(WorkOrder.department.in_(departments))
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
+    if exclude_internal:
+        filters.append(WorkOrder.is_internal.is_(False))
 
     month = func.date_trunc("month", WorkOrder.closed_date).label("month")
 
@@ -138,13 +145,15 @@ def revenue_paid_amount(
     date_to: datetime | None = None,
     departments: list[str] | None = None,
     revenue_statuses: list[str] | None = None,
+    exclude_internal: bool = False,
 ) -> Decimal:
     """Of the work orders that make up the revenue figure for this period
     (same closed_date/department/revenue_statuses filter as
     monthly_summary/trend_summary), how much of their amount is actually
     paid - sums WorkOrder.paid_amount (the current 5S AUTO snapshot), not
     the payment_events ledger, since the point is "how much of *this*
-    revenue total is paid", not a dated trend.
+    revenue total is paid", not a dated trend. See monthly_summary for
+    `exclude_internal`.
     """
     filters = _date_range_filters(WorkOrder.closed_date, date_from, date_to)
     filters.append(WorkOrder.closed_date.is_not(None))
@@ -152,6 +161,8 @@ def revenue_paid_amount(
         filters.append(WorkOrder.department.in_(departments))
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
+    if exclude_internal:
+        filters.append(WorkOrder.is_internal.is_(False))
 
     return db.execute(
         select(func.coalesce(func.sum(WorkOrder.paid_amount), 0)).where(*filters)
@@ -220,6 +231,7 @@ def trend_summary(
     date_to: datetime,
     departments: list[str] | None = None,
     revenue_statuses: list[str] | None = None,
+    exclude_internal: bool = False,
     granularity: str | None = None,
 ) -> tuple[list[dict], str]:
     """Revenue/count trend bucketed by day, week, or month, oldest first.
@@ -228,7 +240,8 @@ def trend_summary(
     by `closed_date`, optionally restricted to `revenue_statuses`) - this
     exists to feed the dashboard's period-over-period trend chart, which
     needs finer buckets than a full month when the selected period itself is
-    short (a single month selected would otherwise render as one bar).
+    short (a single month selected would otherwise render as one bar). See
+    monthly_summary for `exclude_internal`.
     """
     granularity = _resolve_granularity(date_from, date_to, granularity)
 
@@ -238,6 +251,8 @@ def trend_summary(
         filters.append(WorkOrder.department.in_(departments))
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
+    if exclude_internal:
+        filters.append(WorkOrder.is_internal.is_(False))
 
     period = func.date_trunc(granularity, WorkOrder.closed_date).label("period")
 
@@ -277,6 +292,7 @@ def payment_trend_summary(
     date_from: datetime,
     date_to: datetime,
     departments: list[str] | None = None,
+    exclude_internal: bool = False,
     granularity: str | None = None,
 ) -> tuple[list[dict], str]:
     """Total real payments received per day/week/month, oldest first.
@@ -289,16 +305,20 @@ def payment_trend_summary(
     real payment, dated `paid_at`" was derived from the register's own
     structure - this used to be a diff of periodic balance snapshots
     (work_order_payment_history) with no real date to bucket by; that
-    approximation is gone now that 1C sends the real ledger.
+    approximation is gone now that 1C sends the real ledger. See
+    monthly_summary for `exclude_internal` - forces the WorkOrder join
+    below even without a department filter, since is_internal lives there.
     """
     granularity = _resolve_granularity(date_from, date_to, granularity)
 
     filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, date_from, date_to)
     query = select(WorkOrderPaymentEvent.paid_at, WorkOrderPaymentEvent.amount)
-    if departments:
-        query = query.join(WorkOrder, WorkOrder.id == WorkOrderPaymentEvent.work_order_id).where(
-            WorkOrder.department.in_(departments)
-        )
+    if departments or exclude_internal:
+        query = query.join(WorkOrder, WorkOrder.id == WorkOrderPaymentEvent.work_order_id)
+        if departments:
+            query = query.where(WorkOrder.department.in_(departments))
+        if exclude_internal:
+            query = query.where(WorkOrder.is_internal.is_(False))
     query = query.where(*filters).subquery()
 
     period = func.date_trunc(granularity, query.c.paid_at).label("period")
@@ -333,6 +353,7 @@ def department_summary(
     date_to: datetime | None = None,
     departments: list[str] | None = None,
     revenue_statuses: list[str] | None = None,
+    exclude_internal: bool = False,
 ) -> list[dict]:
     """Total amount and count of work orders per department, for a period.
 
@@ -340,7 +361,7 @@ def department_summary(
     `monthly_summary`. Work orders with no department set are grouped under
     "" and skipped - the frontend shouldn't have to special-case an empty/
     None bucket in a chart meant to compare named departments. See
-    `monthly_summary` for what `revenue_statuses` does.
+    `monthly_summary` for what `revenue_statuses`/`exclude_internal` do.
     """
     filters = _date_range_filters(WorkOrder.closed_date, date_from, date_to)
     filters.append(WorkOrder.closed_date.is_not(None))
@@ -350,6 +371,8 @@ def department_summary(
         filters.append(WorkOrder.department.in_(departments))
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
+    if exclude_internal:
+        filters.append(WorkOrder.is_internal.is_(False))
 
     rows = db.execute(
         select(
@@ -378,19 +401,23 @@ def payment_department_summary(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     departments: list[str] | None = None,
+    exclude_internal: bool = False,
 ) -> list[dict]:
     """Total real payments received per department, for a period - the
     payments-tile analogue of department_summary. Grouped/filtered by
     work_order_payment_events.paid_at (the real 1C payment date), not
     closed_date. `work_order_count` is the number of distinct work orders
     with a payment in range for that department, not a count of payment
-    events.
+    events. See monthly_summary for `exclude_internal` - already joined to
+    WorkOrder here regardless, so no extra join needed.
     """
     filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, date_from, date_to)
     filters.append(WorkOrder.department.is_not(None))
     filters.append(WorkOrder.department != "")
     if departments:
         filters.append(WorkOrder.department.in_(departments))
+    if exclude_internal:
+        filters.append(WorkOrder.is_internal.is_(False))
 
     rows = db.execute(
         select(
@@ -422,6 +449,7 @@ def status_summary(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     departments: list[str] | None = None,
+    exclude_internal: bool = False,
 ) -> list[dict]:
     """Count and total amount of work orders per status, for a period.
 
@@ -435,13 +463,15 @@ def status_summary(
     `document_date` instead, matching `list_work_orders`'s own semantics
     (browsing/reporting by when the document was raised). Work orders with
     no status set are excluded, same reasoning as department_summary's
-    empty-department handling.
+    empty-department handling. See monthly_summary for `exclude_internal`.
     """
     filters = _date_range_filters(WorkOrder.document_date, date_from, date_to)
     filters.append(WorkOrder.status.is_not(None))
     filters.append(WorkOrder.status != "")
     if departments:
         filters.append(WorkOrder.department.in_(departments))
+    if exclude_internal:
+        filters.append(WorkOrder.is_internal.is_(False))
 
     rows = db.execute(
         select(

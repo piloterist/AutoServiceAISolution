@@ -38,6 +38,7 @@ from app.schemas.work_order import (
     WorkOrderListResponse,
     WorkOrderPartLineItem,
 )
+from app.services.settings_service import get_app_settings
 from app.services.work_order_query_service import (
     delete_work_order,
     department_summary,
@@ -136,6 +137,7 @@ def get_monthly_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
+        exclude_internal=get_app_settings(db).exclude_internal_orders,
     )
     return MonthlySummaryResponse(items=[MonthlySummaryItem(**row) for row in rows])
 
@@ -156,6 +158,7 @@ def get_revenue_paid_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
+        exclude_internal=get_app_settings(db).exclude_internal_orders,
     )
     return RevenuePaidSummaryResponse(total_amount=total)
 
@@ -176,6 +179,7 @@ def get_department_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
+        exclude_internal=get_app_settings(db).exclude_internal_orders,
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
 
@@ -194,6 +198,7 @@ def get_payment_department_summary(
         date_from=date_from,
         date_to=date_to,
         departments=_split_departments(departments),
+        exclude_internal=get_app_settings(db).exclude_internal_orders,
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
 
@@ -215,6 +220,7 @@ def get_status_summary(
         date_from=date_from,
         date_to=date_to,
         departments=_split_departments(departments),
+        exclude_internal=get_app_settings(db).exclude_internal_orders,
     )
     return StatusSummaryResponse(items=[StatusSummaryItem(**row) for row in rows])
 
@@ -244,6 +250,7 @@ def get_trend_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
+        exclude_internal=get_app_settings(db).exclude_internal_orders,
         granularity=granularity,
     )
     return TrendSummaryResponse(
@@ -271,6 +278,7 @@ def get_payment_trend_summary(
         date_from=date_from,
         date_to=date_to,
         departments=_split_departments(departments),
+        exclude_internal=get_app_settings(db).exclude_internal_orders,
         granularity=granularity,
     )
     return PaymentTrendResponse(
@@ -295,6 +303,7 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
 
     return WorkOrderDetail(
         **WorkOrderListItem.model_validate(work_order).model_dump(),
+        vin=work_order.vin,
         labor=[
             WorkOrderLaborLineItem.model_validate(line)
             for line in list_labor_lines(db, work_order_id)

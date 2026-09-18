@@ -32,6 +32,11 @@ class WorkOrderListItem(BaseModel):
     # ЗаказНаряд.Организация - which of the client's own legal entities the
     # work order was raised under.
     organization: str | None
+    # Computed at import time from the car's VIN + org/payer rules - see
+    # services/internal_order_rules.py. Shown and filterable on the list;
+    # AppSettings.exclude_internal_orders can additionally exclude these
+    # from dashboard aggregates entirely (see work_order_query_service.py).
+    is_internal: bool
     amount: Decimal
     # Settlement state as of the last import - 5S AUTO's own
     # ВзаиморасчетыКомпании calculation (see
@@ -179,13 +184,18 @@ class PaymentEventItem(BaseModel):
 
 
 class WorkOrderDetail(WorkOrderListItem):
-    """Single work order's header (same fields as the list) plus its labor
-    (Работы) and parts (Товары) tabular-section lines, its status timeline
-    (oldest first - see models/work_order_status_history.py), its payment/
-    settlement snapshots (oldest first - see
-    models/work_order_payment_history.py), and its real dated payments
-    (oldest first - see models/work_order_payment_event.py)."""
+    """Single work order's header (same fields as the list, plus `vin`)
+    plus its labor (Работы) and parts (Товары) tabular-section lines, its
+    status timeline (oldest first - see
+    models/work_order_status_history.py), its payment/settlement snapshots
+    (oldest first - see models/work_order_payment_history.py), and its real
+    dated payments (oldest first - see models/work_order_payment_event.py).
 
+    `vin` is deliberately not on WorkOrderListItem - shown on the detail
+    card only, never on the list or dashboard (see
+    services/internal_order_rules.py's module docstring)."""
+
+    vin: str | None
     labor: list[WorkOrderLaborLineItem]
     parts: list[WorkOrderPartLineItem]
     status_history: list[StatusHistoryItem]

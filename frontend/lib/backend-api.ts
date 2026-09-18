@@ -31,6 +31,11 @@ export type WorkOrderListItem = {
   // ЗаказНаряд.Организация - which of the client's own legal entities the
   // work order was raised under.
   organization: string | null;
+  // Computed at import time from the car's VIN + org/payer rules (see
+  // backend services/internal_order_rules.py) - "Специфика PanMotors".
+  // Shown and filterable on the list; AppSettings.exclude_internal_orders
+  // can additionally exclude these from dashboard aggregates entirely.
+  is_internal: boolean;
   amount: string;
   // Settlement state as of the last import - 5S AUTO's own
   // ВзаиморасчетыКомпании calculation (see 1c/TestExportOrders.bsl), not
@@ -87,9 +92,16 @@ export type RepairTypeListResponse = {
 export type AppSettings = {
   // ЗаказНаряд.ВидРемонта value that identifies an insurance-company
   // repair - one of the values from getRepairTypes(), or null if not
-  // configured yet.
+  // configured yet. Older, separate feature - not related to is_internal
+  // below (see "Специфика PanMotors" fields).
   insurance_repair_type: string | null;
   exclude_internal_insurance: boolean;
+  // "Специфика PanMotors" group - gates WorkOrderListItem.is_internal on
+  // the dashboard only (see backend services/internal_order_rules.py).
+  exclude_internal_orders: boolean;
+  // Not wired to any filtering logic yet - deliberately inert (see
+  // SettingsForm.tsx).
+  hide_internal_orders: boolean;
 };
 
 export type StatusSummaryItem = {
@@ -168,6 +180,9 @@ export type PaymentEventItem = {
 };
 
 export type WorkOrderDetail = WorkOrderListItem & {
+  // ЗаказНаряд.Автомобиль.VIN - shown on the detail card only, never on
+  // the list or dashboard (see backend services/internal_order_rules.py).
+  vin: string | null;
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
   status_history: StatusHistoryItem[];

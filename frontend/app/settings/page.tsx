@@ -1,7 +1,9 @@
 import { SettingsForm } from "@/components/SettingsForm";
 import { getAppSettings, getRepairTypes } from "@/lib/backend-api";
 
-// See app/work-orders/page.tsx for why this is required.
+// Must never be statically prerendered: if the backend happens to be
+// reachable at build time, Next.js could otherwise freeze this page with
+// build-time data that never updates after deploy until the next rebuild.
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {

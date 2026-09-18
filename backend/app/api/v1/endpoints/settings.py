@@ -29,5 +29,7 @@ def write_settings(
         db,
         insurance_repair_type=payload.insurance_repair_type,
         exclude_internal_insurance=payload.exclude_internal_insurance,
+        exclude_internal_orders=payload.exclude_internal_orders,
+        hide_internal_orders=payload.hide_internal_orders,
     )
     return AppSettingsResponse.model_validate(settings)

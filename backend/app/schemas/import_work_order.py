@@ -72,6 +72,12 @@ class ImportWorkOrderRecord(BaseModel):
     # company). Optional since not every source/record will have it.
     payer: str | None = None
     car: str | None = None
+    # ЗаказНаряд.Автомобиль.VIN - from the vehicle catalog, not a document
+    # requisite itself. Raw passthrough, whatever 1C sends (or null/empty
+    # if the vehicle or its VIN isn't filled in) - validated/normalized
+    # only when derived into WorkOrder.car_key (see
+    # services/internal_order_rules.normalize_vin), never here.
+    vin: str | None = None
     amount: Decimal
     # Plain text passthrough - no hardcoded status/department/repair-type
     # values here, whatever the client's 1C sends is stored as-is (see

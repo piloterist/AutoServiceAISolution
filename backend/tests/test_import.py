@@ -1084,6 +1084,183 @@ def _bulk_records(prefix: str, count: int) -> list[dict]:
     ]
 
 
+VIN_A = "WVWZZZ1JZXW000001"
+VIN_B = "WVWZZZ1JZXW000002"
+
+
+def _wo_record(number, *, vin=None, repair_type=None, organization=None, payer=None) -> dict:
+    """One work order record, for exercising is_internal recomputation -
+    see services/internal_order_rules.py."""
+    return {
+        "number": number,
+        "date": "2026-09-18T06:00:00",
+        "customer": "Test Customer",
+        "payer": payer,
+        "car": "VW TIGUAN",
+        "vin": vin,
+        "amount": 1000,
+        "repair_type": repair_type,
+        "organization": organization,
+    }
+
+
+def _import_records(client, auth_headers, batch_id, records) -> None:
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-18T06:00:00",
+        "batch_id": batch_id,
+        "records": records,
+    }
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+
+def test_internal_flag_true_for_allowed_org_with_external_sibling(
+    client, db_session, auth_headers
+) -> None:
+    _import_records(
+        client,
+        auth_headers,
+        "internal-1",
+        [
+            _wo_record("EXT-1", vin=VIN_A, repair_type="Страховой"),
+            _wo_record("INT-1", vin=VIN_A, repair_type="ТО", organization="ПАН-МОТОРС, ООО"),
+        ],
+    )
+
+    assert _get_work_order(db_session, "INT-1").is_internal is True
+    # The external sibling itself is never "внутренний".
+    assert _get_work_order(db_session, "EXT-1").is_internal is False
+
+
+def test_internal_flag_false_without_an_external_sibling(client, db_session, auth_headers) -> None:
+    _import_records(
+        client,
+        auth_headers,
+        "internal-2",
+        [_wo_record("INT-2", vin=VIN_A, repair_type="ТО", organization="ПАН-МОТОРС, ООО")],
+    )
+
+    assert _get_work_order(db_session, "INT-2").is_internal is False
+
+
+def test_internal_flag_false_for_a_disallowed_organization(
+    client, db_session, auth_headers
+) -> None:
+    _import_records(
+        client,
+        auth_headers,
+        "internal-3",
+        [
+            _wo_record("EXT-3", vin=VIN_A, repair_type="Страховой"),
+            _wo_record("INT-3", vin=VIN_A, repair_type="ТО", organization="ООО Совсем Другое"),
+        ],
+    )
+
+    assert _get_work_order(db_session, "INT-3").is_internal is False
+
+
+def test_internal_flag_pan_stanislav_requires_a_non_physical_payer(
+    client, db_session, auth_headers
+) -> None:
+    _import_records(
+        client,
+        auth_headers,
+        "internal-4",
+        [
+            _wo_record("EXT-4", vin=VIN_A, repair_type="Страховой"),
+            _wo_record(
+                "INT-4A",
+                vin=VIN_A,
+                repair_type="ТО",
+                organization="ИП ПАН СТАНИСЛАВ ВЯЧЕСЛАВОВИЧ",
+                payer="Иванов Иван Иванович",
+            ),
+            _wo_record(
+                "INT-4B",
+                vin=VIN_A,
+                repair_type="ТО",
+                organization="ИП ПАН СТАНИСЛАВ ВЯЧЕСЛАВОВИЧ",
+                payer="ООО Ромашка",
+            ),
+        ],
+    )
+
+    assert _get_work_order(db_session, "INT-4A").is_internal is False
+    assert _get_work_order(db_session, "INT-4B").is_internal is True
+
+
+def test_internal_flag_ignored_without_a_valid_vin(client, db_session, auth_headers) -> None:
+    """Same "Автомобиль" text as the external sibling, but no VIN - must
+    NOT be matched by text fallback (see internal_order_rules module
+    docstring: car matching is VIN-only now)."""
+    _import_records(
+        client,
+        auth_headers,
+        "internal-5",
+        [
+            _wo_record("EXT-5", vin=VIN_A, repair_type="Страховой"),
+            _wo_record("INT-5", vin=None, repair_type="ТО", organization="ПАН-МОТОРС, ООО"),
+        ],
+    )
+
+    assert _get_work_order(db_session, "INT-5").is_internal is False
+
+
+def test_internal_flag_recomputed_when_external_sibling_arrives_later(
+    client, db_session, auth_headers
+) -> None:
+    _import_records(
+        client,
+        auth_headers,
+        "internal-6a",
+        [_wo_record("INT-6", vin=VIN_A, repair_type="ТО", organization="ПАН-МОТОРС, ООО")],
+    )
+    assert _get_work_order(db_session, "INT-6").is_internal is False
+
+    _import_records(
+        client,
+        auth_headers,
+        "internal-6b",
+        [_wo_record("EXT-6", vin=VIN_A, repair_type="Страховой")],
+    )
+
+    assert _get_work_order(db_session, "INT-6").is_internal is True
+
+
+def test_internal_flag_does_not_affect_a_different_car(client, db_session, auth_headers) -> None:
+    _import_records(
+        client,
+        auth_headers,
+        "internal-7",
+        [
+            _wo_record("EXT-7", vin=VIN_A, repair_type="Страховой"),
+            _wo_record("INT-7", vin=VIN_A, repair_type="ТО", organization="ПАН-МОТОРС, ООО"),
+            _wo_record("OTHER-7", vin=VIN_B, repair_type="ТО", organization="ПАН-МОТОРС, ООО"),
+        ],
+    )
+
+    assert _get_work_order(db_session, "INT-7").is_internal is True
+    # VIN_B has no external sibling at all - untouched by VIN_A's grouping.
+    assert _get_work_order(db_session, "OTHER-7").is_internal is False
+
+
+def test_import_stores_vin(client, db_session, auth_headers) -> None:
+    _import_records(client, auth_headers, "vin-1", [_wo_record("VIN-TEST-1", vin=VIN_A)])
+
+    assert _get_work_order(db_session, "VIN-TEST-1").vin == VIN_A
+
+
+def test_import_accepts_missing_vin_as_null(client, db_session, auth_headers) -> None:
+    _import_records(client, auth_headers, "vin-2", [_wo_record("VIN-TEST-2", vin=None)])
+
+    work_order = _get_work_order(db_session, "VIN-TEST-2")
+    assert work_order.vin is None
+    assert work_order.car_key is None
+
+
 def test_import_processes_more_than_one_chunk(client, db_session, auth_headers) -> None:
     """A payload larger than CHUNK_SIZE must still fully apply, split across
     multiple committed chunks (see process_work_order_import)."""

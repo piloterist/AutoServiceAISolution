@@ -846,3 +846,302 @@ def test_status_summary_filters_by_document_date(client, db_session, auth_header
     body = response.json()
     assert len(body["items"]) == 1
     assert body["items"][0]["work_order_count"] == 1
+
+
+SETTINGS_URL = "/api/v1/settings"
+
+
+def _set_exclude_internal_orders(client, auth_headers, value: bool) -> None:
+    client.put(
+        SETTINGS_URL,
+        headers=auth_headers,
+        json={
+            "insurance_repair_type": None,
+            "exclude_internal_insurance": False,
+            "exclude_internal_orders": value,
+        },
+    )
+
+
+def test_list_work_orders_includes_is_internal_field(client, db_session, auth_headers) -> None:
+    db_session.add(_make_work_order(external_number="WO-INTERNAL", is_internal=True))
+    db_session.add(_make_work_order(external_number="WO-EXTERNAL", is_internal=False))
+    db_session.commit()
+
+    response = client.get(LIST_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    by_number = {item["external_number"]: item for item in response.json()["items"]}
+    assert by_number["WO-INTERNAL"]["is_internal"] is True
+    assert by_number["WO-EXTERNAL"]["is_internal"] is False
+
+
+def test_list_work_orders_is_not_affected_by_exclude_internal_orders_setting(
+    client, db_session, auth_headers
+) -> None:
+    """The "Специфика PanMotors" exclusion is dashboard-only (per spec) -
+    the work orders list always shows internal orders, with its own
+    independent client-side filter instead."""
+    db_session.add(_make_work_order(external_number="WO-INTERNAL", is_internal=True))
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, True)
+
+    response = client.get(LIST_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    numbers = {item["external_number"] for item in response.json()["items"]}
+    assert "WO-INTERNAL" in numbers
+
+
+def test_monthly_summary_excludes_internal_when_setting_is_on(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-EXT",
+            document_date=datetime(2026, 6, 5),
+            closed_date=datetime(2026, 6, 5),
+            amount=Decimal("100.00"),
+            is_internal=False,
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-INT",
+            document_date=datetime(2026, 6, 6),
+            closed_date=datetime(2026, 6, 6),
+            amount=Decimal("500.00"),
+            is_internal=True,
+        )
+    )
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, True)
+
+    response = client.get(SUMMARY_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["month"]: item for item in response.json()["items"]}
+    assert items["2026-06"]["work_order_count"] == 1
+    assert items["2026-06"]["total_amount"] == "100.00"
+
+
+def test_monthly_summary_includes_internal_when_setting_is_off(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-EXT",
+            document_date=datetime(2026, 6, 5),
+            closed_date=datetime(2026, 6, 5),
+            amount=Decimal("100.00"),
+            is_internal=False,
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-INT",
+            document_date=datetime(2026, 6, 6),
+            closed_date=datetime(2026, 6, 6),
+            amount=Decimal("500.00"),
+            is_internal=True,
+        )
+    )
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, False)
+
+    response = client.get(SUMMARY_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["month"]: item for item in response.json()["items"]}
+    assert items["2026-06"]["work_order_count"] == 2
+    assert items["2026-06"]["total_amount"] == "600.00"
+
+
+def test_revenue_paid_summary_excludes_internal_when_setting_is_on(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-EXT",
+            document_date=datetime(2026, 6, 5),
+            closed_date=datetime(2026, 6, 5),
+            amount=Decimal("100.00"),
+            paid_amount=Decimal("100.00"),
+            is_internal=False,
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-INT",
+            document_date=datetime(2026, 6, 6),
+            closed_date=datetime(2026, 6, 6),
+            amount=Decimal("500.00"),
+            paid_amount=Decimal("500.00"),
+            is_internal=True,
+        )
+    )
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, True)
+
+    response = client.get("/api/v1/work-orders/summary/revenue-paid", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["total_amount"] == "100.00"
+
+
+def test_status_summary_excludes_internal_when_setting_is_on(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(_make_work_order(external_number="WO-EXT", status="Заявка", is_internal=False))
+    db_session.add(_make_work_order(external_number="WO-INT", status="Заявка", is_internal=True))
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, True)
+
+    response = client.get(f"{LIST_URL}/summary/by-status", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["items"]) == 1
+    assert body["items"][0]["work_order_count"] == 1
+
+
+def test_department_summary_excludes_internal_when_setting_is_on(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-EXT",
+            department="Кузовной цех",
+            closed_date=datetime(2026, 6, 5),
+            amount=Decimal("100.00"),
+            is_internal=False,
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-INT",
+            department="Кузовной цех",
+            closed_date=datetime(2026, 6, 6),
+            amount=Decimal("900.00"),
+            is_internal=True,
+        )
+    )
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, True)
+
+    response = client.get(f"{LIST_URL}/summary/by-department", headers=auth_headers)
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["total_amount"] == "100.00"
+
+
+def test_payment_department_summary_excludes_internal_when_setting_is_on(
+    client, db_session, auth_headers
+) -> None:
+    external = _make_work_order(
+        external_number="WO-EXT", department="Кузовной цех", is_internal=False
+    )
+    internal = _make_work_order(
+        external_number="WO-INT", department="Кузовной цех", is_internal=True
+    )
+    db_session.add_all([external, internal])
+    db_session.commit()
+    db_session.add_all(
+        [
+            WorkOrderPaymentEvent(
+                work_order_id=external.id,
+                paid_at=datetime(2026, 6, 5, 10, 0, 0),
+                amount=Decimal("100.00"),
+                source_document_id="11111111-1111-1111-1111-111111111111",
+            ),
+            WorkOrderPaymentEvent(
+                work_order_id=internal.id,
+                paid_at=datetime(2026, 6, 6, 10, 0, 0),
+                amount=Decimal("900.00"),
+                source_document_id="22222222-2222-2222-2222-222222222222",
+            ),
+        ]
+    )
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, True)
+
+    response = client.get(f"{LIST_URL}/summary/payment-by-department", headers=auth_headers)
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["total_amount"] == "100.00"
+
+
+def test_payment_trend_excludes_internal_when_setting_is_on(
+    client, db_session, auth_headers
+) -> None:
+    external = _make_work_order(external_number="WO-EXT", is_internal=False)
+    internal = _make_work_order(external_number="WO-INT", is_internal=True)
+    db_session.add_all([external, internal])
+    db_session.commit()
+    db_session.add_all(
+        [
+            WorkOrderPaymentEvent(
+                work_order_id=external.id,
+                paid_at=datetime(2026, 6, 5, 10, 0, 0),
+                amount=Decimal("100.00"),
+                source_document_id="33333333-3333-3333-3333-333333333333",
+            ),
+            WorkOrderPaymentEvent(
+                work_order_id=internal.id,
+                paid_at=datetime(2026, 6, 5, 11, 0, 0),
+                amount=Decimal("900.00"),
+                source_document_id="44444444-4444-4444-4444-444444444444",
+            ),
+        ]
+    )
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, True)
+
+    response = client.get(
+        PAYMENT_TREND_URL,
+        headers=auth_headers,
+        params={"date_from": "2026-06-01T00:00:00", "date_to": "2026-06-08T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    total = sum(Decimal(item["total_amount"]) for item in response.json()["items"])
+    assert total == Decimal("100.00")
+
+
+def test_trend_summary_excludes_internal_when_setting_is_on(
+    client, db_session, auth_headers
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-EXT",
+            document_date=datetime(2026, 6, 5),
+            closed_date=datetime(2026, 6, 5),
+            amount=Decimal("100.00"),
+            is_internal=False,
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-INT",
+            document_date=datetime(2026, 6, 5),
+            closed_date=datetime(2026, 6, 5),
+            amount=Decimal("900.00"),
+            is_internal=True,
+        )
+    )
+    db_session.commit()
+    _set_exclude_internal_orders(client, auth_headers, True)
+
+    response = client.get(
+        "/api/v1/work-orders/summary/trend",
+        headers=auth_headers,
+        params={"date_from": "2026-06-01T00:00:00", "date_to": "2026-06-08T00:00:00"},
+    )
+
+    assert response.status_code == 200
+    total = sum(Decimal(item["total_amount"]) for item in response.json()["items"])
+    assert total == Decimal("100.00")

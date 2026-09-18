@@ -6,6 +6,9 @@ from pydantic import BaseModel
 class AppSettingsResponse(BaseModel):
     insurance_repair_type: str | None
     exclude_internal_insurance: bool
+    # "Специфика PanMotors" group - see models/app_settings.py.
+    exclude_internal_orders: bool
+    hide_internal_orders: bool
 
     model_config = {"from_attributes": True}
 
@@ -13,3 +16,5 @@ class AppSettingsResponse(BaseModel):
 class AppSettingsUpdate(BaseModel):
     insurance_repair_type: str | None = None
     exclude_internal_insurance: bool = False
+    exclude_internal_orders: bool = False
+    hide_internal_orders: bool = False

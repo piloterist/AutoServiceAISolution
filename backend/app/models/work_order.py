@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -80,6 +80,26 @@ class WorkOrder(Base):
     # ЗаказНаряд.Организация - which of the client's own legal entities the
     # work order was raised under (relevant for multi-entity operations).
     organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ЗаказНаряд.Автомобиль.VIN - raw passthrough from 1C's vehicle catalog,
+    # shown on the work order detail card only (never on the list/dashboard -
+    # see ARCHITECTURE.md-style scoping notes in services/internal_order_rules.py).
+    # Distinct from `car_key` below, which is this value validated/normalized
+    # for matching, not for display.
+    vin: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Validated/normalized VIN (see internal_order_rules.normalize_vin), or
+    # NULL when `vin` isn't a real 17-character VIN - the key
+    # recompute_internal_flags groups work orders by to detect "внутренний"
+    # ones (same car, an external/страховой sibling). Indexed since every
+    # import looks this up by a set of car_keys.
+    car_key: Mapped[str | None] = mapped_column(String(17), nullable=True, index=True)
+    # Computed by recompute_internal_flags (see services/import_service.py
+    # and services/internal_order_rules.py) after every import - never set
+    # directly from the 1C export. Indexed: dashboard queries filter on it
+    # when AppSettings.exclude_internal_orders is on.
+    is_internal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false", index=True
+    )
 
     # Money is never stored as float - fixed-precision NUMERIC only.
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)

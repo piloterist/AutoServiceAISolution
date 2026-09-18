@@ -401,6 +401,23 @@ main:has(.wide-page) {
   cursor: default;
 }
 
+.settings-card--wide {
+  max-width: 560px;
+}
+
+.settings-hint {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.settings-description {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0;
+}
+
 /* Two period-filter blocks now sit side by side (document date, closed
    date) - the label says which date field each one filters by, since
    they'd otherwise be indistinguishable "С/По" pairs. */

@@ -103,6 +103,14 @@ export default async function WorkOrderDetailPage({
               <span>{workOrder.repair_type || "—"}</span>
             </div>
             <div className="detail-field">
+              <span className="detail-label">Внутренний</span>
+              <span>{workOrder.is_internal ? "Да" : "Нет"}</span>
+            </div>
+            <div className="detail-field">
+              <span className="detail-label">VIN</span>
+              <span>{workOrder.vin || "—"}</span>
+            </div>
+            <div className="detail-field">
               <span className="detail-label">Сумма</span>
               <span>{formatAmount(workOrder.amount)}</span>
             </div>

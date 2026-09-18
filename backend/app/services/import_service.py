@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import structlog
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,11 @@ from app.schemas.import_work_order import (
     ImportStatusHistoryRecord,
     ImportWorkOrderRecord,
     ImportWorkOrdersRequest,
+)
+from app.services.internal_order_rules import (
+    internal_order_allowed,
+    is_external_repair_type,
+    normalize_vin,
 )
 
 logger = structlog.get_logger(__name__)
@@ -63,6 +68,8 @@ def _upsert_work_order(
         "department": record.department,
         "repair_type": record.repair_type,
         "organization": record.organization,
+        "vin": record.vin,
+        "car_key": normalize_vin(record.vin),
         "amount": record.amount,
         "deal_amount": record.deal_amount,
         "debt_amount": record.debt_amount,
@@ -312,6 +319,59 @@ def _replace_line_items(
         )
 
 
+def _recompute_internal_flags(db: Session, car_keys: set[str | None]) -> None:
+    """Recomputes WorkOrder.is_internal for every work order sharing a
+    car_key with this import - see services/internal_order_rules.py for the
+    actual rules ("внутренний" = same car as an external/страховой sibling,
+    plus the organization/payer rule).
+
+    Scoped to `car_keys` (this payload's own VINs), not the whole table: a
+    work order's classification can only change if one of ITS car_key
+    siblings changed in this import (a new external sibling appeared, an
+    existing one's repair_type/org/payer changed) - nothing about any other
+    car_key's grouping was touched, so recomputing the whole table on every
+    import would be pure waste at scale. None/empty car_keys are dropped -
+    a work order with no valid VIN can't be grouped with anything (see
+    internal_order_rules module docstring) and is simply never internal.
+    """
+    keys = {key for key in car_keys if key}
+    if not keys:
+        return
+
+    table = WorkOrder.__table__
+    rows = db.execute(
+        select(
+            table.c.id,
+            table.c.car_key,
+            table.c.repair_type,
+            table.c.organization,
+            table.c.payer_name,
+        ).where(table.c.car_key.in_(keys))
+    ).all()
+
+    by_car_key: dict[str, list] = {}
+    for row in rows:
+        by_car_key.setdefault(row.car_key, []).append(row)
+
+    internal_ids: list[uuid.UUID] = []
+    non_internal_ids: list[uuid.UUID] = []
+
+    for group in by_car_key.values():
+        has_external_sibling = any(is_external_repair_type(row.repair_type) for row in group)
+        for row in group:
+            is_internal = (
+                has_external_sibling
+                and not is_external_repair_type(row.repair_type)
+                and internal_order_allowed(row.organization, row.payer_name)
+            )
+            (internal_ids if is_internal else non_internal_ids).append(row.id)
+
+    if internal_ids:
+        db.execute(update(table).where(table.c.id.in_(internal_ids)).values(is_internal=True))
+    if non_internal_ids:
+        db.execute(update(table).where(table.c.id.in_(non_internal_ids)).values(is_internal=False))
+
+
 # A single multi-thousand-record transaction held the whole batch's ORM
 # objects (labor/part lines, payment-history snapshots) pending in memory,
 # unflushed, until one `db.flush()` at the very end - fine at a few thousand
@@ -416,6 +476,23 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
         batch.records_inserted = inserted
         batch.records_updated = updated
         db.commit()
+
+    # Runs once, after every chunk has committed - a car_key spanning
+    # multiple chunks (or matching an existing DB row from an earlier
+    # import) needs the *whole* import's effect visible before grouping.
+    try:
+        car_keys = {normalize_vin(record.vin) for record in records}
+        _recompute_internal_flags(db, car_keys)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        chunk_errors.append(f"is_internal recompute: {exc}")
+        logger.error(
+            "import_internal_recompute_failed",
+            batch_id=payload.batch_id,
+            source=payload.source,
+            error=str(exc),
+        )
 
     if chunk_errors:
         batch.status = "failed"

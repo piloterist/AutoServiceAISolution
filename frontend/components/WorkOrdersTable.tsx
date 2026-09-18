@@ -14,9 +14,9 @@ import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } fro
 // has to absolutely-position each row by a computed offset, which a native
 // <table>'s row-flow layout doesn't support.
 // 1 Дата создания | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
-// 5 Контрагент | 6 Статус | 7 Подразделение | 8 Вид ремонта | 9 Сумма |
-// 10 Сумма оплаты | 11 % оплаты
-const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 18% 12% 7% 10% 10% 7% 8% 7%";
+// 5 Контрагент | 6 Статус | 7 Внутренний | 8 Подразделение | 9 Вид ремонта |
+// 10 Сумма | 11 Сумма оплаты | 12 % оплаты
+const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 16% 10% 7% 6% 9% 9% 7% 8% 7%";
 
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
@@ -47,6 +47,16 @@ function formatPercentOrDash(percent: string | null): string {
 }
 
 type PaymentFilter = "all" | "full" | "partial" | "none";
+type InternalFilter = "all" | "internal" | "external";
+
+/** "Внутренний" filter, analogous to the "Оплата" select above - a plain
+ * boolean, so a 3-state dropdown reads more clearly here than a
+ * multi-checkbox dropdown (which fits an open set of values, like
+ * "Статус"). */
+function matchesInternalFilter(isInternal: boolean, filter: InternalFilter): boolean {
+  if (filter === "all") return true;
+  return filter === "internal" ? isInternal : !isInternal;
+}
 
 /** "Оплата" filter categories, derived from the same payment_percent 5S
  * AUTO already computes (see WorkOrderListItem) - not a new calculation.
@@ -92,6 +102,7 @@ type Row = {
   vehicle: string;
   customer: string;
   status: string;
+  internal: string;
   department: string;
   repairType: string;
   amount: string;
@@ -106,6 +117,7 @@ type ColumnKey =
   | "vehicle"
   | "customer"
   | "status"
+  | "internal"
   | "department"
   | "repairType"
   | "amount"
@@ -119,6 +131,7 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "vehicle", label: "Автомобиль" },
   { key: "customer", label: "Контрагент" },
   { key: "status", label: "Статус" },
+  { key: "internal", label: "Внутренний" },
   { key: "department", label: "Подразделение" },
   { key: "repairType", label: "Вид ремонта" },
   { key: "amount", label: "Сумма", numeric: true },
@@ -151,6 +164,7 @@ function buildClipboardText(rows: Row[]): string {
       row.vehicle || "—",
       row.customer || "—",
       row.status || "—",
+      row.internal,
       row.department || "—",
       row.repairType || "—",
       exportNumber(row.item.amount),
@@ -257,6 +271,7 @@ export function WorkOrdersTable({
     vehicle: "",
     customer: "",
     status: "",
+    internal: "",
     department: initialDepartment ?? "",
     repairType: "",
     amount: "",
@@ -274,6 +289,7 @@ export function WorkOrdersTable({
   const [closedFrom, setClosedFrom] = useState(initialClosedFrom ?? "");
   const [closedTo, setClosedTo] = useState(initialClosedTo ?? "");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
+  const [internalFilter, setInternalFilter] = useState<InternalFilter>("all");
 
   const rows: Row[] = useMemo(
     () =>
@@ -285,6 +301,7 @@ export function WorkOrdersTable({
         vehicle: item.vehicle_description ?? "",
         customer: item.customer_name ?? "",
         status: item.status ?? "",
+        internal: item.is_internal ? "Да" : "Нет",
         department: item.department ?? "",
         repairType: item.repair_type ?? "",
         amount: formatAmount(item.amount),
@@ -335,6 +352,7 @@ export function WorkOrdersTable({
       if (!isWithinDateRange(row.item.document_date, dateFrom, dateTo)) return false;
       if (!isWithinDateRange(row.item.closed_date, closedFrom, closedTo)) return false;
       if (!matchesPaymentFilter(row.item.payment_percent, paymentFilter)) return false;
+      if (!matchesInternalFilter(row.item.is_internal, internalFilter)) return false;
 
       return true;
     });
@@ -348,6 +366,7 @@ export function WorkOrdersTable({
     closedFrom,
     closedTo,
     paymentFilter,
+    internalFilter,
   ]);
 
   // Recomputes with filteredRows - the whole point is that it tracks
@@ -422,6 +441,19 @@ export function WorkOrdersTable({
             <option value="full">Полная оплата</option>
             <option value="partial">Частичная оплата</option>
             <option value="none">Без оплаты</option>
+          </select>
+        </label>
+
+        <label className="payment-filter">
+          <span className="period-filter-label">Внутренний</span>
+          <select
+            value={internalFilter}
+            onChange={(event) => setInternalFilter(event.target.value as InternalFilter)}
+            aria-label="Фильтр по признаку внутренний"
+          >
+            <option value="all">Все</option>
+            <option value="internal">Только внутренние</option>
+            <option value="external">Только внешние</option>
           </select>
         </label>
 
@@ -539,7 +571,7 @@ export function WorkOrdersTable({
             style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
           >
             {COLUMNS.map((col) =>
-              col.key === "status" ? (
+              col.key === "status" || col.key === "internal" ? (
                 <div key={col.key} className="vt-cell" role="columnheader" />
               ) : (
                 <div
@@ -609,6 +641,9 @@ export function WorkOrdersTable({
                   </div>
                   <div className="vt-cell" role="gridcell">
                     {row.status || "—"}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.internal}
                   </div>
                   <div className="vt-cell" role="gridcell">
                     {row.department || "—"}
