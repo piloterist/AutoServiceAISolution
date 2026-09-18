@@ -9,7 +9,7 @@ per-client branching - that belongs to future configuration-driven layers
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import structlog
@@ -40,6 +40,24 @@ logger = structlog.get_logger(__name__)
 
 class ImportProcessingError(Exception):
     """Raised when a batch could not be persisted at all."""
+
+
+# 1C sends timestamps (payment Период, status-history ДатаВерсии) as naive
+# local wall-clock values - the 1C server's own clock, which is MSK, with no
+# timezone info attached. Russia has used a flat UTC+3 with no DST since
+# 2014, so this offset never changes. Passing a naive datetime straight into
+# a `timestamptz` column lets the DB driver silently treat it as if it were
+# already UTC, which is exactly backwards - it must be interpreted as MSK
+# and converted, or every such timestamp ends up displayed 3 hours later
+# than it actually happened (confirmed: a payment at 18:51:30 MSK was showing
+# as 21:51 in the UI before this was applied).
+_MSK = timezone(timedelta(hours=3))
+
+
+def _naive_msk_to_utc(value: datetime) -> datetime:
+    if value.tzinfo is not None:
+        return value.astimezone(UTC)
+    return value.replace(tzinfo=_MSK).astimezone(UTC)
 
 
 def _upsert_work_order(
@@ -160,7 +178,7 @@ def _record_status_history(
                 "id": uuid.uuid4(),
                 "work_order_id": work_order_id,
                 "version_number": version.version_number,
-                "changed_at": version.changed_at,
+                "changed_at": _naive_msk_to_utc(version.changed_at),
                 "author": version.author,
                 "status": version.status,
                 "status_uuid": version.status_uuid,
@@ -252,15 +270,21 @@ def _record_payment_events(
     work_order_id: uuid.UUID,
     events: list[ImportPaymentEventRecord],
 ) -> None:
-    """Idempotently insert real dated payment movements - see
+    """Idempotently upsert real dated payment movements - see
     models/work_order_payment_event.py.
 
-    A bulk INSERT ... ON CONFLICT DO NOTHING rather than a per-event
+    A bulk INSERT ... ON CONFLICT DO UPDATE rather than a per-event
     existence check: a full historical re-export re-sends every payment
     for every work order every time (that's how the historical backfill
-    works - see the payments batch query in 1c/TestExportOrders.bsl), so
-    this needs to stay cheap at a few thousand rows per batch, not do one
-    SELECT per event.
+    works - see the payments batch queries in 1c/TestExportOrders.bsl,
+    both the existing Сделка=ЗН route and the newer СчетНаОплату route for
+    bank payments), so this needs to stay cheap at a few thousand rows per
+    batch, not do one SELECT per event. DO UPDATE rather than DO NOTHING
+    so that re-running an export also corrects an already-stored row's
+    paid_at/amount if either was wrong before - notably, this is exactly
+    what backfills existing rows onto the corrected MSK->UTC conversion
+    (see _naive_msk_to_utc) the first time each work order is re-exported
+    after that fix, without needing a separate one-off data migration.
     """
     if not events:
         return
@@ -269,7 +293,7 @@ def _record_payment_events(
         {
             "id": uuid.uuid4(),
             "work_order_id": work_order_id,
-            "paid_at": event.paid_at,
+            "paid_at": _naive_msk_to_utc(event.paid_at),
             "amount": event.amount,
             "source_document_id": event.source_document_id,
             "source_document_type": event.source_document_type,
@@ -281,8 +305,14 @@ def _record_payment_events(
 
     table = WorkOrderPaymentEvent.__table__
     stmt = pg_insert(table).values(rows)
-    stmt = stmt.on_conflict_do_nothing(
-        index_elements=[table.c.work_order_id, table.c.source_document_id, table.c.line_number]
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[table.c.work_order_id, table.c.source_document_id, table.c.line_number],
+        set_={
+            "paid_at": stmt.excluded.paid_at,
+            "amount": stmt.excluded.amount,
+            "source_document_type": stmt.excluded.source_document_type,
+            "source_document_number": stmt.excluded.source_document_number,
+        },
     )
     db.execute(stmt)
 

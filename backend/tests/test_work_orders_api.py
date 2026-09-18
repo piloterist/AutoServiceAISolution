@@ -417,9 +417,11 @@ def test_get_work_order_detail_includes_status_history(client, db_session, auth_
     assert history[0]["status"] == "В работе"
     assert history[0]["author"] == "Ледяев Дмитрий Юрьевич"
     # The real 1C version date, not the request's exported_at (2026-09-18).
-    assert history[0]["changed_at"] == "2026-09-16T15:17:03Z"
+    # 1C sends these as naive MSK (UTC+3), not UTC - see
+    # import_service._naive_msk_to_utc.
+    assert history[0]["changed_at"] == "2026-09-16T12:17:03Z"
     assert history[1]["status"] == "Ожидание запчастей"
-    assert history[1]["changed_at"] == "2026-09-17T12:59:06Z"
+    assert history[1]["changed_at"] == "2026-09-17T09:59:06Z"
 
 
 def test_get_work_order_detail_includes_payment_history(client, db_session, auth_headers) -> None:

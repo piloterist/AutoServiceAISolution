@@ -397,7 +397,9 @@ def test_import_stores_payment_events(client, db_session, auth_headers) -> None:
     events = _payment_events(db_session, work_order.id)
     assert len(events) == 1
     assert events[0].amount == Decimal("500000.00")
-    assert events[0].paid_at == datetime(2026, 5, 20, 14, 5, 21, tzinfo=UTC)
+    # 1C sends 14:05:21 as naive MSK (UTC+3), not UTC - see
+    # import_service._naive_msk_to_utc.
+    assert events[0].paid_at == datetime(2026, 5, 20, 11, 5, 21, tzinfo=UTC)
     assert events[0].source_document_type == "Чек на оплату"
 
 
@@ -451,6 +453,64 @@ def test_import_payment_events_is_idempotent_on_reimport(client, db_session, aut
         select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-EVT-DUP")
     ).scalar_one()
     assert len(_payment_events(db_session, work_order.id)) == 1
+
+
+def test_import_payment_events_reimport_corrects_a_previously_wrong_value(
+    client, db_session, auth_headers
+) -> None:
+    """A re-export must be able to fix an already-stored row, not just
+    silently skip it as a duplicate - this is exactly what backfills
+    existing rows onto a corrected paid_at (e.g. the MSK->UTC timezone
+    fix - see _naive_msk_to_utc) the next time each work order is
+    re-exported, without a separate one-off data migration."""
+    record = {
+        "number": "PAYMENT-EVT-FIX",
+        "date": "2026-09-16T09:00:00",
+        "customer": "Test Customer",
+        "car": "VW TIGUAN",
+        "amount": 500000,
+        "payment_events": [
+            {
+                "paid_at": "2026-05-20T14:05:21",
+                "amount": 500000.00,
+                "source_document_id": "a1b2c3d4-0000-0000-0000-000000000003",
+                "line_number": 1,
+            }
+        ],
+    }
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "payment-events-fix-1",
+        "records": [record],
+    }
+    assert client.post(IMPORT_URL, json=payload, headers=auth_headers).status_code == 200
+
+    # Same document/line, but a corrected amount and paid_at this time.
+    record["payment_events"][0]["amount"] = 450000.00
+    record["payment_events"][0]["paid_at"] = "2026-05-20T09:00:00"
+    payload["batch_id"] = "payment-events-fix-2"
+    assert client.post(IMPORT_URL, json=payload, headers=auth_headers).status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PAYMENT-EVT-FIX")
+    ).scalar_one()
+    events = _payment_events(db_session, work_order.id)
+    assert len(events) == 1
+    assert events[0].amount == Decimal("450000.00")
+    assert events[0].paid_at == datetime(2026, 5, 20, 6, 0, 0, tzinfo=UTC)
+
+
+def test_naive_msk_to_utc_converts_assuming_moscow_time() -> None:
+    naive = datetime(2026, 9, 16, 18, 51, 30)
+    assert import_service._naive_msk_to_utc(naive) == datetime(2026, 9, 16, 15, 51, 30, tzinfo=UTC)
+
+
+def test_naive_msk_to_utc_passes_through_an_already_aware_value() -> None:
+    aware = datetime(2026, 9, 16, 18, 51, 30, tzinfo=UTC)
+    assert import_service._naive_msk_to_utc(aware) == aware
 
 
 def _payment_history(db_session, work_order_id) -> list[WorkOrderPaymentHistory]:
@@ -1020,7 +1080,9 @@ def test_status_history_changed_at_comes_from_version_date_not_import_time(
     work_order = _get_work_order(db_session, "HIST-0001")
     rows = _status_history(db_session, work_order.id)
 
-    assert rows[0].changed_at == datetime(2026, 9, 16, 15, 17, 3, tzinfo=UTC)
+    # 1C sends 15:17:03 as naive MSK (UTC+3), not UTC - see
+    # import_service._naive_msk_to_utc.
+    assert rows[0].changed_at == datetime(2026, 9, 16, 12, 17, 3, tzinfo=UTC)
     assert rows[0].changed_at < before_import
     assert rows[0].changed_at < after_import
 
