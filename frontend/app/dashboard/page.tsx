@@ -6,6 +6,7 @@ import { RankedList, type RankedItem } from "@/components/RankedList";
 import { RevenueTrendChart } from "@/components/RevenueTrendChart";
 import { StatTile } from "@/components/StatTile";
 import { StatusChipGrid, type StatusChipItem } from "@/components/StatusChipGrid";
+import { WorkOrdersPrefetcher } from "@/components/WorkOrdersPrefetcher";
 import {
   type DepartmentSummaryItem,
   getDepartmentSummary,
@@ -23,7 +24,9 @@ import {
   resolveGranularity,
 } from "@/lib/period";
 
-// See app/work-orders/page.tsx for why this is required.
+// Must never be statically prerendered: if the backend happens to be
+// reachable at build time, Next.js could otherwise freeze this page with
+// build-time data that never updates after deploy until the next rebuild.
 export const dynamic = "force-dynamic";
 
 type SearchParams = {
@@ -312,6 +315,8 @@ export default async function DashboardPage({
 
   return (
     <div className="wide-page">
+      <WorkOrdersPrefetcher />
+
       <div className="dashboard-header">
         <Image
           src="/pan-motors-logo.png"

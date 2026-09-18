@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -9,6 +10,7 @@ from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
+from app.services import import_service
 
 IMPORT_URL = "/api/v1/import/work-orders"
 
@@ -1067,3 +1069,102 @@ def test_import_accepts_missing_document_dates_as_null(
     assert work_order.start_date is None
     assert work_order.end_date is None
     assert work_order.closed_date is None
+
+
+def _bulk_records(prefix: str, count: int) -> list[dict]:
+    return [
+        {
+            "number": f"{prefix}-{i:05d}",
+            "date": "2026-09-12T18:38:09",
+            "customer": "Bulk Customer",
+            "car": "VIN",
+            "amount": 100,
+        }
+        for i in range(count)
+    ]
+
+
+def test_import_processes_more_than_one_chunk(client, db_session, auth_headers) -> None:
+    """A payload larger than CHUNK_SIZE must still fully apply, split across
+    multiple committed chunks (see process_work_order_import)."""
+    total = import_service.CHUNK_SIZE + 10
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-13T10:00:00",
+        "batch_id": f"test-multichunk-{uuid.uuid4()}",
+        "records": _bulk_records("MULTI", total),
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["received"] == total
+    assert body["inserted"] == total
+    assert body["updated"] == 0
+
+    rows = (
+        db_session.execute(select(WorkOrder).where(WorkOrder.external_number.like("MULTI-%")))
+        .scalars()
+        .all()
+    )
+    assert len(rows) == total
+
+    batch = db_session.execute(
+        select(ImportBatch).where(ImportBatch.batch_id == payload["batch_id"])
+    ).scalar_one()
+    assert batch.status == "success"
+    assert batch.records_inserted == total
+    assert batch.error_message is None
+
+
+def test_import_chunk_failure_does_not_roll_back_earlier_committed_chunks(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    """One chunk failing partway through a large import must not undo
+    chunks that already committed successfully before it - each chunk is
+    its own transaction (see process_work_order_import's CHUNK_SIZE
+    docstring), unlike the old single-transaction-for-everything design."""
+    chunk_size = import_service.CHUNK_SIZE
+    total = chunk_size + 5
+    failing_number = f"CHUNK-{chunk_size:05d}"  # first record of the 2nd chunk
+
+    original_replace = import_service._replace_line_items
+
+    def _replace_or_fail(db, work_order_id, record):
+        if record.number == failing_number:
+            raise RuntimeError("simulated failure")
+        return original_replace(db, work_order_id, record)
+
+    monkeypatch.setattr(import_service, "_replace_line_items", _replace_or_fail)
+
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-13T10:00:00",
+        "batch_id": f"test-chunkfail-{uuid.uuid4()}",
+        "records": _bulk_records("CHUNK", total),
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 500
+
+    rows = (
+        db_session.execute(select(WorkOrder).where(WorkOrder.external_number.like("CHUNK-%")))
+        .scalars()
+        .all()
+    )
+    numbers = {row.external_number for row in rows}
+    assert numbers == {f"CHUNK-{i:05d}" for i in range(chunk_size)}
+    assert failing_number not in numbers
+
+    batch = db_session.execute(
+        select(ImportBatch).where(ImportBatch.batch_id == payload["batch_id"])
+    ).scalar_one()
+    assert batch.status == "failed"
+    assert batch.records_inserted == chunk_size
+    assert batch.error_message is not None
+    assert "simulated failure" in batch.error_message

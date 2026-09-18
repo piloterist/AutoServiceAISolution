@@ -312,17 +312,37 @@ def _replace_line_items(
         )
 
 
+# A single multi-thousand-record transaction held the whole batch's ORM
+# objects (labor/part lines, payment-history snapshots) pending in memory,
+# unflushed, until one `db.flush()` at the very end - fine at a few thousand
+# records, but it stopped scaling once real exports grew large: an 8,000-record
+# import degraded badly enough to make the whole backend unresponsive
+# (2026-09-17 incident). Chunking bounds memory to one chunk's worth of
+# pending objects at a time and commits/releases locks between chunks instead
+# of holding them for the whole import's duration.
+CHUNK_SIZE = 200
+
+
 def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> ImportBatch:
     """Persist an import batch and upsert all of its work order records.
 
-    The whole batch is processed in a single transaction: either every
-    record is applied and the batch is marked "success", or nothing is
-    applied and the batch is marked "failed" with the error recorded.
+    Processed in chunks of CHUNK_SIZE records, each its own committed
+    transaction, rather than one transaction for the whole payload (see
+    CHUNK_SIZE above). Every table this touches is upserted idempotently
+    (_upsert_work_order, _record_status_history, _record_payment_events), so
+    a chunk that commits is safe to see again on a retry - a later chunk
+    failing never needs to roll back an earlier chunk's already-committed,
+    correct data. A failing chunk is rolled back and logged, and processing
+    continues with the next chunk rather than aborting the rest of the
+    import - the same "one bad piece doesn't abort the whole batch"
+    philosophy already used for individual 1C object versions (see
+    1c/TestExportOrders.bsl).
+
+    The ImportBatch row is created up front with status "processing" and its
+    counts are updated after every chunk, not just at the end, so a crash or
+    a killed request mid-import still leaves an accurate, queryable record of
+    how far it got instead of no record at all.
     """
-    inserted = 0
-    updated = 0
-    status = "success"
-    error_message: str | None = None
     # This backend's own clock, not `payload.exported_at` - the 1C export
     # sends that as a naive local (MSK) timestamp with no timezone info, so
     # storing it as-is mislabels it as UTC. Used for payment_history's
@@ -331,38 +351,6 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
     # this backend's clock.
     observed_at = datetime.now(UTC)
 
-    try:
-        for record in payload.records:
-            work_order_id, was_inserted = _upsert_work_order(
-                db, payload.source, payload.exported_at, record
-            )
-            _replace_line_items(db, work_order_id, record)
-            _record_status_history(db, work_order_id, record.status_history)
-            _record_payment_history(
-                db,
-                work_order_id,
-                record.deal_amount,
-                record.debt_amount,
-                record.paid_amount,
-                record.payment_percent,
-                observed_at,
-            )
-            _record_payment_events(db, work_order_id, record.payment_events)
-            if was_inserted:
-                inserted += 1
-            else:
-                updated += 1
-        db.flush()
-    except Exception as exc:
-        db.rollback()
-        status = "failed"
-        error_message = str(exc)
-        inserted = 0
-        updated = 0
-        logger.error(
-            "import_failed", batch_id=payload.batch_id, source=payload.source, error=error_message
-        )
-
     batch = ImportBatch(
         batch_id=payload.batch_id,
         source=payload.source,
@@ -370,17 +358,88 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
         branch=payload.branch,
         exported_at=payload.exported_at,
         records_received=len(payload.records),
-        records_inserted=inserted,
-        records_updated=updated,
-        status=status,
-        error_message=error_message,
+        records_inserted=0,
+        records_updated=0,
+        status="processing",
     )
     db.add(batch)
     db.commit()
     db.refresh(batch)
 
-    if status == "failed":
-        raise ImportProcessingError(error_message or "unknown import error")
+    inserted = 0
+    updated = 0
+    chunk_errors: list[str] = []
+    records = payload.records
+
+    for start in range(0, len(records), CHUNK_SIZE):
+        chunk = records[start : start + CHUNK_SIZE]
+        chunk_inserted = 0
+        chunk_updated = 0
+        try:
+            for record in chunk:
+                work_order_id, was_inserted = _upsert_work_order(
+                    db, payload.source, payload.exported_at, record
+                )
+                _replace_line_items(db, work_order_id, record)
+                _record_status_history(db, work_order_id, record.status_history)
+                _record_payment_history(
+                    db,
+                    work_order_id,
+                    record.deal_amount,
+                    record.debt_amount,
+                    record.paid_amount,
+                    record.payment_percent,
+                    observed_at,
+                )
+                _record_payment_events(db, work_order_id, record.payment_events)
+                if was_inserted:
+                    chunk_inserted += 1
+                else:
+                    chunk_updated += 1
+            db.commit()
+            inserted += chunk_inserted
+            updated += chunk_updated
+        except Exception as exc:
+            db.rollback()
+            chunk_errors.append(f"records {start + 1}-{start + len(chunk)}: {exc}")
+            logger.error(
+                "import_chunk_failed",
+                batch_id=payload.batch_id,
+                source=payload.source,
+                chunk_start=start,
+                chunk_size=len(chunk),
+                error=str(exc),
+            )
+        finally:
+            db.expire_all()
+
+        batch.records_inserted = inserted
+        batch.records_updated = updated
+        db.commit()
+
+    if chunk_errors:
+        batch.status = "failed"
+        shown = chunk_errors[:10]
+        extra = len(chunk_errors) - len(shown)
+        batch.error_message = "; ".join(shown) + (f" (+{extra} more chunk errors)" if extra else "")
+    else:
+        batch.status = "success"
+        batch.error_message = None
+
+    db.commit()
+    db.refresh(batch)
+
+    if chunk_errors:
+        logger.error(
+            "import_failed",
+            batch_id=payload.batch_id,
+            source=payload.source,
+            received=batch.records_received,
+            inserted=inserted,
+            updated=updated,
+            failed_chunks=len(chunk_errors),
+        )
+        raise ImportProcessingError(batch.error_message or "unknown import error")
 
     logger.info(
         "import_completed",

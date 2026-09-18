@@ -2,9 +2,10 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { WorkOrderListItem } from "@/lib/backend-api";
+import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } from "@/lib/work-orders-cache";
 
 // Column widths as a CSS grid template (percentages), applied identically to
 // the header row, the filter row and every virtualized body row so they
@@ -161,7 +162,6 @@ function buildClipboardText(rows: Row[]): string {
 }
 
 export function WorkOrdersTable({
-  items,
   initialStatus,
   initialDateFrom,
   initialDateTo,
@@ -171,7 +171,6 @@ export function WorkOrdersTable({
   paidFrom,
   paidTo,
 }: {
-  items: WorkOrderListItem[];
   /** Pre-applied filters, e.g. arriving from a click on the dashboard's
    * status chips (/work-orders?status=...&date_from=...&date_to=...) or the
    * revenue stat tile
@@ -184,15 +183,72 @@ export function WorkOrdersTable({
   initialClosedFrom?: string;
   initialClosedTo?: string;
   initialDepartment?: string;
-  /** Set when `items` already arrived pre-filtered by real payment date
-   * (the dashboard's "Оплаты за период" tile) - unlike the other initial*
-   * filters above, this one was applied server-side (see
-   * app/work-orders/page.tsx), so it's only used here to show a banner,
-   * not to filter `rows` again. */
+  /** Restricts to work orders with a real payment in this range (the
+   * dashboard's "Оплаты за период" tile) - applied server-side by the
+   * fetch itself (see lib/work-orders-cache.ts loadWorkOrdersFiltered),
+   * not by filtering an already-loaded `rows` again. Also shown as a
+   * banner below. */
   paidFrom?: string;
   paidTo?: string;
 }) {
   const router = useRouter();
+
+  // Loads client-side (not server-rendered) so the unfiltered case can
+  // render instantly from lib/work-orders-cache.ts's cache when the
+  // dashboard has already prefetched it, instead of every visit paying for
+  // a fresh multi-thousand-row fetch. See WorkOrdersPrefetcher.
+  const [items, setItems] = useState<WorkOrderListItem[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadError(null);
+
+    const onProgress = (partialItems: WorkOrderListItem[], partialTotal: number) => {
+      if (cancelled) return;
+      setItems(partialItems);
+      setTotal(partialTotal);
+    };
+
+    const hasPaidFilter = Boolean(paidFrom || paidTo);
+
+    if (!hasPaidFilter) {
+      const cached = getCachedWorkOrders();
+      if (cached) {
+        setItems(cached.items);
+        setTotal(cached.total);
+        setLoading(!cached.complete);
+      } else {
+        setLoading(true);
+      }
+    } else {
+      setLoading(true);
+    }
+
+    const task = hasPaidFilter
+      ? loadWorkOrdersFiltered({ paidFrom, paidTo }, onProgress)
+      : loadWorkOrdersCached(onProgress);
+
+    task
+      .then((result) => {
+        if (cancelled) return;
+        setItems(result.items);
+        setTotal(result.total);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : "Unknown error");
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [paidFrom, paidTo]);
+
   const [search, setSearch] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>({
     createdDate: "",
@@ -328,6 +384,24 @@ export function WorkOrdersTable({
     overscan: 12,
   });
 
+  if (loadError) {
+    return (
+      <div className="wide-page">
+        <div className="card" style={{ borderColor: "var(--down)" }}>
+          <p>Не удалось загрузить данные: {loadError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading && items.length === 0) {
+    return (
+      <div className="wide-page">
+        <p className="table-empty">Загрузка заказ-нарядов…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="wide-page">
       {(paidFrom || paidTo) && (
@@ -438,6 +512,7 @@ export function WorkOrdersTable({
       <div className="table-meta">
         <span>
           Показано {filteredRows.length} из {items.length}
+          {total !== null && items.length < total ? ` (загружаем ещё, всего ${total})…` : ""}
         </span>
         <span className="table-meta-total">Сумма: {formatAmount(filteredAmount)}</span>
         <button type="button" className="copy-button" onClick={handleCopy}>
