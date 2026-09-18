@@ -442,6 +442,27 @@ export function WorkOrdersTable({
     );
   };
 
+  // A native <details> only closes on a second click on its own <summary>
+  // - it has no built-in "click outside to close" behavior the way a
+  // <select> dropdown does. Made controlled (open={statusFilterOpen}) so
+  // an outside click can close it too, without interfering with clicking
+  // the summary itself (native toggle) or checking boxes inside the panel
+  // (both are inside statusFilterRef, so the outside-click check leaves
+  // them alone).
+  const [statusFilterOpen, setStatusFilterOpen] = useState(false);
+  const statusFilterRef = useRef<HTMLDetailsElement>(null);
+
+  useEffect(() => {
+    if (!statusFilterOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (statusFilterRef.current && !statusFilterRef.current.contains(event.target as Node)) {
+        setStatusFilterOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [statusFilterOpen]);
+
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -559,7 +580,12 @@ export function WorkOrdersTable({
           </select>
         </label>
 
-        <details className="status-filter">
+        <details
+          ref={statusFilterRef}
+          className="status-filter"
+          open={statusFilterOpen}
+          onToggle={(event) => setStatusFilterOpen(event.currentTarget.open)}
+        >
           <summary>
             Статус{selectedStatuses.length > 0 ? ` (${selectedStatuses.length})` : ""}
           </summary>

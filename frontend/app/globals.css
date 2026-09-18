@@ -257,16 +257,21 @@ main:has(.wide-page) {
   cursor: pointer;
   list-style: none;
   /* Without this, <summary>'s default block sizing stretches it wider
-     than its text (unlike the sibling Оплата/Внутренний <select>s, which
-     naturally shrink to content) - forces the same "size to content"
-     behavior so all three toolbar controls line up visually. */
+     than its text (unlike the sibling Оплата <select>, which naturally
+     shrinks to content) - forces the same "size to content" behavior so
+     both toolbar controls line up visually. */
   width: max-content;
-  padding: 0.6rem 0.9rem;
+  /* Exactly mirrors .payment-filter select's box (padding + font-size) -
+     a <summary> and a <select> render at different heights even with
+     identical padding if the font-size differs, since padding is fixed
+     but line-height scales with it. */
+  padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  line-height: 1.25;
 }
 
 .status-filter summary::-webkit-details-marker {
@@ -346,6 +351,7 @@ main:has(.wide-page) {
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 0.85rem;
+  line-height: 1.25;
   color: var(--text);
   background: var(--surface);
 }
