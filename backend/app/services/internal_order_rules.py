@@ -124,7 +124,10 @@ def internal_order_allowed(organization: str | None, payer: str | None) -> bool:
     if org == ORG_SOKOLOVA:
         if not payer or not str(payer).strip():
             return True
-        if norm_org(payer) == ORG_PAN_OKSANA:
-            return True
-        return not is_physical_person(payer)
+        # Deliberately an exact whitelist, not "not a physical person" -
+        # that broader check let any unrelated company (e.g. a genuine
+        # third-party customer paying for their own repair) count as
+        # internal just for being a legal entity, which is what flagged
+        # СЛ00000310 (payer "ООО Дело Техники") incorrectly.
+        return norm_org(payer) in (ORG_PAN_OKSANA, ORG_PAN_MOTORS, ORG_PAN_STANISLAV)
     return False

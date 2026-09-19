@@ -121,8 +121,22 @@ def test_internal_order_allowed_sokolova_payer_is_pan_oksana() -> None:
     assert internal_order_allowed(ORG_SOKOLOVA, "  ип пан оксана игоревна  ") is True
 
 
-def test_internal_order_allowed_sokolova_non_physical_payer() -> None:
-    assert internal_order_allowed(ORG_SOKOLOVA, "ООО Ромашка") is True
+def test_internal_order_allowed_sokolova_payer_is_pan_motors() -> None:
+    assert internal_order_allowed(ORG_SOKOLOVA, ORG_PAN_MOTORS) is True
+    assert internal_order_allowed(ORG_SOKOLOVA, "  пан-моторс,   ооо  ") is True
+
+
+def test_internal_order_allowed_sokolova_payer_is_pan_stanislav() -> None:
+    assert internal_order_allowed(ORG_SOKOLOVA, ORG_PAN_STANISLAV) is True
+
+
+def test_internal_order_allowed_sokolova_unrelated_company_rejected() -> None:
+    """Deliberately an exact whitelist, not "any non-physical-person
+    payer" - a genuine third-party customer paying for their own repair
+    (e.g. "ООО Дело Техники", from the СЛ00000310 case) must NOT count as
+    internal just for being a company."""
+    assert internal_order_allowed(ORG_SOKOLOVA, "ООО Ромашка") is False
+    assert internal_order_allowed(ORG_SOKOLOVA, "ООО Дело Техники") is False
 
 
 def test_internal_order_allowed_sokolova_physical_payer_rejected() -> None:
