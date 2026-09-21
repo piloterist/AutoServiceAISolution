@@ -2,12 +2,14 @@
   color-scheme: light;
   --bg: #f7f8fa;
   --surface: #ffffff;
+  --surface2: #f1f3f6;
   --border: #e2e5ea;
   --text: #1a1d23;
   --text-muted: #6b7280;
   --accent: #2563eb;
   --ok: #16a34a;
   --down: #dc2626;
+  --today: #fff6cf;
 
   /* Data-viz tokens (see dataviz skill: sequential blue ramp, chart chrome) */
   --chart-surface: #fcfcfb;
@@ -33,12 +35,14 @@
     color-scheme: dark;
     --bg: #0f1115;
     --surface: #171a20;
+    --surface2: #1e232b;
     --border: #2a2e37;
     --text: #eef0f4;
     --text-muted: #9aa1ae;
     --accent: #5b8def;
     --ok: #3ecf8e;
     --down: #ff6b5e;
+    --today: #3b3517;
 
     --chart-surface: #171a20;
     --chart-series: #5b9bf0;
@@ -56,12 +60,14 @@
   color-scheme: dark;
   --bg: #0f1115;
   --surface: #171a20;
+  --surface2: #1e232b;
   --border: #2a2e37;
   --text: #eef0f4;
   --text-muted: #9aa1ae;
   --accent: #5b8def;
   --ok: #3ecf8e;
   --down: #ff6b5e;
+  --today: #3b3517;
 
   --chart-surface: #171a20;
   --chart-series: #5b9bf0;
@@ -1907,4 +1913,587 @@ main:has(.wide-page) {
   background: color-mix(in srgb, var(--down) 12%, transparent);
   color: var(--down);
   font-size: 0.85rem;
+}
+
+/* ============================================================
+   Planner (Слесарный/Кузовной цех)
+   ============================================================ */
+
+.planner-dept-switch {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.planner-dept-btn {
+  padding: 0.7rem 1.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.planner-dept-btn--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.75rem 1.2rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.toolbar .grp {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toolbar button {
+  padding: 0.4rem 0.7rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.toolbar input[type="date"],
+.toolbar input[type="search"],
+.toolbar select {
+  padding: 0.4rem 0.6rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.toolbar .seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.toolbar .seg button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.4rem 0.75rem;
+}
+
+.toolbar .seg button.on {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.planner-legend {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.planner-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.planner-legend-item i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.planner-search-grp {
+  margin-left: auto;
+}
+
+/* ---- Слесарный grid ---- */
+
+.mscroll {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.mgrid {
+  display: grid;
+  width: 100%;
+  min-width: max-content;
+}
+
+.corner {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--surface2);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.planner-corner-1 {
+  height: 58px;
+}
+
+.planner-corner-2 {
+  height: 28px;
+}
+
+.dayh {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  height: 58px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  border-left: 2px solid var(--border);
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.dayh.today {
+  background: var(--today);
+}
+
+.planner-dayh-title {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+
+.planner-dayh-title b::first-letter {
+  text-transform: uppercase;
+}
+
+.dayh-badge {
+  font-size: 0.68rem;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 99px;
+  padding: 1px 7px;
+  font-weight: 600;
+}
+
+.planner-dayh-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.planner-dayh-stats b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.posth {
+  position: sticky;
+  top: 58px;
+  z-index: 2;
+  height: 28px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  border-left: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.78rem;
+}
+
+.timecol {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface2);
+  border-right: 1px solid var(--border);
+}
+
+.timecol > div {
+  height: 36px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+  padding: 1px 8px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.timecol > div.hr {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.col {
+  position: relative;
+  border-left: 2px solid var(--border);
+  background-image: linear-gradient(
+    to bottom,
+    transparent calc(36px - 1px),
+    var(--border) calc(36px - 1px)
+  );
+  background-size: 100% 36px;
+  cursor: pointer;
+}
+
+.col.today {
+  background-color: color-mix(in srgb, var(--today) 45%, transparent);
+}
+
+.col:hover {
+  background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.job {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border-radius: 6px;
+  padding: 2px 6px;
+  overflow: hidden;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  cursor: pointer;
+  border-left: 4px solid var(--accent);
+  background: var(--surface2);
+  z-index: 1;
+}
+
+.job:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  z-index: 4;
+}
+
+.job-title {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.job-sub,
+.job-work {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.planner-job-dim {
+  opacity: 0.35;
+}
+
+/* ---- Кузовной table ---- */
+
+.tw {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+table.bt {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+}
+
+.bt th,
+.bt td {
+  padding: 0;
+  vertical-align: middle;
+}
+
+.bt thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface2);
+  height: 48px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.78rem;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+}
+
+.bt thead th.today {
+  background: var(--today);
+}
+
+.bt thead th.hcar {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  text-align: left;
+  padding: 8px 12px;
+  min-width: 280px;
+  max-width: 280px;
+  border-left: 0;
+}
+
+.bt thead th.hcar .cnt {
+  display: block;
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.carc {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
+  min-width: 280px;
+  max-width: 280px;
+  padding: 6px 10px !important;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top !important;
+}
+
+.carc:hover {
+  background: var(--surface2);
+}
+
+.carc .l1 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.carc .order {
+  font-weight: 700;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.carc .stsel {
+  font-size: 0.72rem;
+  padding: 1px 4px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.carc .model {
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carc .dates {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.carc .dates b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.planner-body-bar-area {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.planner-body-segment {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #1f2937;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12) inset;
+}
+
+/* Draggable tick mark between two этапы - product brief part 5 ("между
+   этапами колбаса имеет всегда по две черточки... за них можно схватить
+   мышкой"). Widened invisible hit-area (±5px) so a precise 2px line is
+   still easy to grab; col-resize cursor mirrors the Excel-style column-
+   resize hint the brief asks for. */
+.planner-body-boundary {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 10px;
+  margin-left: -5px;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.planner-body-boundary::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.planner-body-boundary:hover::after {
+  background: var(--accent);
+}
+
+.newrow td {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 0.82rem;
+  cursor: pointer;
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+}
+
+.newrow td:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.emptyrow {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ---- ЗН autocomplete (shared by both dialogs) ---- */
+
+.planner-autocomplete {
+  position: relative;
+}
+
+.planner-autocomplete-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 2px 0 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.planner-autocomplete-list button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+}
+
+.planner-autocomplete-list button:hover {
+  background: var(--surface2);
+}
+
+.planner-autocomplete-number {
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.planner-autocomplete-detail {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ---- Кузовной stage editor (inside BodyCarDialog) ---- */
+
+.planner-stage-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 0.9rem 0;
+  padding: 0.7rem 0.8rem 0.9rem;
+}
+
+.planner-stage-fieldset legend {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+
+.planner-stage-header,
+.planner-stage-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 1fr 1fr 24px;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.planner-stage-header {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-top: 0;
+}
+
+.planner-stage-row input,
+.planner-stage-row select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  background: var(--surface);
+  color: var(--text);
+  width: 100%;
+}
+
+.planner-stage-span {
+  margin: 0.7rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 6px 10px;
 }

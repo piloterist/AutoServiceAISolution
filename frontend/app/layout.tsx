@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 
 import { Nav } from "@/components/Nav";
-import { readSessionToken, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/session";
 
 import "./globals.css";
 
@@ -17,8 +16,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // middleware.ts already guarantees this is valid/non-null for every page
   // it lets through (the login page is the only exception, where user is
   // null and Nav renders nothing regardless - see Nav.tsx).
-  const token = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
-  const user = await readSessionToken(token);
+  const user = await getCurrentUser();
 
   return (
     <html lang="en">

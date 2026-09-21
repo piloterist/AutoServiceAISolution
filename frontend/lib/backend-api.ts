@@ -1,11 +1,11 @@
-// Server-only helper for calling the backend's protected read API
-// (GET /api/v1/work-orders, /api/v1/work-orders/summary/monthly).
+// Server-only helper for calling the backend's protected API.
 //
 // Deliberately NOT called from client components: BACKEND_API_TOKEN must
 // never reach the browser. Only Server Components / route handlers may
-// import this file. There is no per-user auth system yet (see
-// ARCHITECTURE.md) - this reuses the same bearer token the 1C integration
-// uses, which is why it has to stay server-side only.
+// import this file - the browser talks to same-origin /api/* proxy routes
+// instead (see app/api/admin/*, app/api/planner/*), which hold this token
+// server-side and forward the caller's own session identity (for Planner
+// writes' audit logging) via X-Actor-* headers instead.
 import "server-only";
 
 import { API_URL } from "@/lib/config";
@@ -220,12 +220,17 @@ async function backendGet<T>(path: string, params?: Record<string, string>): Pro
   return res.json() as Promise<T>;
 }
 
-async function backendPut<T>(path: string, body: unknown): Promise<T> {
+async function backendPut<T>(
+  path: string,
+  body: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
   const res = await fetch(new URL(path, API_URL), {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${backendToken()}`,
       "Content-Type": "application/json",
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
     cache: "no-store",
@@ -238,12 +243,17 @@ async function backendPut<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function backendPost<T>(path: string, body: unknown): Promise<T> {
+async function backendPost<T>(
+  path: string,
+  body: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
   const res = await fetch(new URL(path, API_URL), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${backendToken()}`,
       "Content-Type": "application/json",
+      ...extraHeaders,
     },
     body: JSON.stringify(body),
     cache: "no-store",
@@ -256,10 +266,10 @@ async function backendPost<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function backendDelete(path: string): Promise<void> {
+async function backendDelete(path: string, extraHeaders?: Record<string, string>): Promise<void> {
   const res = await fetch(new URL(path, API_URL), {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${backendToken()}` },
+    headers: { Authorization: `Bearer ${backendToken()}`, ...extraHeaders },
     cache: "no-store",
   });
 
@@ -596,4 +606,163 @@ export type AuditLogEntry = {
 
 export function getAuditLog(): Promise<AuditLogEntry[]> {
   return backendGet<AuditLogEntry[]>("/api/v1/settings/audit-log");
+}
+
+// ============================================================================
+// Planner (Слесарный/Кузовной цех) - see backend app/services/planner_service.py.
+// Writes carry the acting user's identity for audit logging (see
+// schedule_audit_log) via X-Actor-* headers - the header VALUE must be
+// percent-encoded (encodeURIComponent) since HTTP header values are
+// ASCII/Latin-1-only and actor names are routinely Cyrillic; the backend's
+// actor() dependency unquotes it back.
+// ============================================================================
+
+export function actorHeaders(actor: { id: string; fullName: string }): Record<string, string> {
+  return {
+    "X-Actor-User-Id": actor.id,
+    "X-Actor-Name": encodeURIComponent(actor.fullName),
+  };
+}
+
+export type PlannerWorkOrder = {
+  id: string;
+  external_number: string;
+  vehicle_description: string | null;
+  vin: string | null;
+  customer_name: string | null;
+  amount: string;
+};
+
+export function searchPlannerWorkOrders(q: string): Promise<PlannerWorkOrder[]> {
+  return backendGet<PlannerWorkOrder[]>("/api/v1/planner/work-orders/search", { q });
+}
+
+export type WorkshopJob = {
+  id: string;
+  workshop_id: string;
+  work_order_id: string | null;
+  work_order_number: string | null;
+  work_order_status: string | null; // ЗН.Статус (1C) - "Факт" totals use "Закрыт"
+  amount: string | null;
+  car_description: string | null;
+  vin: string | null;
+  plate: string | null;
+  client_name: string | null;
+  work_description: string | null;
+  job_date: string; // "YYYY-MM-DD"
+  post_number: number;
+  start_time: string; // "HH:MM:SS"
+  end_time: string;
+  norm_hours: string | null;
+  status_id: string | null;
+  status_name: string | null;
+  status_color: string | null;
+};
+
+export type WorkshopJobWrite = {
+  work_order_id: string | null;
+  car_description: string | null;
+  vin: string | null;
+  plate: string | null;
+  client_name: string | null;
+  work_description: string | null;
+  job_date: string;
+  post_number: number;
+  start_time: string;
+  end_time: string;
+  norm_hours: string | null;
+  status_id: string | null;
+};
+
+export function getWorkshopJobs(workshopId: string, dateFrom: string, dateTo: string): Promise<WorkshopJob[]> {
+  return backendGet<WorkshopJob[]>(`/api/v1/planner/workshops/${workshopId}/jobs`, {
+    date_from: dateFrom,
+    date_to: dateTo,
+  });
+}
+
+export function createWorkshopJob(
+  workshopId: string,
+  payload: WorkshopJobWrite,
+  actor: { id: string; fullName: string },
+): Promise<WorkshopJob> {
+  return backendPost<WorkshopJob>(`/api/v1/planner/workshops/${workshopId}/jobs`, payload, actorHeaders(actor));
+}
+
+export function updateWorkshopJob(
+  id: string,
+  payload: WorkshopJobWrite,
+  actor: { id: string; fullName: string },
+): Promise<WorkshopJob> {
+  return backendPut<WorkshopJob>(`/api/v1/planner/jobs/${id}`, payload, actorHeaders(actor));
+}
+
+export function deleteWorkshopJob(id: string, actor: { id: string; fullName: string }): Promise<void> {
+  return backendDelete(`/api/v1/planner/jobs/${id}`, actorHeaders(actor));
+}
+
+export type BodyCarStage = {
+  id: string;
+  stage_name: string;
+  note: string | null;
+  start_date: string;
+  end_date: string;
+};
+
+export type BodyCarStageWrite = {
+  stage_name: string;
+  note: string | null;
+  start_date: string;
+  end_date: string;
+};
+
+export type BodyCar = {
+  id: string;
+  workshop_id: string;
+  work_order_id: string | null;
+  work_order_number: string | null;
+  amount: string | null;
+  car_description: string | null;
+  vin: string | null;
+  plate: string | null;
+  client_name: string | null;
+  work_description: string | null;
+  color: string;
+  status: string;
+  stages: BodyCarStage[];
+};
+
+export type BodyCarWrite = {
+  work_order_id: string | null;
+  car_description: string | null;
+  vin: string | null;
+  plate: string | null;
+  client_name: string | null;
+  work_description: string | null;
+  status: string;
+  stages: BodyCarStageWrite[];
+};
+
+export function getBodyCars(workshopId: string): Promise<BodyCar[]> {
+  return backendGet<BodyCar[]>(`/api/v1/planner/workshops/${workshopId}/cars`);
+}
+
+export function createBodyCar(
+  workshopId: string,
+  payload: BodyCarWrite,
+  actor: { id: string; fullName: string },
+): Promise<BodyCar> {
+  return backendPost<BodyCar>(`/api/v1/planner/workshops/${workshopId}/cars`, payload, actorHeaders(actor));
+}
+
+export function updateBodyCar(
+  id: string,
+  payload: BodyCarWrite,
+  actor: { id: string; fullName: string },
+): Promise<BodyCar> {
+  return backendPut<BodyCar>(`/api/v1/planner/cars/${id}`, payload, actorHeaders(actor));
+}
+
+export function deleteBodyCar(id: string, actor: { id: string; fullName: string }): Promise<void> {
+  return backendDelete(`/api/v1/planner/cars/${id}`, actorHeaders(actor));
 }

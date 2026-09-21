@@ -34,6 +34,11 @@ class WorkshopJobOut(BaseModel):
     workshop_id: uuid.UUID
     work_order_id: uuid.UUID | None
     work_order_number: str | None
+    # ЗН.Статус (1C), e.g. "Закрыт" - drives the day header's "Факт" total
+    # (product brief: "Факт по заказ-нарядам которые прошли и получили
+    # статус Закрыт"), distinct from status_id/status_name below (the
+    # Слесарный-record's own SlesarkaStatus).
+    work_order_status: str | None
     amount: Decimal | None  # live from the linked ЗН, never stored - see model docstring
     car_description: str | None
     vin: str | None

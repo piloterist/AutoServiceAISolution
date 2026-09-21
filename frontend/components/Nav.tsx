@@ -13,6 +13,7 @@ import type { SessionUser } from "@/lib/auth";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/work-orders", label: "Work Orders" },
+  { href: "/planner", label: "Planner" },
   { href: "/kanban", label: "Kanban" },
   { href: "/employees", label: "Employees" },
   { href: "/analytics", label: "Analytics" },

@@ -73,6 +73,7 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
         workshop_id=job.workshop_id,
         work_order_id=job.work_order_id,
         work_order_number=work_order.external_number if work_order else None,
+        work_order_status=work_order.status if work_order else None,
         amount=work_order.amount if work_order else None,
         car_description=job.car_description,
         vin=job.vin,
