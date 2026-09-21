@@ -29,8 +29,18 @@ async function proxyFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T>
 
 const jsonHeaders = { "Content-Type": "application/json" };
 
+// Every `list` below hits the same URL on every reload, and without this a
+// browser (or any cache sitting between it and the response) could serve a
+// stale one right after a create/update/delete resolved, with nothing but
+// a hard page reload to force a fresher fetch - see the identical fix in
+// planner-client.ts for the Planner's own version of this bug.
+const noStoreFresh: RequestInit = { cache: "no-store" };
+function bust(path: string): string {
+  return `${path}${path.includes("?") ? "&" : "?"}_=${Date.now()}`;
+}
+
 export const departmentsApi = {
-  list: () => proxyFetch<OrgDepartment[]>("/api/admin/departments"),
+  list: () => proxyFetch<OrgDepartment[]>(bust("/api/admin/departments"), noStoreFresh),
   create: (name: string) =>
     proxyFetch<OrgDepartment>("/api/admin/departments", {
       method: "POST",
@@ -47,7 +57,7 @@ export const departmentsApi = {
 };
 
 export const workshopsApi = {
-  list: () => proxyFetch<Workshop[]>("/api/admin/workshops"),
+  list: () => proxyFetch<Workshop[]>(bust("/api/admin/workshops"), noStoreFresh),
   create: (payload: WorkshopWrite) =>
     proxyFetch<Workshop>("/api/admin/workshops", {
       method: "POST",
@@ -64,7 +74,7 @@ export const workshopsApi = {
 };
 
 export const usersApi = {
-  list: () => proxyFetch<OrgUser[]>("/api/admin/users"),
+  list: () => proxyFetch<OrgUser[]>(bust("/api/admin/users"), noStoreFresh),
   create: (payload: OrgUserCreate) =>
     proxyFetch<OrgUser>("/api/admin/users", {
       method: "POST",
@@ -81,7 +91,7 @@ export const usersApi = {
 };
 
 export const slesarkaStatusesApi = {
-  list: () => proxyFetch<SlesarkaStatus[]>("/api/admin/slesarka-statuses"),
+  list: () => proxyFetch<SlesarkaStatus[]>(bust("/api/admin/slesarka-statuses"), noStoreFresh),
   create: (name: string, color: string) =>
     proxyFetch<SlesarkaStatus>("/api/admin/slesarka-statuses", {
       method: "POST",
@@ -98,5 +108,5 @@ export const slesarkaStatusesApi = {
 };
 
 export const auditLogApi = {
-  list: () => proxyFetch<AuditLogEntry[]>("/api/admin/audit-log"),
+  list: () => proxyFetch<AuditLogEntry[]>(bust("/api/admin/audit-log"), noStoreFresh),
 };
