@@ -52,12 +52,22 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
   // with nothing to cascade (see computeDraggedStages). `stageDrag` is
   // the gesture in progress, `previewStages` is that one car's stage list
   // re-dated live while dragging, swapped in for rendering only
-  // (committed to the server on mouseup); everything else keeps reading
+  // (committed to the server on pointerup); everything else keeps reading
   // from `cars`.
+  //
+  // Uses setPointerCapture on the handle that received pointerdown, with
+  // onPointerMove/onPointerUp as ordinary props on that same element -
+  // not document-level addEventListener wired up through a useEffect
+  // keyed on stageDrag (the same fix already applied to Слесарный's own
+  // drag, which stopped working reliably on repeat gestures under that
+  // pattern). Pointer capture guarantees events keep reaching this
+  // element regardless of where the cursor moves, so there's no
+  // subscribe/cleanup lifecycle to get wrong between gestures.
   const [stageDrag, setStageDrag] = useState<{
     carId: string;
     kind: "boundary" | "start" | "end";
     boundaryIndex: number;
+    pointerId: number;
     startMouseX: number;
     originalStages: BodyCarStage[];
   } | null>(null);
@@ -128,9 +138,8 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
     reload();
   };
 
-  const computeDraggedStages = (deltaDays: number): BodyCarStage[] => {
-    if (!stageDrag) return [];
-    const { kind, boundaryIndex, originalStages } = stageDrag;
+  const computeDraggedStages = (deltaDays: number, drag: NonNullable<typeof stageDrag>): BodyCarStage[] => {
+    const { kind, boundaryIndex, originalStages } = drag;
 
     if (kind === "start") {
       // Moving the very first stage's start is "when does the car arrive" -
@@ -171,62 +180,73 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
     });
   };
 
-  useEffect(() => {
-    if (!stageDrag) return;
+  const startStageDrag = (
+    e: React.PointerEvent<HTMLDivElement>,
+    car: BodyCar,
+    kind: "boundary" | "start" | "end",
+    boundaryIndex: number,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setStageDrag({
+      carId: car.id,
+      kind,
+      boundaryIndex,
+      pointerId: e.pointerId,
+      startMouseX: e.clientX,
+      originalStages: car.stages,
+    });
+  };
 
-    const onMove = (e: MouseEvent) => {
-      const deltaDays = Math.round((e.clientX - stageDrag.startMouseX) / DAY_WIDTH);
-      setPreviewStages({ carId: stageDrag.carId, stages: computeDraggedStages(deltaDays) });
-    };
+  const handleStageDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!stageDrag || e.pointerId !== stageDrag.pointerId) return;
+    const deltaDays = Math.round((e.clientX - stageDrag.startMouseX) / DAY_WIDTH);
+    setPreviewStages({ carId: stageDrag.carId, stages: computeDraggedStages(deltaDays, stageDrag) });
+  };
 
-    const onUp = async (e: MouseEvent) => {
-      const deltaDays = Math.round((e.clientX - stageDrag.startMouseX) / DAY_WIDTH);
-      const carId = stageDrag.carId;
-      setStageDrag(null);
-      if (deltaDays === 0) {
-        setPreviewStages(null);
-        return;
-      }
-      justDraggedRef.current = true;
-      setTimeout(() => {
-        justDraggedRef.current = false;
-      }, 50);
-      const finalStages = computeDraggedStages(deltaDays);
-      const car = cars.find((c) => c.id === carId);
-      if (car) {
-        try {
-          await bodyCarsApi.update(carId, {
-            work_order_id: car.work_order_id,
-            car_description: car.car_description,
-            vin: car.vin,
-            plate: car.plate,
-            client_name: car.client_name,
-            work_description: car.work_description,
-            status: car.status,
-            stages: finalStages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
-          });
-          reload();
-        } catch (err) {
-          // Without this, a rejected save (e.g. an invalid resulting order)
-          // left previewStages showing the dragged-to position forever,
-          // since nothing after the throwing await ever ran - the graph
-          // looked moved while the saved record (and the edit dialog) never
-          // changed at all.
-          setStageDragError(err instanceof Error ? err.message : "Не удалось сохранить перенос этапа");
-          setTimeout(() => setStageDragError(null), 4000);
-        }
-      }
+  const handleStageDragUp = async (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!stageDrag || e.pointerId !== stageDrag.pointerId) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+
+    const deltaDays = Math.round((e.clientX - stageDrag.startMouseX) / DAY_WIDTH);
+    const drag = stageDrag;
+    setStageDrag(null);
+    if (deltaDays === 0) {
       setPreviewStages(null);
-    };
-
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-    return () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stageDrag]);
+      return;
+    }
+    justDraggedRef.current = true;
+    setTimeout(() => {
+      justDraggedRef.current = false;
+    }, 50);
+    const finalStages = computeDraggedStages(deltaDays, drag);
+    const car = cars.find((c) => c.id === drag.carId);
+    if (car) {
+      try {
+        await bodyCarsApi.update(drag.carId, {
+          work_order_id: car.work_order_id,
+          car_description: car.car_description,
+          vin: car.vin,
+          plate: car.plate,
+          client_name: car.client_name,
+          work_description: car.work_description,
+          status: car.status,
+          stages: finalStages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
+        });
+        reload();
+      } catch (err) {
+        // Without this, a rejected save (e.g. an invalid resulting order)
+        // left previewStages showing the dragged-to position forever,
+        // since nothing after the throwing await ever ran - the graph
+        // looked moved while the saved record (and the edit dialog) never
+        // changed at all.
+        setStageDragError(err instanceof Error ? err.message : "Не удалось сохранить перенос этапа");
+        setTimeout(() => setStageDragError(null), 4000);
+      }
+    }
+    setPreviewStages(null);
+  };
 
   const stagesFor = (car: BodyCar): BodyCarStage[] =>
     previewStages && previewStages.carId === car.id ? previewStages.stages : car.stages;
@@ -377,51 +397,30 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                               <div
                                 className="planner-body-boundary"
                                 style={{ left }}
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setStageDrag({
-                                    carId: car.id,
-                                    kind: "start",
-                                    boundaryIndex: -1,
-                                    startMouseX: e.clientX,
-                                    originalStages: car.stages,
-                                  });
-                                }}
+                                onPointerDown={(e) => startStageDrag(e, car, "start", -1)}
+                                onPointerMove={handleStageDragMove}
+                                onPointerUp={handleStageDragUp}
+                                onPointerCancel={handleStageDragUp}
                               />
                             )}
                             {hasNext && boundaryHandleVisible && (
                               <div
                                 className="planner-body-boundary"
                                 style={{ left: boundaryX }}
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setStageDrag({
-                                    carId: car.id,
-                                    kind: "boundary",
-                                    boundaryIndex: index,
-                                    startMouseX: e.clientX,
-                                    originalStages: car.stages,
-                                  });
-                                }}
+                                onPointerDown={(e) => startStageDrag(e, car, "boundary", index)}
+                                onPointerMove={handleStageDragMove}
+                                onPointerUp={handleStageDragUp}
+                                onPointerCancel={handleStageDragUp}
                               />
                             )}
                             {isLast && boundaryHandleVisible && (
                               <div
                                 className="planner-body-boundary"
                                 style={{ left: boundaryX }}
-                                onMouseDown={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setStageDrag({
-                                    carId: car.id,
-                                    kind: "end",
-                                    boundaryIndex: index,
-                                    startMouseX: e.clientX,
-                                    originalStages: car.stages,
-                                  });
-                                }}
+                                onPointerDown={(e) => startStageDrag(e, car, "end", index)}
+                                onPointerMove={handleStageDragMove}
+                                onPointerUp={handleStageDragUp}
+                                onPointerCancel={handleStageDragUp}
                               />
                             )}
                           </div>

@@ -2384,6 +2384,31 @@ table.admin-data-table td {
   cursor: grabbing;
 }
 
+/* Grab the top/bottom edge of a Слесарный record to shrink/stretch it in
+   time only (day/post stay fixed) - see MechanicalView.tsx's "resize-start"/
+   "resize-end" drag kinds. */
+.job-resize-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 2;
+}
+
+.job-resize-handle--top {
+  top: 0;
+}
+
+.job-resize-handle--bottom {
+  bottom: 0;
+}
+
+.job-resize-handle:hover {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
 /* ---- Кузовной table ---- */
 
 .tw {
@@ -2516,14 +2541,20 @@ table.bt {
 .planner-body-bar-area {
   position: relative;
   min-height: 40px;
-  border-bottom: 1px solid var(--border);
   cursor: pointer;
+  /* No row divider here any more - .carc's own row height (up to 4 lines
+     of content) and this column's never quite agreed to the pixel, so a
+     separate line here just exposed the mismatch as a visible misalignment.
+     Centering the block instead (see .planner-body-segment/-boundary)
+     makes the row's exact height a non-issue rather than something to
+     chase pixel-perfectly. */
 }
 
 .planner-body-segment {
   position: absolute;
-  top: 4px;
-  bottom: 4px;
+  top: 50%;
+  height: 32px;
+  transform: translateY(-50%);
   border-radius: 6px;
   font-size: 0.7rem;
   font-weight: 600;
@@ -2544,11 +2575,13 @@ table.bt {
    resize hint the brief asks for. */
 .planner-body-boundary {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  top: 50%;
+  height: 36px;
+  transform: translateY(-50%);
   width: 10px;
   margin-left: -5px;
   cursor: col-resize;
+  touch-action: none;
   z-index: 2;
 }
 

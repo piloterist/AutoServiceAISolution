@@ -23,27 +23,36 @@ const DRAG_THRESHOLD_PX = 4;
 
 type ViewSpan = 1 | 3 | 7;
 
+type DragKind = "move" | "resize-start" | "resize-end";
+
 type DragState = {
+  kind: DragKind;
   job: WorkshopJob;
   pointerId: number;
   grabOffsetMinutes: number;
   // Pixel offset from the card's own top-left corner to where it was
   // grabbed, so the ghost tracks the cursor at the same point instead of
-  // snapping its corner to it.
+  // snapping its corner to it. Only meaningful for kind "move".
   grabPxX: number;
   grabPxY: number;
   cardWidth: number;
   cardHeight: number;
+  startClientX: number;
+  startClientY: number;
   clientX: number;
   clientY: number;
   hasMoved: boolean;
-  // Re-resolved on every pointermove (see the drag effect below) instead
-  // of only once at drop - a single elementFromPoint() read exactly at
-  // pointerup proved unreliable (post/day silently failed to update while
-  // time did), so the last-known-good column found while actually moving
-  // is what gets committed.
+  // Re-resolved on every pointermove (not just once at drop - a single
+  // elementFromPoint() read exactly at pointerup proved unreliable) so the
+  // last-known-good column found while actually moving is what gets
+  // committed. Only used for kind "move".
   targetDay: string | null;
   targetPost: number | null;
+  // Live preview while resizing (minutes since midnight) - used for kinds
+  // "resize-start"/"resize-end" to redraw the card's own top/height as the
+  // user drags; irrelevant for "move" (the ghost follows the cursor there).
+  previewStartMinutes: number;
+  previewEndMinutes: number;
 };
 
 function money(amount: string | number | null | undefined): string {
@@ -71,13 +80,24 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
   // Pointer-events-based drag (not native HTML5 DnD - that API's drop
   // target resolution turned out unreliable over the per-slot cells added
   // for :hover, and its ghost image jumping around read as "форма прыгает"
-  // with no visible confirmation the move actually landed). `dragState` is
-  // real state so the ghost re-renders every move; `dragStateRef` mirrors
-  // it so the window-level listeners (attached once per drag) always read
-  // the latest values instead of a stale closure.
+  // with no visible confirmation the move actually landed).
+  //
+  // Uses setPointerCapture on the element that received pointerdown, with
+  // onPointerMove/onPointerUp as ordinary React props on that SAME element
+  // - not a previous version's window-level addEventListener wired up
+  // through a useEffect keyed on drag state. That worked for exactly one
+  // drag and then silently stopped doing anything on the next one; pointer
+  // capture removes the whole subscribe/cleanup lifecycle this depended on
+  // (the browser guarantees events keep reaching the captured element
+  // regardless of where the cursor moves), so there's no re-subscription
+  // step to get wrong between gestures.
+  //
+  // `dragState` is real state so the ghost/resize preview re-renders every
+  // move; `dragStateRef` mirrors it so handlers already bound to the
+  // captured element always read the latest values instead of a stale
+  // closure from when the gesture started.
   const [dragState, setDragState] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
-  const finishDragRef = useRef<(clientX: number, clientY: number) => void>(() => {});
   // Elements keyed "day|post", used to find the column under the cursor by
   // plain coordinate-vs-rect math instead of document.elementFromPoint().
   // elementFromPoint() hit-tests real DOM stacking (z-index, pointer-events,
@@ -179,58 +199,122 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
   const dayEndMinutes = timeToMinutes(workshop.end_time);
   const dayStartMinutes = timeToMinutes(workshop.start_time);
 
-  const startDrag = (e: React.PointerEvent, job: WorkshopJob) => {
+  const startDrag = (e: React.PointerEvent<HTMLDivElement>, job: WorkshopJob, kind: DragKind) => {
     if (e.button !== 0) return;
+    if (kind !== "move") e.stopPropagation(); // don't also trigger the card's own "move" pointerdown
+    e.currentTarget.setPointerCapture(e.pointerId);
     const rect = e.currentTarget.getBoundingClientRect();
-    const grabOffsetMinutes = roundToSlot(((e.clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES, SLOT_MINUTES);
+    const startMinutes = timeToMinutes(job.start_time);
+    const endMinutes = timeToMinutes(job.end_time);
     const next: DragState = {
+      kind,
       job,
       pointerId: e.pointerId,
-      grabOffsetMinutes,
+      grabOffsetMinutes: roundToSlot(((e.clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES, SLOT_MINUTES),
       grabPxX: e.clientX - rect.left,
       grabPxY: e.clientY - rect.top,
       cardWidth: rect.width,
       cardHeight: rect.height,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
       clientX: e.clientX,
       clientY: e.clientY,
       hasMoved: false,
       targetDay: job.job_date,
       targetPost: job.post_number,
+      previewStartMinutes: startMinutes,
+      previewEndMinutes: endMinutes,
     };
     dragStateRef.current = next;
     setDragState(next);
   };
 
-  // Always reads the latest render's `jobs`/`workshop` via this ref (kept
-  // current below) so the window pointerup listener - attached once per
-  // drag - never acts on stale data.
-  finishDragRef.current = (clientX: number, clientY: number) => {
+  const handleDragPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const current = dragStateRef.current;
+    if (!current || e.pointerId !== current.pointerId) return;
+    const dx = e.clientX - current.startClientX;
+    const dy = e.clientY - current.startClientY;
+    const hasMoved = current.hasMoved || Math.hypot(dx, dy) > DRAG_THRESHOLD_PX;
+
+    let targetDay = current.targetDay;
+    let targetPost = current.targetPost;
+    let previewStartMinutes = current.previewStartMinutes;
+    let previewEndMinutes = current.previewEndMinutes;
+
+    if (current.kind === "move") {
+      // Re-resolve the column under the cursor on every move (not just
+      // once at drop), so the drop always uses a column that was
+      // genuinely under the cursor at some point during the gesture.
+      if (hasMoved) {
+        const found = findColAt(e.clientX, e.clientY);
+        if (found) {
+          targetDay = found.day;
+          targetPost = found.post;
+        }
+      }
+    } else {
+      // resize-start/resize-end: vertical-only, day/post stay fixed - just
+      // redraw this same card's own top/height live as the edge moves.
+      const origStart = timeToMinutes(current.job.start_time);
+      const origEnd = timeToMinutes(current.job.end_time);
+      const deltaMinutes = roundToSlot((dy / SLOT_HEIGHT) * SLOT_MINUTES, SLOT_MINUTES);
+      if (current.kind === "resize-start") {
+        previewStartMinutes = Math.max(dayStartMinutes, Math.min(origStart + deltaMinutes, origEnd - SLOT_MINUTES));
+      } else {
+        previewEndMinutes = Math.min(dayEndMinutes, Math.max(origEnd + deltaMinutes, origStart + SLOT_MINUTES));
+      }
+    }
+
+    const next = { ...current, clientX: e.clientX, clientY: e.clientY, hasMoved, targetDay, targetPost, previewStartMinutes, previewEndMinutes };
+    dragStateRef.current = next;
+    setDragState(next);
+  };
+
+  const finishDrag = (clientX: number, clientY: number) => {
     const dragging = dragStateRef.current;
     dragStateRef.current = null;
     setDragState(null);
     if (!dragging) return;
 
     if (!dragging.hasMoved) {
-      openEdit(dragging.job);
+      if (dragging.kind === "move") openEdit(dragging.job);
       return;
     }
 
-    if (dragging.targetDay === null || dragging.targetPost === null) return;
-    const day = dragging.targetDay;
-    const post = dragging.targetPost;
-    // Recompute the target column's rect fresh (not cached from an
-    // earlier move) since scrolling can shift it between then and drop.
-    const target = colElsRef.current.get(`${day}|${post}`);
-    if (!target) return;
-    const rect = target.getBoundingClientRect();
-    const pointerMinutes = ((clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
-    const duration = timeToMinutes(dragging.job.end_time) - timeToMinutes(dragging.job.start_time);
-    let start = roundToSlot(dayStartMinutes + pointerMinutes - dragging.grabOffsetMinutes, SLOT_MINUTES);
-    start = Math.max(dayStartMinutes, Math.min(start, dayEndMinutes - duration));
-    const startTime = `${minutesToTime(start)}:00`;
-    const endTime = `${minutesToTime(start + duration)}:00`;
+    let day = dragging.job.job_date;
+    let post = dragging.job.post_number;
+    let startMinutes: number;
+    let endMinutes: number;
 
-    if (day === dragging.job.job_date && post === dragging.job.post_number && startTime === dragging.job.start_time) {
+    if (dragging.kind === "move") {
+      if (dragging.targetDay === null || dragging.targetPost === null) return;
+      day = dragging.targetDay;
+      post = dragging.targetPost;
+      // Recompute the target column's rect fresh (not cached from an
+      // earlier move) since scrolling can shift it between then and drop.
+      const target = colElsRef.current.get(`${day}|${post}`);
+      if (!target) return;
+      const rect = target.getBoundingClientRect();
+      const pointerMinutes = ((clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
+      const duration = timeToMinutes(dragging.job.end_time) - timeToMinutes(dragging.job.start_time);
+      let start = roundToSlot(dayStartMinutes + pointerMinutes - dragging.grabOffsetMinutes, SLOT_MINUTES);
+      start = Math.max(dayStartMinutes, Math.min(start, dayEndMinutes - duration));
+      startMinutes = start;
+      endMinutes = start + duration;
+    } else {
+      startMinutes = dragging.previewStartMinutes;
+      endMinutes = dragging.previewEndMinutes;
+    }
+
+    const startTime = `${minutesToTime(startMinutes)}:00`;
+    const endTime = `${minutesToTime(endMinutes)}:00`;
+
+    if (
+      day === dragging.job.job_date &&
+      post === dragging.job.post_number &&
+      startTime === dragging.job.start_time &&
+      endTime === dragging.job.end_time
+    ) {
       return;
     }
 
@@ -249,62 +333,26 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
       status_id: dragging.job.status_id,
     };
 
-    // Optimistic: move the card immediately instead of waiting on the
-    // round trip, then reconcile with the server (or roll back on error).
+    // Optimistic: move/resize the card immediately instead of waiting on
+    // the round trip, then reconcile with the server (or roll back on
+    // error).
     setJobs((prev) =>
       prev.map((j) => (j.id === dragging.job.id ? { ...j, job_date: day, post_number: post, start_time: startTime, end_time: endTime } : j)),
     );
 
     workshopJobsApi.update(dragging.job.id, write).then(reload, (err) => {
-      setDragError(err instanceof Error ? err.message : "Не удалось перенести запись");
+      setDragError(err instanceof Error ? err.message : "Не удалось сохранить перенос записи");
       setTimeout(() => setDragError(null), 3000);
       reload();
     });
   };
 
-  useEffect(() => {
-    if (!dragState) return;
-
-    const handleMove = (e: PointerEvent) => {
-      const current = dragStateRef.current;
-      if (!current || e.pointerId !== current.pointerId) return;
-      const dx = e.clientX - current.clientX;
-      const dy = e.clientY - current.clientY;
-      const hasMoved = current.hasMoved || Math.hypot(dx, dy) > DRAG_THRESHOLD_PX;
-
-      // Re-resolve the column under the cursor on every move (not just
-      // once at drop), so the drop always uses a column that was
-      // genuinely under the cursor at some point during the gesture.
-      let targetDay = current.targetDay;
-      let targetPost = current.targetPost;
-      if (hasMoved) {
-        const found = findColAt(e.clientX, e.clientY);
-        if (found) {
-          targetDay = found.day;
-          targetPost = found.post;
-        }
-      }
-
-      const next = { ...current, clientX: e.clientX, clientY: e.clientY, hasMoved, targetDay, targetPost };
-      dragStateRef.current = next;
-      setDragState(next);
-    };
-    const handleUp = (e: PointerEvent) => {
-      if (e.pointerId !== dragStateRef.current?.pointerId) return;
-      finishDragRef.current(e.clientX, e.clientY);
-    };
-
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
-    window.addEventListener("pointercancel", handleUp);
-    return () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleUp);
-      window.removeEventListener("pointercancel", handleUp);
-    };
-    // Re-subscribes only when a drag starts/ends, not on every move.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dragState !== null]);
+  const handleDragPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const current = dragStateRef.current;
+    if (!current || e.pointerId !== current.pointerId) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    finishDrag(e.clientX, e.clientY);
+  };
 
   const colH = slots.length * SLOT_HEIGHT;
   const todayStr = todayIso();
@@ -453,10 +501,13 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                 })}
                 {jobsFor(day, post).map((job) => {
                   const status = job.status_id ? statusById.get(job.status_id) : undefined;
-                  const top = ((timeToMinutes(job.start_time) - timeToMinutes(workshop.start_time)) / SLOT_MINUTES) * SLOT_HEIGHT;
-                  const height = ((timeToMinutes(job.end_time) - timeToMinutes(job.start_time)) / SLOT_MINUTES) * SLOT_HEIGHT - 2;
+                  const isBeingResized = dragState?.hasMoved && dragState.job.id === job.id && dragState.kind !== "move";
+                  const startMinutes = isBeingResized ? dragState.previewStartMinutes : timeToMinutes(job.start_time);
+                  const endMinutes = isBeingResized ? dragState.previewEndMinutes : timeToMinutes(job.end_time);
+                  const top = ((startMinutes - timeToMinutes(workshop.start_time)) / SLOT_MINUTES) * SLOT_HEIGHT;
+                  const height = ((endMinutes - startMinutes) / SLOT_MINUTES) * SLOT_HEIGHT - 2;
                   const dim = search.trim() && !jobMatches(job, search);
-                  const isDragSource = dragState?.hasMoved && dragState.job.id === job.id;
+                  const isDragSource = dragState?.hasMoved && dragState.job.id === job.id && dragState.kind === "move";
                   return (
                     <div
                       key={job.id}
@@ -470,11 +521,30 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                         borderLeftColor: status ? status.color : "var(--border)",
                         touchAction: "none",
                       }}
-                      onPointerDown={(e) => startDrag(e, job)}
+                      onPointerDown={(e) => startDrag(e, job, "move")}
+                      onPointerMove={handleDragPointerMove}
+                      onPointerUp={handleDragPointerUp}
+                      onPointerCancel={handleDragPointerUp}
                     >
+                      {/* Grab the top/bottom edge to shrink or stretch the
+                          record in time only - day/post stay fixed. */}
+                      <div
+                        className="job-resize-handle job-resize-handle--top"
+                        onPointerDown={(e) => startDrag(e, job, "resize-start")}
+                        onPointerMove={handleDragPointerMove}
+                        onPointerUp={handleDragPointerUp}
+                        onPointerCancel={handleDragPointerUp}
+                      />
                       <div className="job-title">{job.work_order_number ?? "Без ЗН"}</div>
                       {job.car_description && <div className="job-sub">{job.car_description}</div>}
                       {job.work_description && <div className="job-work">{job.work_description}</div>}
+                      <div
+                        className="job-resize-handle job-resize-handle--bottom"
+                        onPointerDown={(e) => startDrag(e, job, "resize-end")}
+                        onPointerMove={handleDragPointerMove}
+                        onPointerUp={handleDragPointerUp}
+                        onPointerCancel={handleDragPointerUp}
+                      />
                     </div>
                   );
                 })}
@@ -484,7 +554,7 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
         </div>
       </div>
 
-      {dragState?.hasMoved && (
+      {dragState?.hasMoved && dragState.kind === "move" && (
         <div
           className="job planner-job-ghost"
           style={{
