@@ -255,7 +255,9 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                         ))}
                       </select>
                     </div>
-                    <div className="model">{car.car_description || "—"}</div>
+                    <div className="model" title={car.car_description ?? undefined}>
+                      {car.car_description || "—"}
+                    </div>
                     {car.work_description && <div className="dates">{car.work_description}</div>}
                     {span && (
                       <div className="dates">
