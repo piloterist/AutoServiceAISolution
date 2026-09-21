@@ -126,7 +126,12 @@ export function BodyCarDialog({
 
   return (
     <>
-      <AdminModal open={open} title={form.carId ? "Карточка автомобиля" : "Новая машина в кузовном цехе"} onClose={onClose}>
+      <AdminModal
+        open={open}
+        title={form.carId ? "Карточка автомобиля" : "Новая машина в кузовном цехе"}
+        onClose={onClose}
+        wide
+      >
         <WorkOrderAutocomplete
           value={form.workOrderNumber}
           onChange={(text) => setForm({ ...form, workOrderNumber: text, workOrderId: null })}

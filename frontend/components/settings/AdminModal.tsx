@@ -10,11 +10,16 @@ export function AdminModal({
   title,
   onClose,
   children,
+  wide,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: React.ReactNode;
+  /** The default width is too cramped for a form with its own inner grid
+   * (BodyCarDialog's этапы rows, four columns wide) - opt into roughly
+   * double via .admin-modal--wide instead of widening every modal. */
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -26,7 +31,7 @@ export function AdminModal({
   }, [open]);
 
   return (
-    <dialog ref={ref} className="admin-modal" onClose={onClose}>
+    <dialog ref={ref} className={wide ? "admin-modal admin-modal--wide" : "admin-modal"} onClose={onClose}>
       <h3 className="admin-modal-title">{title}</h3>
       {children}
     </dialog>

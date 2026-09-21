@@ -645,6 +645,12 @@ table.admin-data-table td {
   width: min(520px, 92vw);
 }
 
+/* Roughly double the default - BodyCarDialog's этапы rows (Этап/Заметка/
+   С/По, four columns) were unreadably cramped at 520px. */
+.admin-modal--wide {
+  width: min(1080px, 92vw);
+}
+
 .admin-modal::backdrop {
   background: rgba(10, 15, 25, 0.45);
 }
