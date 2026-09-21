@@ -312,12 +312,21 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                         const hasNext = index < stages.length - 1;
                         const isFirst = index === 0;
                         const isLast = index === stages.length - 1;
+                        // Clamp to the visible window on both sides, not
+                        // just the left edge - otherwise a segment/handle
+                        // for a scrolled-off day still draws a sliver at
+                        // (or past) the grid's edge instead of disappearing.
+                        const clampedLeft = Math.max(left, 0);
+                        const clampedWidth = Math.min(left + width, tableWidth) - clampedLeft;
+                        const boundaryX = left + width;
+                        const startHandleVisible = left >= 0 && left <= tableWidth;
+                        const boundaryHandleVisible = boundaryX >= 0 && boundaryX <= tableWidth;
                         return (
                           <div key={stage.id}>
-                            {left + width >= 0 && left <= tableWidth && (
+                            {clampedWidth > 0 && (
                               <div
                                 className="planner-body-segment"
-                                style={{ left: Math.max(left, 0), width, background: car.color }}
+                                style={{ left: clampedLeft, width: clampedWidth, background: car.color }}
                                 title={`${stage.stage_name}${stage.note ? " · " + stage.note : ""}`}
                               >
                                 {stage.stage_name}
@@ -325,8 +334,11 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                             )}
                             {/* Торцевые ручки - край самого первого и самого
                                 последнего этапа тоже можно тянуть, не
-                                только границы между этапами. */}
-                            {isFirst && (
+                                только границы между этапами. Each is
+                                guarded the same way as the segment above,
+                                so a handle for a day outside the visible
+                                window disappears with it. */}
+                            {isFirst && startHandleVisible && (
                               <div
                                 className="planner-body-boundary"
                                 style={{ left }}
@@ -343,10 +355,10 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                                 }}
                               />
                             )}
-                            {hasNext && (
+                            {hasNext && boundaryHandleVisible && (
                               <div
                                 className="planner-body-boundary"
-                                style={{ left: left + width }}
+                                style={{ left: boundaryX }}
                                 onMouseDown={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -360,10 +372,10 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                                 }}
                               />
                             )}
-                            {isLast && (
+                            {isLast && boundaryHandleVisible && (
                               <div
                                 className="planner-body-boundary"
-                                style={{ left: left + width }}
+                                style={{ left: boundaryX }}
                                 onMouseDown={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();

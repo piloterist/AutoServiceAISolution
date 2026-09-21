@@ -706,10 +706,13 @@ table.admin-data-table td {
 
 /* .admin-btn is the base every button in this area carries (toolbar
    "+ Добавить", modal Отмена/Сохранить/Удалить); .admin-btn-primary/
-   .admin-btn-danger are additive modifiers on top of it, same specificity
-   (one class each) so which one wins is just source order, not a
-   specificity fight - always add .admin-btn alongside a modifier, never
-   a modifier alone. */
+   .admin-btn-danger are additive modifiers on top of it. Both qualified
+   as .admin-btn.admin-btn-primary (two classes, specificity 0,2,0) - a
+   plain .admin-btn-primary (0,1,0) kept losing to any descendant-element
+   selector like ".planner-toolbar button" (0,1,1) it happened to share a
+   button with (the "Записать" button, concretely - this exact bug has
+   bitten this file more than once, so the modifiers are just always
+   qualified with .admin-btn now instead of relying on source order). */
 .admin-btn {
   padding: 0.5rem 1rem;
   border-radius: 8px;
@@ -721,18 +724,18 @@ table.admin-data-table td {
   color: var(--text);
 }
 
-.admin-btn-primary {
+.admin-btn.admin-btn-primary {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }
 
-.admin-btn-primary:disabled {
+.admin-btn.admin-btn-primary:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-.admin-btn-danger {
+.admin-btn.admin-btn-danger {
   background: var(--down);
   border-color: var(--down);
   color: #fff;
@@ -2286,17 +2289,6 @@ table.admin-data-table td {
   font-variant-numeric: tabular-nums;
 }
 
-.timecol-end {
-  position: absolute;
-  right: 8px;
-  bottom: 0;
-  transform: translateY(50%);
-  font-size: 0.72rem;
-  color: var(--text);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
 .timecol > div.hr {
   color: var(--text);
   font-weight: 600;
@@ -2366,6 +2358,18 @@ table.admin-data-table td {
   opacity: 0.35;
 }
 
+/* The original card, left in place while its floating .planner-job-ghost
+   follows the cursor (see MechanicalView.tsx's pointer-based drag). */
+.planner-job-drag-source {
+  opacity: 0.35;
+}
+
+.planner-job-ghost {
+  z-index: 50;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+  cursor: grabbing;
+}
+
 /* ---- Кузовной table ---- */
 
 .tw {
@@ -2382,6 +2386,12 @@ table.bt {
   border-spacing: 0;
   width: max-content;
   min-width: 100%;
+  /* Without this, table-layout:auto lets a cell's content (here, the
+     .stsel status <select>) force its column wider than the .carc/.hcar
+     min/max-width below - the same class of bug as table.admin-data-table
+     needing this same fix earlier. Fixed layout takes column widths only
+     from the first row, so it actually enforces the 93px cap. */
+  table-layout: fixed;
 }
 
 .bt th,

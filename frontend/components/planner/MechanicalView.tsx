@@ -17,8 +17,27 @@ import { emptyJobDraft, jobToDraft, WorkshopJobDialog, type JobDraft } from "./W
 
 const SLOT_MINUTES = 30;
 const SLOT_HEIGHT = 36;
+// Pointer movement (px) below which a press+release is treated as a click
+// (open the edit dialog) rather than a drag.
+const DRAG_THRESHOLD_PX = 4;
 
 type ViewSpan = 1 | 3 | 7;
+
+type DragState = {
+  job: WorkshopJob;
+  pointerId: number;
+  grabOffsetMinutes: number;
+  // Pixel offset from the card's own top-left corner to where it was
+  // grabbed, so the ghost tracks the cursor at the same point instead of
+  // snapping its corner to it.
+  grabPxX: number;
+  grabPxY: number;
+  cardWidth: number;
+  cardHeight: number;
+  clientX: number;
+  clientY: number;
+  hasMoved: boolean;
+};
 
 function money(amount: string | number | null | undefined): string {
   const n = typeof amount === "string" ? Number(amount) : (amount ?? 0);
@@ -42,11 +61,16 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
   const [dialogDraft, setDialogDraft] = useState<JobDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dragError, setDragError] = useState<string | null>(null);
-  // Which job is mid-drag + how far below its own top edge it was grabbed
-  // (so dropping preserves that same grab point instead of snapping the
-  // card's top edge to the cursor) - a ref, not state, since it changes on
-  // every mousemove-driven dragover and must never trigger a re-render.
-  const dragRef = useRef<{ job: WorkshopJob; grabOffsetMinutes: number } | null>(null);
+  // Pointer-events-based drag (not native HTML5 DnD - that API's drop
+  // target resolution turned out unreliable over the per-slot cells added
+  // for :hover, and its ghost image jumping around read as "форма прыгает"
+  // with no visible confirmation the move actually landed). `dragState` is
+  // real state so the ghost re-renders every move; `dragStateRef` mirrors
+  // it so the window-level listeners (attached once per drag) always read
+  // the latest values instead of a stale closure.
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const dragStateRef = useRef<DragState | null>(null);
+  const finishDragRef = useRef<(clientX: number, clientY: number) => void>(() => {});
 
   const days = useMemo(
     () => Array.from({ length: viewSpan }, (_, i) => addDaysIso(currentDate, i)),
@@ -55,13 +79,20 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
 
   const statusById = useMemo(() => new Map(statuses.map((s) => [s.id, s])), [statuses]);
 
+  // Includes the closing time itself as a trailing entry, so it renders as
+  // one more real .hr-labeled row instead of a separately-styled bolted-on
+  // label - the trailing entry is label-only (see creationSlots below).
   const slots = useMemo(() => {
     const start = timeToMinutes(workshop.start_time);
     const end = timeToMinutes(workshop.end_time);
     const out: number[] = [];
-    for (let m = start; m < end; m += SLOT_MINUTES) out.push(m);
+    for (let m = start; m <= end; m += SLOT_MINUTES) out.push(m);
     return out;
   }, [workshop.start_time, workshop.end_time]);
+
+  // Slots a job can actually start in - excludes the trailing closing-time
+  // entry from `slots`, which exists only to carry its label.
+  const creationSlots = useMemo(() => slots.slice(0, -1), [slots]);
 
   const reload = () => {
     setLoading(true);
@@ -122,46 +153,114 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
   const dayEndMinutes = timeToMinutes(workshop.end_time);
   const dayStartMinutes = timeToMinutes(workshop.start_time);
 
-  const handleDragStart = (e: React.DragEvent, job: WorkshopJob) => {
+  const startDrag = (e: React.PointerEvent, job: WorkshopJob) => {
+    if (e.button !== 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const grabOffsetMinutes = roundToSlot(((e.clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES, SLOT_MINUTES);
-    dragRef.current = { job, grabOffsetMinutes };
-    e.dataTransfer.effectAllowed = "move";
+    const next: DragState = {
+      job,
+      pointerId: e.pointerId,
+      grabOffsetMinutes,
+      grabPxX: e.clientX - rect.left,
+      grabPxY: e.clientY - rect.top,
+      cardWidth: rect.width,
+      cardHeight: rect.height,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      hasMoved: false,
+    };
+    dragStateRef.current = next;
+    setDragState(next);
   };
 
-  const handleDrop = async (e: React.DragEvent, day: string, post: number) => {
-    e.preventDefault();
-    const dragging = dragRef.current;
-    dragRef.current = null;
+  // Always reads the latest render's `jobs`/`workshop` via this ref (kept
+  // current below) so the window pointerup listener - attached once per
+  // drag - never acts on stale data.
+  finishDragRef.current = (clientX: number, clientY: number) => {
+    const dragging = dragStateRef.current;
+    dragStateRef.current = null;
+    setDragState(null);
     if (!dragging) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const pointerMinutes = ((e.clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
+    if (!dragging.hasMoved) {
+      openEdit(dragging.job);
+      return;
+    }
+
+    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-planner-col]");
+    if (!target) return;
+
+    const day = target.dataset.day!;
+    const post = Number(target.dataset.post);
+    const rect = target.getBoundingClientRect();
+    const pointerMinutes = ((clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
     const duration = timeToMinutes(dragging.job.end_time) - timeToMinutes(dragging.job.start_time);
     let start = roundToSlot(dayStartMinutes + pointerMinutes - dragging.grabOffsetMinutes, SLOT_MINUTES);
     start = Math.max(dayStartMinutes, Math.min(start, dayEndMinutes - duration));
+    const startTime = `${minutesToTime(start)}:00`;
+    const endTime = `${minutesToTime(start + duration)}:00`;
 
-    try {
-      await workshopJobsApi.update(dragging.job.id, {
-        work_order_id: dragging.job.work_order_id,
-        car_description: dragging.job.car_description,
-        vin: dragging.job.vin,
-        plate: dragging.job.plate,
-        client_name: dragging.job.client_name,
-        work_description: dragging.job.work_description,
-        job_date: day,
-        post_number: post,
-        start_time: `${minutesToTime(start)}:00`,
-        end_time: `${minutesToTime(start + duration)}:00`,
-        norm_hours: dragging.job.norm_hours,
-        status_id: dragging.job.status_id,
-      });
-      reload();
-    } catch (err) {
+    if (day === dragging.job.job_date && post === dragging.job.post_number && startTime === dragging.job.start_time) {
+      return;
+    }
+
+    const write: WorkshopJobWrite = {
+      work_order_id: dragging.job.work_order_id,
+      car_description: dragging.job.car_description,
+      vin: dragging.job.vin,
+      plate: dragging.job.plate,
+      client_name: dragging.job.client_name,
+      work_description: dragging.job.work_description,
+      job_date: day,
+      post_number: post,
+      start_time: startTime,
+      end_time: endTime,
+      norm_hours: dragging.job.norm_hours,
+      status_id: dragging.job.status_id,
+    };
+
+    // Optimistic: move the card immediately instead of waiting on the
+    // round trip, then reconcile with the server (or roll back on error).
+    setJobs((prev) =>
+      prev.map((j) => (j.id === dragging.job.id ? { ...j, job_date: day, post_number: post, start_time: startTime, end_time: endTime } : j)),
+    );
+
+    workshopJobsApi.update(dragging.job.id, write).then(reload, (err) => {
       setDragError(err instanceof Error ? err.message : "Не удалось перенести запись");
       setTimeout(() => setDragError(null), 3000);
-    }
+      reload();
+    });
   };
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMove = (e: PointerEvent) => {
+      const current = dragStateRef.current;
+      if (!current || e.pointerId !== current.pointerId) return;
+      const dx = e.clientX - current.clientX;
+      const dy = e.clientY - current.clientY;
+      const hasMoved = current.hasMoved || Math.hypot(dx, dy) > DRAG_THRESHOLD_PX;
+      const next = { ...current, clientX: e.clientX, clientY: e.clientY, hasMoved };
+      dragStateRef.current = next;
+      setDragState(next);
+    };
+    const handleUp = (e: PointerEvent) => {
+      if (e.pointerId !== dragStateRef.current?.pointerId) return;
+      finishDragRef.current(e.clientX, e.clientY);
+    };
+
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("pointercancel", handleUp);
+    };
+    // Re-subscribes only when a drag starts/ends, not on every move.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragState !== null]);
 
   const colH = slots.length * SLOT_HEIGHT;
   const todayStr = todayIso();
@@ -265,11 +364,6 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                 {m % 60 === 0 ? minutesToTime(m) : ""}
               </div>
             ))}
-            {/* Each row above labels its own START time, so the day's
-                closing time (workshop.end_time) never got a label of its
-                own - it's the boundary after the last row, not the start
-                of one. */}
-            <div className="timecol-end">{minutesToTime(timeToMinutes(workshop.end_time))}</div>
           </div>
 
           {days.map((day) =>
@@ -278,16 +372,18 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                 key={`${day}-${post}-col`}
                 className={day === todayStr ? "col today" : "col"}
                 style={{ height: colH }}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => handleDrop(e, day, post)}
+                data-planner-col
+                data-day={day}
+                data-post={post}
               >
                 {/* One real element per 30-minute slot so :hover highlights
                     exactly that slot, not the whole post/day column (each
                     slot already knows its own start time, no pixel math
-                    needed for the click-to-create handler here - only the
-                    drag/drop path above still needs it, since a drop can
-                    land at any pixel offset within the column). */}
-                {slots.map((m) => (
+                    needed for the click-to-create handler here). The
+                    trailing closing-time entry in `slots` is excluded - it
+                    exists only to label the time column, not a bookable
+                    start. */}
+                {creationSlots.map((m) => (
                   <div
                     key={m}
                     className={m % 60 === 0 ? "col-slot col-slot--hour" : "col-slot"}
@@ -300,22 +396,21 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                   const top = ((timeToMinutes(job.start_time) - timeToMinutes(workshop.start_time)) / SLOT_MINUTES) * SLOT_HEIGHT;
                   const height = ((timeToMinutes(job.end_time) - timeToMinutes(job.start_time)) / SLOT_MINUTES) * SLOT_HEIGHT - 2;
                   const dim = search.trim() && !jobMatches(job, search);
+                  const isDragSource = dragState?.hasMoved && dragState.job.id === job.id;
                   return (
                     <div
                       key={job.id}
-                      draggable
-                      className={dim ? "job planner-job-dim" : "job"}
+                      className={[dim ? "job planner-job-dim" : "job", isDragSource ? "planner-job-drag-source" : ""]
+                        .filter(Boolean)
+                        .join(" ")}
                       style={{
                         top,
                         height: Math.max(18, height),
                         background: status ? `${status.color}33` : "var(--surface2)",
                         borderLeftColor: status ? status.color : "var(--border)",
+                        touchAction: "none",
                       }}
-                      onDragStart={(e) => handleDragStart(e, job)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEdit(job);
-                      }}
+                      onPointerDown={(e) => startDrag(e, job)}
                     >
                       <div className="job-title">{job.work_order_number ?? "Без ЗН"}</div>
                       {job.car_description && <div className="job-sub">{job.car_description}</div>}
@@ -328,6 +423,25 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
           )}
         </div>
       </div>
+
+      {dragState?.hasMoved && (
+        <div
+          className="job planner-job-ghost"
+          style={{
+            position: "fixed",
+            left: dragState.clientX - dragState.grabPxX,
+            top: dragState.clientY - dragState.grabPxY,
+            right: "auto",
+            width: dragState.cardWidth,
+            height: dragState.cardHeight,
+            pointerEvents: "none",
+          }}
+        >
+          <div className="job-title">{dragState.job.work_order_number ?? "Без ЗН"}</div>
+          {dragState.job.car_description && <div className="job-sub">{dragState.job.car_description}</div>}
+          {dragState.job.work_description && <div className="job-work">{dragState.job.work_description}</div>}
+        </div>
+      )}
 
       <WorkshopJobDialog
         key={dialogDraft?.jobId ?? `new-${dialogDraft?.jobDate}-${dialogDraft?.postNumber}-${dialogDraft?.startTime}`}
