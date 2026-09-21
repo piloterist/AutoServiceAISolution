@@ -2286,6 +2286,17 @@ table.admin-data-table td {
   font-variant-numeric: tabular-nums;
 }
 
+.timecol-end {
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  transform: translateY(50%);
+  font-size: 0.72rem;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .timecol > div.hr {
   color: var(--text);
   font-weight: 600;

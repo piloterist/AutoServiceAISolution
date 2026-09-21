@@ -212,13 +212,13 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
     <div className="planner-flex-col">
       <div className="planner-toolbar">
         <div className="grp">
-          <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, -7))}>
+          <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, -1))}>
             ‹
           </button>
           <button type="button" onClick={() => setCurrentDate(todayStr)}>
             Сегодня
           </button>
-          <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, 7))}>
+          <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, 1))}>
             ›
           </button>
           <input type="date" value={currentDate} onChange={(e) => e.target.value && setCurrentDate(e.target.value)} />

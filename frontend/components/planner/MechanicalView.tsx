@@ -265,6 +265,11 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                 {m % 60 === 0 ? minutesToTime(m) : ""}
               </div>
             ))}
+            {/* Each row above labels its own START time, so the day's
+                closing time (workshop.end_time) never got a label of its
+                own - it's the boundary after the last row, not the start
+                of one. */}
+            <div className="timecol-end">{minutesToTime(timeToMinutes(workshop.end_time))}</div>
           </div>
 
           {days.map((day) =>
