@@ -18,9 +18,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // null and Nav renders nothing regardless - see Nav.tsx).
   const user = await getCurrentUser();
 
-  // Chrome (and others) pick the native <input type="date"> picker's
-  // display format from this - "en" was rendering MM/DD/YYYY for a
-  // product whose entire UI is Russian; "ru" gets ДД.ММ.ГГГГ.
+  // Correct for a Russian-UI product regardless (screen readers, spell
+  // check, etc.) - but note this does NOT control a native
+  // <input type="date">'s displayed day/month/year order, which the
+  // browser picks from its own locale, not the page's `lang`; see
+  // components/DateInput.tsx for how those are actually kept at
+  // ДД.ММ.ГГГГ for every visitor.
   return (
     <html lang="ru">
       <body>

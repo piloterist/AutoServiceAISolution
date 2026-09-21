@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
 import type { BodyCar, BodyCarWrite, PlannerWorkOrder } from "@/lib/backend-api";
 import { BODY_STAGE_TYPES } from "@/lib/planner-constants";
@@ -217,8 +218,8 @@ export function BodyCarDialog({
                 ))}
               </select>
               <input value={stage.note} placeholder="заметка" onChange={(e) => updateStage(index, { note: e.target.value })} />
-              <input type="date" value={stage.startDate} onChange={(e) => updateStageStart(index, e.target.value)} />
-              <input type="date" value={stage.endDate} onChange={(e) => updateStageEnd(index, e.target.value)} />
+              <DateInput value={stage.startDate} onChange={(iso) => updateStageStart(index, iso)} />
+              <DateInput value={stage.endDate} onChange={(iso) => updateStageEnd(index, iso)} />
               {index > 0 ? (
                 <button type="button" className="admin-btn-link admin-btn-link--danger" onClick={() => removeStage(index)}>
                   ×

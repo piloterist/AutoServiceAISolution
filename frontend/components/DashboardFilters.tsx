@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import { previousPeriod } from "@/lib/period";
 
 // Plain GET form (no onSubmit handler - native browser navigation on
@@ -67,23 +68,21 @@ export function DashboardFilters({
         <div className="filters-inline-row">
           <span className="filters-inline-label">Текущий период</span>
           <span className="filters-inline-sublabel">С</span>
-          <input
-            type="date"
+          <DateInput
             name="date_from"
             value={currentFrom}
-            onChange={(event) => {
-              setCurrentFrom(event.target.value);
-              recomputePrev(event.target.value, currentTo);
+            onChange={(iso) => {
+              setCurrentFrom(iso);
+              recomputePrev(iso, currentTo);
             }}
           />
           <span className="filters-inline-sublabel">По</span>
-          <input
-            type="date"
+          <DateInput
             name="date_to"
             value={currentTo}
-            onChange={(event) => {
-              setCurrentTo(event.target.value);
-              recomputePrev(currentFrom, event.target.value);
+            onChange={(iso) => {
+              setCurrentTo(iso);
+              recomputePrev(currentFrom, iso);
             }}
           />
         </div>
@@ -91,23 +90,21 @@ export function DashboardFilters({
         <div className="filters-inline-row">
           <span className="filters-inline-label">Предыдущий период</span>
           <span className="filters-inline-sublabel">С</span>
-          <input
-            type="date"
+          <DateInput
             name="prev_date_from"
             value={prevFrom}
-            onChange={(event) => {
+            onChange={(iso) => {
               setPrevTouched(true);
-              setPrevFrom(event.target.value);
+              setPrevFrom(iso);
             }}
           />
           <span className="filters-inline-sublabel">По</span>
-          <input
-            type="date"
+          <DateInput
             name="prev_date_to"
             value={prevTo}
-            onChange={(event) => {
+            onChange={(iso) => {
               setPrevTouched(true);
-              setPrevTo(event.target.value);
+              setPrevTo(iso);
             }}
           />
         </div>

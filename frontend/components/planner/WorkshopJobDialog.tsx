@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
 import type { PlannerWorkOrder, SlesarkaStatus, WorkshopJob, WorkshopJobWrite } from "@/lib/backend-api";
 import { minutesToTime, timeToMinutes } from "@/lib/planner-time";
@@ -151,7 +152,7 @@ export function WorkshopJobDialog({
         <div className="admin-form-grid">
           <div className="admin-form-field">
             <label htmlFor="wj-date">Дата</label>
-            <input id="wj-date" type="date" value={form.jobDate} onChange={(e) => setForm({ ...form, jobDate: e.target.value })} />
+            <DateInput id="wj-date" value={form.jobDate} onChange={(iso) => setForm({ ...form, jobDate: iso })} />
           </div>
           <div className="admin-form-field">
             <label htmlFor="wj-post">Пост</label>

@@ -98,6 +98,40 @@ body {
   flex-direction: column;
 }
 
+/* components/DateInput.tsx - a real <input type="date"> (full native
+   picker, keyboard entry, form submission via `name`) made fully
+   transparent, with our own ДД.ММ.ГГГГ-formatted text overlaid on top.
+   The browser controls a date input's own closed-state text format by its
+   own locale, not the page's `lang`, so this is the only reliable way to
+   guarantee the Russian day-month-year order for every visitor. Base
+   layout only - each usage context below still sets its own border/
+   padding/font to match its surroundings, the same as the plain
+   input[type="date"] it replaced. */
+.date-input {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.date-input-display {
+  pointer-events: none;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.date-input-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+}
+
 .nav {
   position: sticky;
   top: 0;
@@ -677,7 +711,8 @@ table.admin-data-table td {
 }
 
 .admin-form-field input,
-.admin-form-field select {
+.admin-form-field select,
+.admin-form-field .date-input {
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -796,7 +831,8 @@ table.admin-data-table td {
   color: var(--text-muted);
 }
 
-.period-filter input {
+.period-filter input,
+.period-filter .date-input {
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1513,7 +1549,7 @@ table.admin-data-table td {
   font-size: 0.8rem;
 }
 
-.filters-inline-row input[type="date"] {
+.filters-inline-row .date-input {
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -2110,7 +2146,7 @@ table.admin-data-table td {
   cursor: pointer;
 }
 
-.planner-toolbar input[type="date"],
+.planner-toolbar .date-input,
 .planner-toolbar input[type="search"],
 .planner-toolbar select {
   padding: 0.35rem 0.5rem;
@@ -2703,7 +2739,8 @@ table.bt {
 }
 
 .planner-stage-row input,
-.planner-stage-row select {
+.planner-stage-row select,
+.planner-stage-row .date-input {
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--border);
   border-radius: 6px;

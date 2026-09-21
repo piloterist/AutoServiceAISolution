@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import type { SlesarkaStatus, Workshop, WorkshopJob, WorkshopJobWrite } from "@/lib/backend-api";
 import { workshopJobsApi } from "@/lib/planner-client";
 import {
@@ -370,7 +371,7 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
           <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, viewSpan))}>
             ›
           </button>
-          <input type="date" value={currentDate} onChange={(e) => e.target.value && setCurrentDate(e.target.value)} />
+          <DateInput value={currentDate} onChange={(iso) => iso && setCurrentDate(iso)} />
         </div>
         <div className="seg">
           {([1, 3, 7] as ViewSpan[]).map((span) => (

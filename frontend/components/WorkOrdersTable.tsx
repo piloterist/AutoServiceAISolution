@@ -4,6 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import type { WorkOrderListItem } from "@/lib/backend-api";
 import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } from "@/lib/work-orders-cache";
 
@@ -619,21 +620,11 @@ export function WorkOrdersTable({
           <span className="period-filter-label">Дата документа</span>
           <label>
             С
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
-              aria-label="Дата документа с"
-            />
+            <DateInput value={dateFrom} onChange={setDateFrom} ariaLabel="Дата документа с" />
           </label>
           <label>
             По
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
-              aria-label="Дата документа по"
-            />
+            <DateInput value={dateTo} onChange={setDateTo} ariaLabel="Дата документа по" />
           </label>
         </div>
 
@@ -641,21 +632,11 @@ export function WorkOrdersTable({
           <span className="period-filter-label">Дата закрытия</span>
           <label>
             С
-            <input
-              type="date"
-              value={closedFrom}
-              onChange={(event) => setClosedFrom(event.target.value)}
-              aria-label="Дата закрытия с"
-            />
+            <DateInput value={closedFrom} onChange={setClosedFrom} ariaLabel="Дата закрытия с" />
           </label>
           <label>
             По
-            <input
-              type="date"
-              value={closedTo}
-              onChange={(event) => setClosedTo(event.target.value)}
-              aria-label="Дата закрытия по"
-            />
+            <DateInput value={closedTo} onChange={setClosedTo} ariaLabel="Дата закрытия по" />
           </label>
         </div>
 

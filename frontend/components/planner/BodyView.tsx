@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import type { BodyCar, BodyCarStage, BodyCarWrite, Workshop } from "@/lib/backend-api";
 import { bodyCarsApi } from "@/lib/planner-client";
 import { CAR_STATUSES } from "@/lib/planner-constants";
@@ -267,7 +268,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
           <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, 1))}>
             ›
           </button>
-          <input type="date" value={currentDate} onChange={(e) => e.target.value && setCurrentDate(e.target.value)} />
+          <DateInput value={currentDate} onChange={(iso) => iso && setCurrentDate(iso)} />
         </div>
         <div className="grp">
           <select value={daysCount} onChange={(e) => setDaysCount(Number(e.target.value) as (typeof DAYS_OPTIONS)[number])}>
