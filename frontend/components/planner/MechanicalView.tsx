@@ -78,6 +78,25 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
   const [dragState, setDragState] = useState<DragState | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
   const finishDragRef = useRef<(clientX: number, clientY: number) => void>(() => {});
+  // Elements keyed "day|post", used to find the column under the cursor by
+  // plain coordinate-vs-rect math instead of document.elementFromPoint().
+  // elementFromPoint() hit-tests real DOM stacking (z-index, pointer-events,
+  // whatever's actually on top at that pixel) and twice now that proved
+  // unreliable for this - once resolving to the wrong column, once
+  // (suspected) racing the render that hides the drag source from
+  // hit-testing. Plain rect math has no such dependency.
+  const colElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const findColAt = (clientX: number, clientY: number): { day: string; post: number } | null => {
+    for (const [key, el] of colElsRef.current) {
+      const rect = el.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        const sep = key.indexOf("|");
+        return { day: key.slice(0, sep), post: Number(key.slice(sep + 1)) };
+      }
+    }
+    return null;
+  };
 
   const days = useMemo(
     () => Array.from({ length: viewSpan }, (_, i) => addDaysIso(currentDate, i)),
@@ -130,7 +149,7 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
   const openCreate = (day: string, post: number, startMinutes: number) => {
     const start = minutesToTime(startMinutes);
     const end = minutesToTime(Math.min(startMinutes + SLOT_MINUTES, timeToMinutes(workshop.end_time)));
-    setDialogDraft(emptyJobDraft(day, post, start, end));
+    setDialogDraft(emptyJobDraft(day, post, start, end, statuses));
     setDialogOpen(true);
   };
 
@@ -201,7 +220,7 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
     const post = dragging.targetPost;
     // Recompute the target column's rect fresh (not cached from an
     // earlier move) since scrolling can shift it between then and drop.
-    const target = document.querySelector<HTMLElement>(`[data-planner-col][data-day="${day}"][data-post="${post}"]`);
+    const target = colElsRef.current.get(`${day}|${post}`);
     if (!target) return;
     const rect = target.getBoundingClientRect();
     const pointerMinutes = ((clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
@@ -254,16 +273,15 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
       const hasMoved = current.hasMoved || Math.hypot(dx, dy) > DRAG_THRESHOLD_PX;
 
       // Re-resolve the column under the cursor on every move (not just
-      // once at drop) and keep the ghost hidden from hit-testing while
-      // doing it, so the drop always uses a column that was genuinely
-      // under the cursor at some point during the gesture.
+      // once at drop), so the drop always uses a column that was
+      // genuinely under the cursor at some point during the gesture.
       let targetDay = current.targetDay;
       let targetPost = current.targetPost;
       if (hasMoved) {
-        const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-planner-col]");
-        if (el?.dataset.day && el.dataset.post) {
-          targetDay = el.dataset.day;
-          targetPost = Number(el.dataset.post);
+        const found = findColAt(e.clientX, e.clientY);
+        if (found) {
+          targetDay = found.day;
+          targetPost = found.post;
         }
       }
 
@@ -404,9 +422,11 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                       : "col"
                 }
                 style={{ height: colH }}
-                data-planner-col
-                data-day={day}
-                data-post={post}
+                ref={(el) => {
+                  const key = `${day}|${post}`;
+                  if (el) colElsRef.current.set(key, el);
+                  else colElsRef.current.delete(key);
+                }}
               >
                 {/* One real element per 30-minute slot so :hover highlights
                     exactly that slot, not the whole post/day column (each
@@ -449,11 +469,6 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                         background: status ? `${status.color}33` : "var(--surface2)",
                         borderLeftColor: status ? status.color : "var(--border)",
                         touchAction: "none",
-                        // Once dragging, this card is just a dimmed marker
-                        // of the origin - it must not intercept
-                        // elementFromPoint() lookups for the column under
-                        // the cursor (see handleMove).
-                        pointerEvents: isDragSource ? "none" : undefined,
                       }}
                       onPointerDown={(e) => startDrag(e, job)}
                     >

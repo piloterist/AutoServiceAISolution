@@ -327,7 +327,15 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                   <td colSpan={days.length} style={{ padding: 0 }}>
                     <div
                       className="planner-body-bar-area"
-                      style={{ width: tableWidth, height: 40 }}
+                      // Fills the row's actual height (driven by .carc's
+                      // content, which can run to 4 lines) instead of a
+                      // fixed 40px - otherwise a taller .carc cell stretches
+                      // the <tr> while this bar area stays short, leaving
+                      // dead space at the bottom of the graph cell that
+                      // makes that row's bar look shifted relative to the
+                      // car-info column next to it. globals.css floors it
+                      // at 40px so a short .carc doesn't shrink the bar.
+                      style={{ width: tableWidth, height: "100%" }}
                       onClick={() => {
                         if (justDraggedRef.current) return;
                         openEdit(car);

@@ -34,6 +34,13 @@ function timeOptions(startTime: string, endTime: string): string[] {
   return options;
 }
 
+function durationHours(startTime: string, endTime: string): string {
+  const minutes = timeToMinutes(endTime) - timeToMinutes(startTime);
+  if (minutes <= 0) return "0";
+  const hours = minutes / 60;
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+}
+
 /** Caller must remount this with a fresh `key` per draft (e.g.
  * `draft?.jobId ?? "new"`) so opening a different record resets the form -
  * see MechanicalView's usage. */
@@ -187,6 +194,10 @@ export function WorkshopJobDialog({
           </div>
 
           <div className="admin-form-field">
+            <label htmlFor="wj-duration">Длительность ч.</label>
+            <input id="wj-duration" readOnly value={durationHours(form.startTime, form.endTime)} />
+          </div>
+          <div className="admin-form-field">
             <label htmlFor="wj-nh">Норма-часы</label>
             <input
               id="wj-nh"
@@ -204,7 +215,6 @@ export function WorkshopJobDialog({
           <div className="admin-form-field">
             <label htmlFor="wj-status">Статус</label>
             <select id="wj-status" value={form.statusId ?? ""} onChange={(e) => setForm({ ...form, statusId: e.target.value || null })}>
-              <option value="">—</option>
               {statuses.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -288,7 +298,13 @@ export function jobToDraft(job: WorkshopJob): JobDraft {
   };
 }
 
-export function emptyJobDraft(jobDate: string, postNumber: number, startTime: string, endTime: string): JobDraft {
+export function emptyJobDraft(
+  jobDate: string,
+  postNumber: number,
+  startTime: string,
+  endTime: string,
+  statuses: SlesarkaStatus[],
+): JobDraft {
   return {
     jobId: null,
     workOrderId: null,
@@ -304,6 +320,9 @@ export function emptyJobDraft(jobDate: string, postNumber: number, startTime: st
     startTime,
     endTime,
     normHours: "",
-    statusId: null,
+    // New records start in "Запись" - there is no blank/dash option any
+    // more (see the status <select> above), so a new job must always get
+    // a real status from the moment it's created.
+    statusId: statuses.find((s) => s.name === "Запись")?.id ?? statuses[0]?.id ?? null,
   };
 }

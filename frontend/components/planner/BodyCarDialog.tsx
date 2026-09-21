@@ -24,18 +24,22 @@ export type CarDraft = {
   stages: StageDraft[];
 };
 
-/** Restores "later stage's start must not precede an earlier one's" after a
- * row is removed (product brief: "При удалении строки... даты строк позже
- * пересчитываются") - only nudges a stage forward when it would otherwise
- * violate that, doesn't reflow ones that are already fine. */
+/** Restores "each stage must start no earlier than the previous one ends"
+ * (product brief: "При удалении строки... даты строк позже
+ * пересчитываются") by shifting a violating stage - and, by the same
+ * delta, every stage after it - forward just enough to close the overlap.
+ * Preserves each stage's own duration rather than clamping/shrinking it.
+ * Used after row removal and after editing a stage's own end date (editing
+ * a start goes through updateStageStart below, which cascades directly). */
 function fixupStageOrder(stages: StageDraft[]): StageDraft[] {
   const fixed = [...stages];
   for (let i = 1; i < fixed.length; i++) {
-    if (fixed[i].startDate < fixed[i - 1].startDate) {
-      const newStart = addDaysIso(fixed[i - 1].endDate, 1);
-      const shifted = newStart > fixed[i].startDate ? newStart : fixed[i].startDate;
-      const newEnd = fixed[i].endDate < shifted ? shifted : fixed[i].endDate;
-      fixed[i] = { ...fixed[i], startDate: shifted, endDate: newEnd };
+    const minStart = addDaysIso(fixed[i - 1].endDate, 1);
+    if (fixed[i].startDate < minStart) {
+      const delta = diffDaysIso(fixed[i].startDate, minStart);
+      for (let j = i; j < fixed.length; j++) {
+        fixed[j] = { ...fixed[j], startDate: addDaysIso(fixed[j].startDate, delta), endDate: addDaysIso(fixed[j].endDate, delta) };
+      }
     }
   }
   return fixed;
@@ -82,34 +86,23 @@ export function BodyCarDialog({
     setForm({ ...form, stages });
   };
 
-  /** Moving the very first stage's start is "when does the car arrive" -
-   * shift its own end by the same amount (keep that stage's own duration)
-   * and cascade every later stage by the same delta too, so the whole
-   * plan slides together instead of just overlapping the next stage (see
-   * the same "start" semantics in BodyView's boundary-drag). */
+  /** Moving any stage's start shifts its own end by the same amount (keeps
+   * that stage's own duration) and cascades every later stage by the same
+   * delta too, so the whole rest of the plan slides together instead of
+   * just overlapping the next stage - for the first stage this is "when
+   * does the car arrive"; for a middle one it's the same idea starting
+   * from that point on (see the same "start" semantics in BodyView's
+   * cap-drag). Clamped so it can't back into the previous stage. */
   const updateStageStart = (index: number, rawStart: string) => {
     if (!rawStart) return;
-    if (index === 0) {
-      const delta = diffDaysIso(form.stages[0].startDate, rawStart);
-      if (delta === 0) return;
-      setForm({
-        ...form,
-        stages: form.stages.map((s) => ({
-          ...s,
-          startDate: addDaysIso(s.startDate, delta),
-          endDate: addDaysIso(s.endDate, delta),
-        })),
-      });
-      return;
-    }
-    // A later stage can't start before the previous one ends - clamp
-    // instead of letting an invalid range reach the backend as a raw error.
-    const minStart = addDaysIso(form.stages[index - 1].endDate, 1);
+    const minStart = index > 0 ? addDaysIso(form.stages[index - 1].endDate, 1) : rawStart;
     const startDate = rawStart < minStart ? minStart : rawStart;
-    const stage = form.stages[index];
-    const endDate = stage.endDate < startDate ? startDate : stage.endDate;
-    const stages = form.stages.map((s, i) => (i === index ? { ...s, startDate, endDate } : s));
-    setForm({ ...form, stages: fixupStageOrder(stages) });
+    const delta = diffDaysIso(form.stages[index].startDate, startDate);
+    if (delta === 0) return;
+    const stages = form.stages.map((s, i) =>
+      i < index ? s : { ...s, startDate: addDaysIso(s.startDate, delta), endDate: addDaysIso(s.endDate, delta) },
+    );
+    setForm({ ...form, stages });
   };
 
   const updateStageEnd = (index: number, rawEnd: string) => {

@@ -2354,10 +2354,16 @@ table.admin-data-table td {
   text-overflow: ellipsis;
 }
 
+/* Wrap onto up to 4 lines instead of truncating to one - line-clamp caps
+   it at 4 even when the text would need more; a short-duration card's own
+   overflow:hidden (see .job) still clips further if there isn't even room
+   for 4 lines at that card's height. */
 .job-sub,
 .job-work {
   color: var(--text-muted);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2509,6 +2515,7 @@ table.bt {
 
 .planner-body-bar-area {
   position: relative;
+  min-height: 40px;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
