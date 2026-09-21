@@ -242,13 +242,22 @@ export function WorkshopJobDialog({
             type="button"
             className="admin-btn admin-btn-danger"
             onClick={async () => {
-              await onDelete();
-              // onDelete already closes the main edit dialog via its own
-              // state, but this confirm dialog is a second, independent
-              // <AdminModal> with its own open/close state - without
-              // resetting it too, it stayed open (visibly stuck) after a
-              // successful delete.
-              setConfirmingDelete(false);
+              try {
+                await onDelete();
+                // onDelete already closes the main edit dialog via its own
+                // state, but this confirm dialog is a second, independent
+                // <AdminModal> with its own open/close state - without
+                // resetting it too, it stayed open (visibly stuck) after a
+                // successful delete.
+                setConfirmingDelete(false);
+              } catch (err) {
+                // A failed delete (backend rejects it, network hiccup, ...)
+                // must still close this confirm dialog - otherwise it's
+                // stuck the same way, just via a different path - and
+                // surface why, reusing the main dialog's own error banner.
+                setError(err instanceof Error ? err.message : "Не удалось удалить");
+                setConfirmingDelete(false);
+              }
             }}
           >
             Удалить

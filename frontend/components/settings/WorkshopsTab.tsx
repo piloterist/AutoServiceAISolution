@@ -60,6 +60,7 @@ export function WorkshopsTab({
   const [form, setForm] = useState<FormState>(emptyForm(departments[0]?.id ?? ""));
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Workshop | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const selected = workshops.find((w) => w.id === selectedId) ?? null;
   const toggleSelect = (workshop: Workshop) => {
@@ -125,10 +126,14 @@ export function WorkshopsTab({
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
-    await workshopsApi.remove(pendingDelete.id);
-    setWorkshops((prev) => prev.filter((w) => w.id !== pendingDelete.id));
-    setSelectedId(null);
-    setPendingDelete(null);
+    try {
+      await workshopsApi.remove(pendingDelete.id);
+      setWorkshops((prev) => prev.filter((w) => w.id !== pendingDelete.id));
+      setSelectedId(null);
+      setPendingDelete(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Не удалось удалить");
+    }
   };
 
   return (
@@ -143,7 +148,10 @@ export function WorkshopsTab({
             type="button"
             className="admin-btn admin-btn-danger"
             disabled={!selected}
-            onClick={() => selected && setPendingDelete(selected)}
+            onClick={() => {
+              setDeleteError(null);
+              if (selected) setPendingDelete(selected);
+            }}
           >
             Удалить
           </button>
@@ -321,6 +329,7 @@ export function WorkshopsTab({
           Точно хотите удалить «{pendingDelete?.department_name} / {pendingDelete?.workshop_type}»? Данные
           восстановить будет невозможно.
         </p>
+        {deleteError && <p className="admin-form-error">{deleteError}</p>}
         <div className="admin-form-actions">
           <span className="admin-form-actions-spacer" />
           <button type="button" className="admin-btn" onClick={() => setPendingDelete(null)}>

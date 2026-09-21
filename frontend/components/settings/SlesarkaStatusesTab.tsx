@@ -34,6 +34,7 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
   const [color, setColor] = useState(COLOR_PALETTE[0]);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SlesarkaStatus | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const selected = statuses.find((s) => s.id === selectedId) ?? null;
   const toggleSelect = (status: SlesarkaStatus) => {
@@ -78,10 +79,14 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
-    await slesarkaStatusesApi.remove(pendingDelete.id);
-    setStatuses((prev) => prev.filter((s) => s.id !== pendingDelete.id));
-    setSelectedId(null);
-    setPendingDelete(null);
+    try {
+      await slesarkaStatusesApi.remove(pendingDelete.id);
+      setStatuses((prev) => prev.filter((s) => s.id !== pendingDelete.id));
+      setSelectedId(null);
+      setPendingDelete(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Не удалось удалить");
+    }
   };
 
   return (
@@ -96,7 +101,10 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
             type="button"
             className="admin-btn admin-btn-danger"
             disabled={!selected}
-            onClick={() => selected && setPendingDelete(selected)}
+            onClick={() => {
+              setDeleteError(null);
+              if (selected) setPendingDelete(selected);
+            }}
           >
             Удалить
           </button>
@@ -190,6 +198,7 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
         <p>
           Точно хотите удалить «{pendingDelete?.name}»? Данные восстановить будет невозможно.
         </p>
+        {deleteError && <p className="admin-form-error">{deleteError}</p>}
         <div className="admin-form-actions">
           <span className="admin-form-actions-spacer" />
           <button type="button" className="admin-btn" onClick={() => setPendingDelete(null)}>

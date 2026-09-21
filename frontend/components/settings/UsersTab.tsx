@@ -47,6 +47,7 @@ export function UsersTab({
   const [form, setForm] = useState<FormState>(emptyForm());
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<OrgUser | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const selected = users.find((u) => u.id === selectedId) ?? null;
   const toggleSelect = (user: OrgUser) => {
@@ -109,10 +110,14 @@ export function UsersTab({
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
-    await usersApi.remove(pendingDelete.id);
-    setUsers((prev) => prev.filter((u) => u.id !== pendingDelete.id));
-    setSelectedId(null);
-    setPendingDelete(null);
+    try {
+      await usersApi.remove(pendingDelete.id);
+      setUsers((prev) => prev.filter((u) => u.id !== pendingDelete.id));
+      setSelectedId(null);
+      setPendingDelete(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Не удалось удалить");
+    }
   };
 
   return (
@@ -127,7 +132,10 @@ export function UsersTab({
             type="button"
             className="admin-btn admin-btn-danger"
             disabled={!selected}
-            onClick={() => selected && setPendingDelete(selected)}
+            onClick={() => {
+              setDeleteError(null);
+              if (selected) setPendingDelete(selected);
+            }}
           >
             Удалить
           </button>
@@ -271,6 +279,7 @@ export function UsersTab({
         <p>
           Точно хотите удалить «{pendingDelete?.full_name}»? Данные восстановить будет невозможно.
         </p>
+        {deleteError && <p className="admin-form-error">{deleteError}</p>}
         <div className="admin-form-actions">
           <span className="admin-form-actions-spacer" />
           <button type="button" className="admin-btn" onClick={() => setPendingDelete(null)}>

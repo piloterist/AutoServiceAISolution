@@ -230,12 +230,20 @@ export function BodyCarDialog({
             type="button"
             className="admin-btn admin-btn-danger"
             onClick={async () => {
-              await onDelete();
-              // See the same fix in WorkshopJobDialog.tsx - this confirm
-              // dialog is a second, independent <AdminModal>; without
-              // resetting its own open state too, it stayed open after a
-              // successful delete.
-              setConfirmingDelete(false);
+              try {
+                await onDelete();
+                // See the same fix in WorkshopJobDialog.tsx - this confirm
+                // dialog is a second, independent <AdminModal>; without
+                // resetting its own open state too, it stayed open after a
+                // successful delete.
+                setConfirmingDelete(false);
+              } catch (err) {
+                // A failed delete must still close this confirm dialog -
+                // otherwise it's stuck the same way, just via a different
+                // path - and surface why, reusing the main dialog's error banner.
+                setError(err instanceof Error ? err.message : "Не удалось удалить");
+                setConfirmingDelete(false);
+              }
             }}
           >
             Удалить

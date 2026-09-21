@@ -20,6 +20,7 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<OrgDepartment | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const selected = departments.find((d) => d.id === selectedId) ?? null;
 
@@ -60,10 +61,17 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
-    await departmentsApi.remove(pendingDelete.id);
-    setDepartments((prev) => prev.filter((d) => d.id !== pendingDelete.id));
-    setSelectedId(null);
-    setPendingDelete(null);
+    try {
+      await departmentsApi.remove(pendingDelete.id);
+      setDepartments((prev) => prev.filter((d) => d.id !== pendingDelete.id));
+      setSelectedId(null);
+      setPendingDelete(null);
+    } catch (err) {
+      // Without this, a failed delete (e.g. the backend rejecting it) left
+      // the confirm dialog just sitting there with no feedback at all -
+      // indistinguishable from the button not responding to clicks.
+      setDeleteError(err instanceof Error ? err.message : "Не удалось удалить");
+    }
   };
 
   return (
@@ -78,7 +86,10 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
             type="button"
             className="admin-btn admin-btn-danger"
             disabled={!selected}
-            onClick={() => selected && setPendingDelete(selected)}
+            onClick={() => {
+              setDeleteError(null);
+              if (selected) setPendingDelete(selected);
+            }}
           >
             Удалить
           </button>
@@ -142,6 +153,7 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
         <p>
           Точно хотите удалить «{pendingDelete?.name}»? Данные восстановить будет невозможно.
         </p>
+        {deleteError && <p className="admin-form-error">{deleteError}</p>}
         <div className="admin-form-actions">
           <span className="admin-form-actions-spacer" />
           <button type="button" className="admin-btn" onClick={() => setPendingDelete(null)}>
