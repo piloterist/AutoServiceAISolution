@@ -180,7 +180,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
   const tableWidth = days.length * DAY_WIDTH;
 
   return (
-    <div>
+    <div className="planner-flex-col">
       <div className="planner-toolbar">
         <div className="grp">
           <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, -7))}>

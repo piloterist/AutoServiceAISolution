@@ -167,7 +167,7 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
   const todayStr = todayIso();
 
   return (
-    <div>
+    <div className="planner-flex-col">
       <div className="planner-toolbar">
         <div className="grp">
           <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, -viewSpan))}>

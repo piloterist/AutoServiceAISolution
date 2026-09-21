@@ -77,11 +77,11 @@ export function PlannerShell({
   }
 
   return (
-    <div>
-      {/* Заголовок, переключатель подразделений и цехов - всё в одну
-          строку (продукт-брифинг просил "Планировщик" и подразделения на
-          одной строке; цеха туда же, чтобы не тратить ещё одну строку
-          высоты над самим графиком). */}
+    <div className="planner-flex-col">
+      {/* "Планировщик" + переключатель подразделений на одной строке;
+          цеха - отдельной строкой ниже (список цехов относится к уже
+          выбранному подразделению, смешивать с ним в одну строку было
+          лишним). */}
       <div className="planner-header">
         <h1 className="planner-title">Планировщик</h1>
         <div className="planner-dept-switch">
@@ -96,22 +96,22 @@ export function PlannerShell({
             </button>
           ))}
         </div>
-
-        {departmentWorkshopTypes.length > 0 && (
-          <div className="admin-tabs">
-            {departmentWorkshopTypes.map((type) => (
-              <button
-                key={type}
-                type="button"
-                className={selectedWorkshop?.workshop_type === type ? "admin-tab admin-tab--on" : "admin-tab"}
-                onClick={() => selectWorkshopType(type)}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
+
+      {departmentWorkshopTypes.length > 0 && (
+        <div className="admin-tabs planner-workshop-type-tabs">
+          {departmentWorkshopTypes.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className={selectedWorkshop?.workshop_type === type ? "admin-tab admin-tab--on" : "admin-tab"}
+              onClick={() => selectWorkshopType(type)}
+            >
+              {type}
+            </button>
+          ))}
+        </div>
+      )}
 
       {!selectedWorkshop && (
         <div className="card">

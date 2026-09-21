@@ -235,9 +235,13 @@ main {
 /* --- Work Orders table --- */
 
 /* Pages that need more than the default 960px content width (data tables
-   with many/wide columns) opt in via this class on their root element. */
+   with many/wide columns) opt in via this class on their root element.
+   No cap at all (like .full-width-page, but without that class's height/
+   overflow constraints - .wide-page's content isn't wired for internal
+   flex-scrolling) - the Settings admin tables (Пользователи/Цеха/...)
+   need every bit of width they can get. */
 main:has(.wide-page) {
-  max-width: 1720px;
+  max-width: none;
 }
 
 /* Planner needs as much width as the viewport actually has (more days
@@ -246,6 +250,42 @@ main:has(.wide-page) {
 main:has(.full-width-page) {
   max-width: none;
   padding: 0.85rem 0.75rem;
+  /* The Planner's own grid is the only thing meant to scroll - without
+     this, the whole page grows past the viewport instead (pushing the
+     grid's own horizontal scrollbar below the fold) whenever there isn't
+     room to show every time slot at once, which there usually won't be.
+     Scoped to .full-width-page only: no other page is wired with the
+     flex-fill/min-height:0 chain below, so constraining their height too
+     would just clip their content with no way to reach it. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-shell:has(.full-width-page) {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* The page's own root div - fills main's content area and passes sizing
+   down to .planner-flex-col (PlannerShell, then Mechanical/BodyView). */
+.full-width-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The fill-remaining-height chain: PlannerShell's root, then Mechanical/
+   BodyView's root, both carry this class, so "give the grid whatever
+   space toolbar/header didn't use" composes through both layers instead
+   of needing a hardcoded height estimate anywhere. */
+.planner-flex-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .search-input {
@@ -522,6 +562,9 @@ main:has(.full-width-page) {
 .admin-data-table th,
 .admin-data-table td {
   white-space: nowrap;
+  /* Tighter than .data-table's own 0.6rem 0.9rem - these tables often
+     have 5-8 columns, and that padding alone added up to real width. */
+  padding: 0.5rem 0.6rem;
 }
 
 /* Belt and suspenders: even with the above, a table whose columns'
@@ -1952,16 +1995,20 @@ main:has(.full-width-page) {
    Planner (Слесарный/Кузовной цех)
    ============================================================ */
 
-/* "Планировщик" + department switch + workshop-type tabs, all on one row
-   (per explicit feedback: the heading and switches were each eating a
-   full row of height, pushing the grid - and its own horizontal
-   scrollbar - out of the viewport). */
+/* "Планировщик" + department switch on one row; the Кузовной/Слесарный
+   tabs (.planner-workshop-type-tabs, in the component markup right after
+   this) get their own row below - they're scoped to whichever department
+   is selected, mixing them into the same row as the department switch
+   read as one control instead of two. Both rows stay flex-shrink: 0
+   (they're inside .planner-flex-col) so the grid below is what actually
+   gives up space, never these. */
 .planner-header {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.6rem;
+  flex-shrink: 0;
 }
 
 .planner-title {
@@ -1970,8 +2017,9 @@ main:has(.full-width-page) {
   white-space: nowrap;
 }
 
-.planner-header .admin-tabs {
-  margin-bottom: 0;
+.planner-workshop-type-tabs {
+  margin-bottom: 0.6rem;
+  flex-shrink: 0;
 }
 
 .planner-dept-switch {
@@ -2006,6 +2054,7 @@ main:has(.full-width-page) {
   flex-wrap: wrap;
   align-items: center;
   margin-bottom: 0.5rem;
+  flex-shrink: 0;
 }
 
 .planner-toolbar .grp {
@@ -2086,10 +2135,13 @@ main:has(.full-width-page) {
 
 .mscroll {
   overflow: auto;
-  /* Enough headroom left for the header row + toolbar above it (both
-     compact now) that this, including its own horizontal scrollbar,
-     stays fully inside the viewport without scrolling the page itself. */
-  max-height: calc(100vh - 145px);
+  /* Fills whatever height .planner-flex-col has left after the (fixed-
+     height) header/toolbar rows above it - not a guessed vh figure, so it
+     keeps working regardless of viewport size or how tall those rows end
+     up being. Its own scrollbars (both axes) are what's meant to scroll;
+     the page itself never does (see main:has(.full-width-page)). */
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -2274,7 +2326,8 @@ main:has(.full-width-page) {
 
 .tw {
   overflow: auto;
-  max-height: calc(100vh - 145px);
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
