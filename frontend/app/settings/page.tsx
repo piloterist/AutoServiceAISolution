@@ -1,20 +1,45 @@
-import { SettingsForm } from "@/components/SettingsForm";
-import { getAppSettings, getRepairTypes } from "@/lib/backend-api";
+import { SettingsTabs } from "@/components/settings/SettingsTabs";
+import {
+  getAppSettings,
+  getAuditLog,
+  getOrgDepartments,
+  getOrgUsers,
+  getRepairTypes,
+  getSlesarkaStatuses,
+  getWorkshops,
+} from "@/lib/backend-api";
 
 // Must never be statically prerendered: if the backend happens to be
 // reachable at build time, Next.js could otherwise freeze this page with
 // build-time data that never updates after deploy until the next rebuild.
 export const dynamic = "force-dynamic";
 
+// Reaching this page at all already implies Admin (see middleware.ts) -
+// this route doesn't re-check role, same trust boundary as everything else
+// server-rendered here.
 export default async function SettingsPage() {
-  let settings;
-  let repairTypes: string[] = [];
+  let data;
   let error: string | null = null;
 
   try {
-    const [settingsRes, repairTypesRes] = await Promise.all([getAppSettings(), getRepairTypes()]);
-    settings = settingsRes;
-    repairTypes = repairTypesRes.repair_types;
+    const [appSettings, repairTypesRes, departments, workshops, users, statuses, auditLog] = await Promise.all([
+      getAppSettings(),
+      getRepairTypes(),
+      getOrgDepartments(),
+      getWorkshops(),
+      getOrgUsers(),
+      getSlesarkaStatuses(),
+      getAuditLog(),
+    ]);
+    data = {
+      appSettings,
+      repairTypes: repairTypesRes.repair_types,
+      departments,
+      workshops,
+      users,
+      statuses,
+      auditLog,
+    };
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
   }
@@ -29,7 +54,17 @@ export default async function SettingsPage() {
         </div>
       )}
 
-      {settings && <SettingsForm initialSettings={settings} repairTypes={repairTypes} />}
+      {data && (
+        <SettingsTabs
+          appSettings={data.appSettings}
+          repairTypes={data.repairTypes}
+          departments={data.departments}
+          workshops={data.workshops}
+          users={data.users}
+          statuses={data.statuses}
+          auditLog={data.auditLog}
+        />
+      )}
     </div>
   );
 }

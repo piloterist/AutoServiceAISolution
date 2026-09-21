@@ -1,12 +1,32 @@
-// Minimal signed-cookie session for the single hardcoded operator login
-// (see app/login, app/api/auth/*, middleware.ts). There is no user
-// database and no per-user state - there's exactly one account for now,
-// so a signed, self-expiring cookie is all "authentication" needs to mean
-// here (see ARCHITECTURE.md on the lack of a real auth system yet). Uses
-// Web Crypto only (no Node `crypto` module, no `Buffer`) so the same code
-// runs unchanged in the Edge middleware and in the Node route handlers.
+// Signed-cookie session for the per-user auth layer (see app/login,
+// app/api/auth/*, middleware.ts, backend app/models/user.py). The cookie
+// carries the user's identity/role claims directly (base64url(JSON).sig) -
+// self-contained and self-expiring, so middleware (Edge runtime, can't
+// reach Postgres) never needs a server-side session lookup to know who's
+// asking and what role they have, same tradeoff the previous single-
+// shared-login version already made (no revocation short of the cookie
+// expiring or AUTH_SECRET rotating - acceptable for a handful of internal
+// accounts). Uses Web Crypto only (no Node `crypto` module, no `Buffer`)
+// so the same code runs unchanged in the Edge middleware and in the Node
+// route handlers.
 
 export const SESSION_COOKIE_NAME = "pm_session";
+
+// Mirrors backend app/models/user.py's ROLE_ADMIN - only this role can
+// reach /settings (see middleware.ts).
+export const ROLE_ADMIN = "Админ";
+
+export type SessionUser = {
+  id: string;
+  fullName: string;
+  login: string;
+  role: string;
+  departmentId: string | null;
+  departmentName: string | null;
+  workshopId: string | null;
+};
+
+type SessionPayload = SessionUser & { exp: number };
 
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 export const SESSION_MAX_AGE_SECONDS = SESSION_DURATION_MS / 1000;
@@ -38,36 +58,66 @@ async function sign(message: string): Promise<string> {
   return toBase64Url(signature);
 }
 
-/** `expiresAt.signature` - carries its own expiry so there's no server-side
- * session store to check against (nothing to invalidate short of rotating
- * AUTH_SECRET, which is an acceptable tradeoff for a single hardcoded
- * account). */
-export async function createSessionToken(): Promise<string> {
-  const expiresAt = Date.now() + SESSION_DURATION_MS;
-  const signature = await sign(String(expiresAt));
-  return `${expiresAt}.${signature}`;
+function toBase64UrlString(text: string): string {
+  return toBase64Url(new TextEncoder().encode(text).buffer as ArrayBuffer);
+}
+
+/** `atob` only undoes base64 - it hands back a "binary string" (one JS char
+ * per byte, not per Unicode codepoint), so decoding straight into that and
+ * JSON.parse-ing it silently mangles any non-ASCII text (role names, full
+ * names are Cyrillic here). Re-decode those bytes as UTF-8 via TextDecoder
+ * before parsing - the mirror of toBase64UrlString's TextEncoder above. */
+function fromBase64Url(value: string): string {
+  const padded = value
+    .replace(/-/g, "+")
+    .replace(/_/g, "/")
+    .padEnd(value.length + ((4 - (value.length % 4)) % 4), "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+/** `base64url(JSON payload).signature` - see module comment on why this is
+ * self-contained rather than a bare session id needing a DB lookup. */
+export async function createSessionToken(user: SessionUser): Promise<string> {
+  const payload: SessionPayload = { ...user, exp: Date.now() + SESSION_DURATION_MS };
+  const encoded = toBase64UrlString(JSON.stringify(payload));
+  const signature = await sign(encoded);
+  return `${encoded}.${signature}`;
+}
+
+/** Verifies the signature and expiry, and returns the carried user/role
+ * claims - or null for a missing/tampered/expired/malformed cookie. */
+export async function readSessionToken(
+  token: string | undefined | null,
+): Promise<SessionUser | null> {
+  if (!token) return null;
+
+  const [encoded, signature] = token.split(".");
+  if (!encoded || !signature) return null;
+
+  const expected = await sign(encoded);
+  if (expected !== signature) return null;
+
+  try {
+    const payload = JSON.parse(fromBase64Url(encoded)) as SessionPayload;
+    if (!Number.isFinite(payload.exp) || payload.exp < Date.now()) return null;
+    return {
+      id: payload.id,
+      fullName: payload.fullName,
+      login: payload.login,
+      role: payload.role,
+      departmentId: payload.departmentId,
+      departmentName: payload.departmentName,
+      workshopId: payload.workshopId,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function isValidSessionToken(token: string | undefined | null): Promise<boolean> {
-  if (!token) return false;
-
-  const [expiresAtRaw, signature] = token.split(".");
-  if (!expiresAtRaw || !signature) return false;
-
-  const expiresAt = Number(expiresAtRaw);
-  if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return false;
-
-  const expected = await sign(expiresAtRaw);
-  return expected === signature;
-}
-
-export function checkCredentials(username: string, password: string): boolean {
-  return Boolean(
-    process.env.AUTH_USERNAME &&
-      process.env.AUTH_PASSWORD &&
-      username === process.env.AUTH_USERNAME &&
-      password === process.env.AUTH_PASSWORD,
-  );
+  return (await readSessionToken(token)) !== null;
 }
 
 /** Only ever redirect to a same-site path - `next` round-trips through a

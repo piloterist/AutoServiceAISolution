@@ -139,6 +139,12 @@ body {
   color: white;
 }
 
+.nav-user {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 .theme-toggle {
   display: inline-flex;
   gap: 2px;
@@ -427,6 +433,232 @@ main:has(.wide-page) {
   line-height: 1.5;
   color: var(--text-muted);
   margin: 0;
+}
+
+/* --- Settings admin tables (Пользователи/Подразделения/Цеха/Статусы
+   слесарки/Логи) --- */
+
+.admin-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.admin-tab {
+  border: 0;
+  background: transparent;
+  padding: 0.5rem 0.9rem;
+  border-radius: 7px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.admin-tab:hover {
+  color: var(--text);
+}
+
+.admin-tab--on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14);
+}
+
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.admin-toolbar .chart-title {
+  margin: 0;
+}
+
+.admin-btn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-right: 0.75rem;
+}
+
+.admin-btn-link--danger {
+  color: var(--down);
+}
+
+.admin-col-actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.admin-row-actions {
+  white-space: nowrap;
+}
+
+.admin-empty-row {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 1.5rem 0.9rem;
+}
+
+.admin-hint {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.admin-color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+/* Native <dialog> - see components/settings/AdminModal.tsx. */
+.admin-modal {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.4rem 1.4rem;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 28px rgba(20, 30, 50, 0.18);
+  width: min(520px, 92vw);
+}
+
+.admin-modal::backdrop {
+  background: rgba(10, 15, 25, 0.45);
+}
+
+.admin-modal-title {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1rem;
+}
+
+.admin-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.admin-form-field input,
+.admin-form-field select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.admin-form-error {
+  color: var(--down);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.admin-form-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.admin-form-actions-spacer {
+  flex: 1;
+}
+
+/* .admin-btn is the base every button in this area carries (toolbar
+   "+ Добавить", modal Отмена/Сохранить/Удалить); .admin-btn-primary/
+   .admin-btn-danger are additive modifiers on top of it, same specificity
+   (one class each) so which one wins is just source order, not a
+   specificity fight - always add .admin-btn alongside a modifier, never
+   a modifier alone. */
+.admin-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.admin-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.admin-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.admin-btn-danger {
+  background: var(--down);
+  border-color: var(--down);
+  color: #fff;
+}
+
+.admin-weekday-picker {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.admin-weekday-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.admin-swatches {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.admin-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  border: 2px solid transparent;
+}
+
+.admin-swatch--on {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--surface) inset;
 }
 
 /* Two period-filter blocks now sit side by side (document date, closed

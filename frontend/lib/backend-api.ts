@@ -238,6 +238,36 @@ async function backendPut<T>(path: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function backendPost<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(new URL(path, API_URL), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${backendToken()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Backend request failed: ${res.status} ${await res.text()}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+async function backendDelete(path: string): Promise<void> {
+  const res = await fetch(new URL(path, API_URL), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${backendToken()}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Backend request failed: ${res.status} ${await res.text()}`);
+  }
+}
+
 type PeriodAndDepartmentParams = {
   dateFrom?: string;
   dateTo?: string;
@@ -400,4 +430,170 @@ export function getPaymentTrendSummary(params: {
 
 export function getWorkOrder(id: string): Promise<WorkOrderDetail> {
   return backendGet<WorkOrderDetail>(`/api/v1/work-orders/${id}`);
+}
+
+// ============================================================================
+// Per-user auth + Settings admin tables (Пользователи/Подразделения/Цеха/
+// Статусы слесарки/аудит-лог). "Admin"/"Org" prefixes below avoid colliding
+// with getDepartments()/DepartmentListResponse above, which is a completely
+// different thing (distinct WorkOrder.department free-text values from 1C,
+// used for filter dropdowns) - not the structural Department/Workshop
+// entities this product now has for RBAC and the Planner.
+// ============================================================================
+
+export type AuthenticatedUser = {
+  id: string;
+  full_name: string;
+  login: string;
+  role: string;
+  department_id: string | null;
+  department_name: string | null;
+  workshop_id: string | null;
+};
+
+/** Throws with a message the login form can show as-is on 401; any other
+ * failure (network, 5xx) throws the generic backendPost error. */
+export function loginUser(login: string, password: string): Promise<AuthenticatedUser> {
+  return backendPost<AuthenticatedUser>("/api/v1/auth/login", { login, password });
+}
+
+export type OrgDepartment = {
+  id: string;
+  name: string;
+};
+
+export function getOrgDepartments(): Promise<OrgDepartment[]> {
+  return backendGet<OrgDepartment[]>("/api/v1/settings/departments");
+}
+
+export function createOrgDepartment(name: string): Promise<OrgDepartment> {
+  return backendPost<OrgDepartment>("/api/v1/settings/departments", { name });
+}
+
+export function updateOrgDepartment(id: string, name: string): Promise<OrgDepartment> {
+  return backendPut<OrgDepartment>(`/api/v1/settings/departments/${id}`, { name });
+}
+
+export function deleteOrgDepartment(id: string): Promise<void> {
+  return backendDelete(`/api/v1/settings/departments/${id}`);
+}
+
+export type Workshop = {
+  id: string;
+  department_id: string;
+  department_name: string;
+  workshop_type: string;
+  area: string | null;
+  posts_count: number;
+  is_default: boolean;
+  start_time: string; // "HH:MM:SS"
+  end_time: string;
+  working_days: number[]; // 0=Monday..6=Sunday
+};
+
+export type WorkshopWrite = {
+  department_id: string;
+  workshop_type: string;
+  area?: string | null;
+  posts_count: number;
+  is_default: boolean;
+  start_time: string;
+  end_time: string;
+  working_days: number[];
+};
+
+export function getWorkshops(): Promise<Workshop[]> {
+  return backendGet<Workshop[]>("/api/v1/settings/workshops");
+}
+
+export function createWorkshop(payload: WorkshopWrite): Promise<Workshop> {
+  return backendPost<Workshop>("/api/v1/settings/workshops", payload);
+}
+
+export function updateWorkshop(id: string, payload: WorkshopWrite): Promise<Workshop> {
+  return backendPut<Workshop>(`/api/v1/settings/workshops/${id}`, payload);
+}
+
+export function deleteWorkshop(id: string): Promise<void> {
+  return backendDelete(`/api/v1/settings/workshops/${id}`);
+}
+
+export type OrgUser = {
+  id: string;
+  full_name: string;
+  login: string;
+  role: string;
+  department_id: string | null;
+  department_name: string | null;
+  workshop_id: string | null;
+};
+
+export type OrgUserCreate = {
+  full_name: string;
+  login: string;
+  password: string;
+  role: string;
+  department_id: string | null;
+  workshop_id: string | null;
+};
+
+export type OrgUserUpdate = {
+  full_name: string;
+  login: string;
+  password?: string | null; // empty/omitted keeps the existing password
+  role: string;
+  department_id: string | null;
+  workshop_id: string | null;
+};
+
+export function getOrgUsers(): Promise<OrgUser[]> {
+  return backendGet<OrgUser[]>("/api/v1/settings/users");
+}
+
+export function createOrgUser(payload: OrgUserCreate): Promise<OrgUser> {
+  return backendPost<OrgUser>("/api/v1/settings/users", payload);
+}
+
+export function updateOrgUser(id: string, payload: OrgUserUpdate): Promise<OrgUser> {
+  return backendPut<OrgUser>(`/api/v1/settings/users/${id}`, payload);
+}
+
+export function deleteOrgUser(id: string): Promise<void> {
+  return backendDelete(`/api/v1/settings/users/${id}`);
+}
+
+export type SlesarkaStatus = {
+  id: string;
+  name: string;
+  color: string; // "#rrggbb"
+};
+
+export function getSlesarkaStatuses(): Promise<SlesarkaStatus[]> {
+  return backendGet<SlesarkaStatus[]>("/api/v1/settings/slesarka-statuses");
+}
+
+export function createSlesarkaStatus(name: string, color: string): Promise<SlesarkaStatus> {
+  return backendPost<SlesarkaStatus>("/api/v1/settings/slesarka-statuses", { name, color });
+}
+
+export function updateSlesarkaStatus(id: string, name: string, color: string): Promise<SlesarkaStatus> {
+  return backendPut<SlesarkaStatus>(`/api/v1/settings/slesarka-statuses/${id}`, { name, color });
+}
+
+export function deleteSlesarkaStatus(id: string): Promise<void> {
+  return backendDelete(`/api/v1/settings/slesarka-statuses/${id}`);
+}
+
+export type AuditLogEntry = {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  changes: Record<string, { old: unknown; new: unknown }>;
+  actor_name: string;
+  created_at: string;
+};
+
+export function getAuditLog(): Promise<AuditLogEntry[]> {
+  return backendGet<AuditLogEntry[]>("/api/v1/settings/audit-log");
 }
