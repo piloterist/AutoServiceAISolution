@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { BodyCar, BodyCarStage, BodyCarWrite, Workshop } from "@/lib/backend-api";
 import { bodyCarsApi } from "@/lib/planner-client";
@@ -35,18 +35,27 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
   const [dialogDraft, setDialogDraft] = useState<CarDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Dragging the tick mark between two этапы shifts the boundary date
-  // (product brief part 5) - `stageDrag` is the gesture in progress,
-  // `previewStages` is that one car's stage list re-dated live while
-  // dragging, swapped in for rendering only (committed to the server on
-  // mouseup); everything else keeps reading from `cars`.
+  // Dragging a tick mark shifts a date: "boundary" (between two этапы,
+  // boundaryIndex = the earlier stage's index) moves that shared date and
+  // cascades every later stage by the same delta; "start"/"end" instead
+  // move just the very first stage's start or the very last stage's end,
+  // with nothing to cascade (see computeDraggedStages). `stageDrag` is
+  // the gesture in progress, `previewStages` is that one car's stage list
+  // re-dated live while dragging, swapped in for rendering only
+  // (committed to the server on mouseup); everything else keeps reading
+  // from `cars`.
   const [stageDrag, setStageDrag] = useState<{
     carId: string;
+    kind: "boundary" | "start" | "end";
     boundaryIndex: number;
     startMouseX: number;
     originalStages: BodyCarStage[];
   } | null>(null);
   const [previewStages, setPreviewStages] = useState<{ carId: string; stages: BodyCarStage[] } | null>(null);
+  // A drag ends with a mouseup over the same .planner-body-bar-area that
+  // also opens the edit dialog on click - the browser fires a click right
+  // after, which without this would pop the dialog open on every drag.
+  const justDraggedRef = useRef(false);
 
   const days = useMemo(() => Array.from({ length: daysCount }, (_, i) => addDaysIso(currentDate, i)), [currentDate, daysCount]);
   const windowStart = days[0];
@@ -111,7 +120,23 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
 
   const computeDraggedStages = (deltaDays: number): BodyCarStage[] => {
     if (!stageDrag) return [];
-    const { boundaryIndex, originalStages } = stageDrag;
+    const { kind, boundaryIndex, originalStages } = stageDrag;
+
+    if (kind === "start") {
+      const first = originalStages[0];
+      let newStart = addDaysIso(first.start_date, deltaDays);
+      if (newStart > first.end_date) newStart = first.end_date; // can't push past its own end
+      return originalStages.map((stage, i) => (i === 0 ? { ...stage, start_date: newStart } : stage));
+    }
+
+    if (kind === "end") {
+      const lastIndex = originalStages.length - 1;
+      const last = originalStages[lastIndex];
+      let newEnd = addDaysIso(last.end_date, deltaDays);
+      if (newEnd < last.start_date) newEnd = last.start_date; // can't push before its own start
+      return originalStages.map((stage, i) => (i === lastIndex ? { ...stage, end_date: newEnd } : stage));
+    }
+
     const before = originalStages[boundaryIndex];
     const after = originalStages[boundaryIndex + 1];
     // Can't drag the boundary earlier than the stage-before's own start -
@@ -146,6 +171,10 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
         setPreviewStages(null);
         return;
       }
+      justDraggedRef.current = true;
+      setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 50);
       const finalStages = computeDraggedStages(deltaDays);
       const car = cars.find((c) => c.id === carId);
       if (car) {
@@ -269,11 +298,20 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                     )}
                   </td>
                   <td colSpan={days.length} style={{ padding: 0 }}>
-                    <div className="planner-body-bar-area" style={{ width: tableWidth, height: 40 }} onClick={() => openEdit(car)}>
+                    <div
+                      className="planner-body-bar-area"
+                      style={{ width: tableWidth, height: 40 }}
+                      onClick={() => {
+                        if (justDraggedRef.current) return;
+                        openEdit(car);
+                      }}
+                    >
                       {stagesFor(car).map((stage, index, stages) => {
                         const left = diffDaysIso(windowStart, stage.start_date) * DAY_WIDTH;
                         const width = (diffDaysIso(stage.start_date, stage.end_date) + 1) * DAY_WIDTH - 2;
                         const hasNext = index < stages.length - 1;
+                        const isFirst = index === 0;
+                        const isLast = index === stages.length - 1;
                         return (
                           <div key={stage.id}>
                             {left + width >= 0 && left <= tableWidth && (
@@ -285,6 +323,26 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                                 {stage.stage_name}
                               </div>
                             )}
+                            {/* Торцевые ручки - край самого первого и самого
+                                последнего этапа тоже можно тянуть, не
+                                только границы между этапами. */}
+                            {isFirst && (
+                              <div
+                                className="planner-body-boundary"
+                                style={{ left }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setStageDrag({
+                                    carId: car.id,
+                                    kind: "start",
+                                    boundaryIndex: -1,
+                                    startMouseX: e.clientX,
+                                    originalStages: car.stages,
+                                  });
+                                }}
+                              />
+                            )}
                             {hasNext && (
                               <div
                                 className="planner-body-boundary"
@@ -292,7 +350,30 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
                                 onMouseDown={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  setStageDrag({ carId: car.id, boundaryIndex: index, startMouseX: e.clientX, originalStages: car.stages });
+                                  setStageDrag({
+                                    carId: car.id,
+                                    kind: "boundary",
+                                    boundaryIndex: index,
+                                    startMouseX: e.clientX,
+                                    originalStages: car.stages,
+                                  });
+                                }}
+                              />
+                            )}
+                            {isLast && (
+                              <div
+                                className="planner-body-boundary"
+                                style={{ left: left + width }}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setStageDrag({
+                                    carId: car.id,
+                                    kind: "end",
+                                    boundaryIndex: index,
+                                    startMouseX: e.clientX,
+                                    originalStages: car.stages,
+                                  });
                                 }}
                               />
                             )}
