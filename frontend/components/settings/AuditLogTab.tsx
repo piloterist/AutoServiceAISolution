@@ -40,7 +40,7 @@ export function AuditLogTab({ initialEntries }: { initialEntries: AuditLogEntry[
         Изменения и удаления записей в планировщике цехов (появятся здесь после включения планировщика).
       </p>
 
-      <table className="data-table">
+      <table className="data-table admin-data-table">
         <thead>
           <tr>
             <th>Когда</th>

@@ -45,7 +45,7 @@ export default async function SettingsPage() {
   }
 
   return (
-    <div>
+    <div className="wide-page">
       <h1>Настройки</h1>
 
       {error && (

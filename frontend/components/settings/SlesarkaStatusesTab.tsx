@@ -90,7 +90,7 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
         </button>
       </div>
 
-      <table className="data-table">
+      <table className="data-table admin-data-table">
         <thead>
           <tr>
             <th>Статус</th>

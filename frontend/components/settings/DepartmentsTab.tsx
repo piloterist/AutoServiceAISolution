@@ -60,7 +60,7 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
         </button>
       </div>
 
-      <table className="data-table">
+      <table className="data-table admin-data-table">
         <thead>
           <tr>
             <th>Наименование</th>

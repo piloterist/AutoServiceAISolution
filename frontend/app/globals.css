@@ -240,6 +240,15 @@ main:has(.wide-page) {
   max-width: 1720px;
 }
 
+/* Planner needs as much width as the viewport actually has (more days
+   visible = the whole point) - wider than .wide-page's fixed cap, and
+   with the side padding trimmed down too. */
+main:has(.full-width-page) {
+  max-width: none;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
 .search-input {
   width: 100%;
   padding: 0.6rem 0.9rem;
@@ -498,6 +507,23 @@ main:has(.wide-page) {
 
 .admin-btn-link--danger {
   color: var(--down);
+}
+
+/* .data-table defaults to table-layout: fixed (fine for the Work Orders
+   grid, which sets explicit column widths) - that ignores content sizing
+   entirely, so admin-col-actions's "width: 1%, shrink to content" trick
+   does nothing under it and "Изменить Удалить" gets clipped against a
+   column fixed-layout still split ~50/50. Admin tables want the opposite:
+   size every column to its content, only the actions column shrinks. */
+.admin-data-table {
+  table-layout: auto;
+  width: auto;
+  min-width: 100%;
+}
+
+.admin-data-table th,
+.admin-data-table td {
+  white-space: nowrap;
 }
 
 .admin-col-actions {
@@ -2148,21 +2174,26 @@ main:has(.wide-page) {
 .col {
   position: relative;
   border-left: 2px solid var(--border);
-  background-image: linear-gradient(
-    to bottom,
-    transparent calc(36px - 1px),
-    var(--border) calc(36px - 1px)
-  );
-  background-size: 100% 36px;
-  cursor: pointer;
 }
 
 .col.today {
   background-color: color-mix(in srgb, var(--today) 45%, transparent);
 }
 
-.col:hover {
-  background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+/* One real element per 30-minute slot (see MechanicalView.tsx) - :hover
+   here highlights exactly the slot under the cursor, not the whole
+   post/day column. */
+.col-slot {
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.col-slot--hour {
+  border-bottom-color: color-mix(in srgb, var(--border) 55%, var(--text));
+}
+
+.col-slot:hover {
+  background-color: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .job {

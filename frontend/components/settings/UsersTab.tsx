@@ -116,7 +116,7 @@ export function UsersTab({
         </button>
       </div>
 
-      <table className="data-table">
+      <table className="data-table admin-data-table">
         <thead>
           <tr>
             <th>ФИО</th>

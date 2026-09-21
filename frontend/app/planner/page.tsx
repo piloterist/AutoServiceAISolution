@@ -23,7 +23,7 @@ export default async function PlannerPage() {
   const user = await getCurrentUser();
 
   return (
-    <div>
+    <div className="full-width-page">
       <h1>Планировщик</h1>
 
       {error && (

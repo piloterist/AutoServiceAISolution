@@ -83,8 +83,12 @@ export function WorkshopsTab({
 
   const save = async () => {
     if (!form.department_id) return setError("Выберите подразделение");
-    const postsCount = Number(form.posts_count);
-    if (!Number.isFinite(postsCount) || postsCount <= 0) return setError("Укажите количество постов");
+    // Кузовной doesn't use "посты" at all (see product brief part 5 - it's
+    // driven by the car list, not post columns) - the field is disabled in
+    // the form for that type, so don't require a value for it either.
+    const isBody = form.workshop_type === "Кузовной";
+    const postsCount = isBody ? 1 : Number(form.posts_count);
+    if (!isBody && (!Number.isFinite(postsCount) || postsCount <= 0)) return setError("Укажите количество постов");
     if (form.working_days.length === 0) return setError("Укажите хотя бы один рабочий день");
 
     const payload: WorkshopWrite = {
@@ -134,11 +138,12 @@ export function WorkshopsTab({
         </button>
       </div>
 
-      <table className="data-table">
+      <table className="data-table admin-data-table">
         <thead>
           <tr>
             <th>Подразделение</th>
             <th>Цех</th>
+            <th className="num">Площадь</th>
             <th className="num">Посты</th>
             <th>Часы работы</th>
             <th>Рабочие дни</th>
@@ -151,7 +156,8 @@ export function WorkshopsTab({
             <tr key={workshop.id}>
               <td>{workshop.department_name}</td>
               <td>{workshop.workshop_type}</td>
-              <td className="num">{workshop.posts_count}</td>
+              <td className="num">{workshop.area ?? "—"}</td>
+              <td className="num">{workshop.workshop_type === "Кузовной" ? "—" : workshop.posts_count}</td>
               <td>
                 {workshop.start_time.slice(0, 5)}–{workshop.end_time.slice(0, 5)}
               </td>
@@ -173,7 +179,7 @@ export function WorkshopsTab({
           ))}
           {workshops.length === 0 && (
             <tr>
-              <td colSpan={7} className="admin-empty-row">
+              <td colSpan={8} className="admin-empty-row">
                 Цехов пока нет
               </td>
             </tr>
@@ -226,13 +232,16 @@ export function WorkshopsTab({
           </div>
 
           <div className="admin-form-field">
-            <label htmlFor="workshop-posts">Посты</label>
+            <label htmlFor="workshop-posts">
+              Посты {form.workshop_type === "Кузовной" && <span className="admin-hint">(не используется в кузовном цехе)</span>}
+            </label>
             <input
               id="workshop-posts"
               type="number"
               min="1"
               step="1"
               value={form.posts_count}
+              disabled={form.workshop_type === "Кузовной"}
               onChange={(e) => setForm((prev) => ({ ...prev, posts_count: e.target.value }))}
             />
           </div>

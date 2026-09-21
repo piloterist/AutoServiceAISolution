@@ -273,16 +273,23 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                 key={`${day}-${post}-col`}
                 className={day === todayStr ? "col today" : "col"}
                 style={{ height: colH }}
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest(".job")) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const offsetMinutes = ((e.clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
-                  const start = roundToSlot(timeToMinutes(workshop.start_time) + offsetMinutes, SLOT_MINUTES);
-                  openCreate(day, post, start);
-                }}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleDrop(e, day, post)}
               >
+                {/* One real element per 30-minute slot so :hover highlights
+                    exactly that slot, not the whole post/day column (each
+                    slot already knows its own start time, no pixel math
+                    needed for the click-to-create handler here - only the
+                    drag/drop path above still needs it, since a drop can
+                    land at any pixel offset within the column). */}
+                {slots.map((m) => (
+                  <div
+                    key={m}
+                    className={m % 60 === 0 ? "col-slot col-slot--hour" : "col-slot"}
+                    style={{ height: SLOT_HEIGHT }}
+                    onClick={() => openCreate(day, post, m)}
+                  />
+                ))}
                 {jobsFor(day, post).map((job) => {
                   const status = job.status_id ? statusById.get(job.status_id) : undefined;
                   const top = ((timeToMinutes(job.start_time) - timeToMinutes(workshop.start_time)) / SLOT_MINUTES) * SLOT_HEIGHT;
