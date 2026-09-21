@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AdminModal } from "@/components/settings/AdminModal";
 import type { BodyCar, BodyCarWrite, PlannerWorkOrder } from "@/lib/backend-api";
 import { BODY_STAGE_TYPES } from "@/lib/planner-constants";
-import { addDaysIso, formatShortDate, todayIso } from "@/lib/planner-time";
+import { addDaysIso, diffDaysIso, formatShortDate, todayIso } from "@/lib/planner-time";
 
 import { WorkOrderAutocomplete } from "./WorkOrderAutocomplete";
 
@@ -80,6 +80,44 @@ export function BodyCarDialog({
   const updateStage = (index: number, patch: Partial<StageDraft>) => {
     const stages = form.stages.map((s, i) => (i === index ? { ...s, ...patch } : s));
     setForm({ ...form, stages });
+  };
+
+  /** Moving the very first stage's start is "when does the car arrive" -
+   * shift its own end by the same amount (keep that stage's own duration)
+   * and cascade every later stage by the same delta too, so the whole
+   * plan slides together instead of just overlapping the next stage (see
+   * the same "start" semantics in BodyView's boundary-drag). */
+  const updateStageStart = (index: number, rawStart: string) => {
+    if (!rawStart) return;
+    if (index === 0) {
+      const delta = diffDaysIso(form.stages[0].startDate, rawStart);
+      if (delta === 0) return;
+      setForm({
+        ...form,
+        stages: form.stages.map((s) => ({
+          ...s,
+          startDate: addDaysIso(s.startDate, delta),
+          endDate: addDaysIso(s.endDate, delta),
+        })),
+      });
+      return;
+    }
+    // A later stage can't start before the previous one ends - clamp
+    // instead of letting an invalid range reach the backend as a raw error.
+    const minStart = addDaysIso(form.stages[index - 1].endDate, 1);
+    const startDate = rawStart < minStart ? minStart : rawStart;
+    const stage = form.stages[index];
+    const endDate = stage.endDate < startDate ? startDate : stage.endDate;
+    const stages = form.stages.map((s, i) => (i === index ? { ...s, startDate, endDate } : s));
+    setForm({ ...form, stages: fixupStageOrder(stages) });
+  };
+
+  const updateStageEnd = (index: number, rawEnd: string) => {
+    if (!rawEnd) return;
+    const stage = form.stages[index];
+    const endDate = rawEnd < stage.startDate ? stage.startDate : rawEnd;
+    const stages = form.stages.map((s, i) => (i === index ? { ...s, endDate } : s));
+    setForm({ ...form, stages: fixupStageOrder(stages) });
   };
 
   const addStage = () => {
@@ -186,8 +224,8 @@ export function BodyCarDialog({
                 ))}
               </select>
               <input value={stage.note} placeholder="заметка" onChange={(e) => updateStage(index, { note: e.target.value })} />
-              <input type="date" value={stage.startDate} onChange={(e) => updateStage(index, { startDate: e.target.value })} />
-              <input type="date" value={stage.endDate} onChange={(e) => updateStage(index, { endDate: e.target.value })} />
+              <input type="date" value={stage.startDate} onChange={(e) => updateStageStart(index, e.target.value)} />
+              <input type="date" value={stage.endDate} onChange={(e) => updateStageEnd(index, e.target.value)} />
               {index > 0 ? (
                 <button type="button" className="admin-btn-link admin-btn-link--danger" onClick={() => removeStage(index)}>
                   ×

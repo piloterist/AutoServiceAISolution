@@ -43,6 +43,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
   const [loading, setLoading] = useState(false);
   const [dialogDraft, setDialogDraft] = useState<CarDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [stageDragError, setStageDragError] = useState<string | null>(null);
 
   // Dragging a tick mark shifts a date: "boundary" (between two этапы,
   // boundaryIndex = the earlier stage's index) moves that shared date and
@@ -132,10 +133,16 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
     const { kind, boundaryIndex, originalStages } = stageDrag;
 
     if (kind === "start") {
-      const first = originalStages[0];
-      let newStart = addDaysIso(first.start_date, deltaDays);
-      if (newStart > first.end_date) newStart = first.end_date; // can't push past its own end
-      return originalStages.map((stage, i) => (i === 0 ? { ...stage, start_date: newStart } : stage));
+      // Moving the very first stage's start is "when does the car arrive" -
+      // shift every stage (including this one's own end) by the same
+      // delta so the whole plan slides together, matching the dialog's
+      // same-index-0 handling (BodyCarDialog's updateStageStart) instead
+      // of just overlapping stage 1.
+      return originalStages.map((stage) => ({
+        ...stage,
+        start_date: addDaysIso(stage.start_date, deltaDays),
+        end_date: addDaysIso(stage.end_date, deltaDays),
+      }));
     }
 
     if (kind === "end") {
@@ -187,17 +194,27 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
       const finalStages = computeDraggedStages(deltaDays);
       const car = cars.find((c) => c.id === carId);
       if (car) {
-        await bodyCarsApi.update(carId, {
-          work_order_id: car.work_order_id,
-          car_description: car.car_description,
-          vin: car.vin,
-          plate: car.plate,
-          client_name: car.client_name,
-          work_description: car.work_description,
-          status: car.status,
-          stages: finalStages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
-        });
-        reload();
+        try {
+          await bodyCarsApi.update(carId, {
+            work_order_id: car.work_order_id,
+            car_description: car.car_description,
+            vin: car.vin,
+            plate: car.plate,
+            client_name: car.client_name,
+            work_description: car.work_description,
+            status: car.status,
+            stages: finalStages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
+          });
+          reload();
+        } catch (err) {
+          // Without this, a rejected save (e.g. an invalid resulting order)
+          // left previewStages showing the dragged-to position forever,
+          // since nothing after the throwing await ever ran - the graph
+          // looked moved while the saved record (and the edit dialog) never
+          // changed at all.
+          setStageDragError(err instanceof Error ? err.message : "Не удалось сохранить перенос этапа");
+          setTimeout(() => setStageDragError(null), 4000);
+        }
       }
       setPreviewStages(null);
     };
@@ -255,6 +272,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
       </div>
 
       {loading && <p className="admin-hint">Загрузка…</p>}
+      {stageDragError && <p className="admin-form-error">{stageDragError}</p>}
 
       <div className="tw">
         <table className="bt" style={{ width: CAR_COL_WIDTH + tableWidth }}>
