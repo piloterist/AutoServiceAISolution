@@ -253,7 +253,7 @@ export function WorkshopsTab({
 
           <div className="admin-form-field">
             <label htmlFor="workshop-posts">
-              Посты {form.workshop_type === "Кузовной" && <span className="admin-hint">(не используется в кузовном цехе)</span>}
+              Посты {form.workshop_type === "Кузовной" && <span className="admin-hint admin-hint--nowrap">(для слесарного)</span>}
             </label>
             <input
               id="workshop-posts"

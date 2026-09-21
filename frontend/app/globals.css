@@ -615,6 +615,15 @@ table.admin-data-table td {
   color: var(--text-muted);
 }
 
+/* A hint that wraps onto a second line makes its label taller than its
+   sibling in the same .admin-form-grid row, and since .admin-form-field
+   just stacks label-then-input top-down, the shorter field's input ends
+   up sitting higher than the row's other input instead of level with it
+   (seen with "Посты (для слесарного)" next to "Площадь, м²"). */
+.admin-hint--nowrap {
+  white-space: nowrap;
+}
+
 .admin-color-dot {
   display: inline-block;
   width: 12px;
