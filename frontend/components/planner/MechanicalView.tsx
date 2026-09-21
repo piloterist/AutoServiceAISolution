@@ -69,7 +69,28 @@ function jobMatches(job: WorkshopJob, query: string): boolean {
     .some((field) => field!.toLowerCase().includes(q));
 }
 
-export function MechanicalView({ workshop, statuses }: { workshop: Workshop; statuses: SlesarkaStatus[] }) {
+/** Wraps MechanicalViewInner and forces a full remount of it (fresh state,
+ * fresh useEffect, fresh fetch) after every write, by bumping `key` -
+ * this replicates exactly what a full window.location.reload() was doing
+ * (which reliably showed the correct post-write data, while a plain
+ * in-place setJobs() from a client-side re-fetch reliably did not, for
+ * reasons neither a caching fix on the fetch nor an audit of the backend
+ * turned up), but without a visible page reload or losing the operator's
+ * selected department/цех (PlannerShell, the parent, never remounts). */
+export function MechanicalView(props: { workshop: Workshop; statuses: SlesarkaStatus[] }) {
+  const [instanceKey, setInstanceKey] = useState(0);
+  return <MechanicalViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
+}
+
+function MechanicalViewInner({
+  workshop,
+  statuses,
+  onWritten,
+}: {
+  workshop: Workshop;
+  statuses: SlesarkaStatus[];
+  onWritten: () => void;
+}) {
   const [viewSpan, setViewSpan] = useState<ViewSpan>(3);
   const [currentDate, setCurrentDate] = useState(todayIso());
   const [search, setSearch] = useState("");
@@ -187,18 +208,12 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
     } else {
       await workshopJobsApi.create(workshop.id, write);
     }
-    // A plain client-side reload() (re-fetch + setJobs) reliably left the
-    // grid showing the pre-write state until the operator refreshed the
-    // browser themselves - true even with cache: "no-store" and a unique
-    // cache-busting URL on the GET, so whatever's wrong isn't HTTP caching.
-    // A full reload is the blunt but guaranteed-correct fix: it's exactly
-    // the manual refresh already confirmed to always show the right data.
-    window.location.reload();
+    onWritten();
   };
 
   const remove = async () => {
     if (dialogDraft?.jobId) await workshopJobsApi.remove(dialogDraft.jobId);
-    window.location.reload();
+    onWritten();
   };
 
   const dayEndMinutes = timeToMinutes(workshop.end_time);
@@ -344,21 +359,11 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
       prev.map((j) => (j.id === dragging.job.id ? { ...j, job_date: day, post_number: post, start_time: startTime, end_time: endTime } : j)),
     );
 
-    workshopJobsApi.update(dragging.job.id, write).then(
-      // A plain client-side reload() here reliably left the grid showing
-      // the pre-drag state until the operator refreshed the browser
-      // themselves - true even with cache: "no-store" and a unique
-      // cache-busting URL on the GET, so whatever's wrong isn't HTTP
-      // caching. A full reload is the blunt but guaranteed-correct fix:
-      // it's exactly the manual refresh already confirmed to always show
-      // the right data.
-      () => window.location.reload(),
-      (err) => {
-        setDragError(err instanceof Error ? err.message : "Не удалось сохранить перенос записи");
-        setTimeout(() => setDragError(null), 3000);
-        reload();
-      },
-    );
+    workshopJobsApi.update(dragging.job.id, write).then(onWritten, (err) => {
+      setDragError(err instanceof Error ? err.message : "Не удалось сохранить перенос записи");
+      setTimeout(() => setDragError(null), 3000);
+      reload();
+    });
   };
 
   const handleDragPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {

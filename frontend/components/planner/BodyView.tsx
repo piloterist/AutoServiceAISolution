@@ -36,7 +36,15 @@ function carMatches(car: BodyCar, query: string): boolean {
   return [car.work_order_number, car.car_description, car.vin].filter(Boolean).some((f) => f!.toLowerCase().includes(q));
 }
 
-export function BodyView({ workshop }: { workshop: Workshop }) {
+/** Wraps BodyViewInner and forces a full remount of it (fresh state,
+ * fresh useEffect, fresh fetch) after every write, by bumping `key` - see
+ * the identical wrapper on MechanicalView for the full reasoning. */
+export function BodyView(props: { workshop: Workshop }) {
+  const [instanceKey, setInstanceKey] = useState(0);
+  return <BodyViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
+}
+
+function BodyViewInner({ workshop, onWritten }: { workshop: Workshop; onWritten: () => void }) {
   const [currentDate, setCurrentDate] = useState(todayIso());
   const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(21);
   const [search, setSearch] = useState("");
@@ -109,24 +117,18 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
   };
   const closeDialog = () => setDialogOpen(false);
 
-  // A plain client-side reload() (re-fetch + setCars) reliably left the
-  // graph showing the pre-write state until the operator refreshed the
-  // browser themselves - true even with cache: "no-store" and a unique
-  // cache-busting URL on the GET, so whatever's wrong isn't HTTP caching.
-  // A full reload is the blunt but guaranteed-correct fix: it's exactly
-  // the manual refresh already confirmed to always show the right data.
   const save = async (write: BodyCarWrite) => {
     if (dialogDraft?.carId) {
       await bodyCarsApi.update(dialogDraft.carId, write);
     } else {
       await bodyCarsApi.create(workshop.id, write);
     }
-    window.location.reload();
+    onWritten();
   };
 
   const remove = async () => {
     if (dialogDraft?.carId) await bodyCarsApi.remove(dialogDraft.carId);
-    window.location.reload();
+    onWritten();
   };
 
   const changeStatus = async (car: BodyCar, status: string) => {
@@ -140,7 +142,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
       status,
       stages: car.stages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
     });
-    window.location.reload();
+    onWritten();
   };
 
   const computeDraggedStages = (deltaDays: number, drag: NonNullable<typeof stageDrag>): BodyCarStage[] => {
@@ -239,14 +241,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
           status: car.status,
           stages: finalStages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
         });
-        // A plain client-side reload() here reliably left the graph
-        // showing the pre-drag stage dates until the operator refreshed
-        // the browser themselves - true even with cache: "no-store" and a
-        // unique cache-busting URL on the GET, so whatever's wrong isn't
-        // HTTP caching. A full reload is the blunt but guaranteed-correct
-        // fix: it's exactly the manual refresh already confirmed to
-        // always show the right data.
-        window.location.reload();
+        onWritten();
         return;
       } catch (err) {
         // Without this, a rejected save (e.g. an invalid resulting order)
