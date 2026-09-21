@@ -37,7 +37,7 @@ function carMatches(car: BodyCar, query: string): boolean {
 
 export function BodyView({ workshop }: { workshop: Workshop }) {
   const [currentDate, setCurrentDate] = useState(todayIso());
-  const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(7);
+  const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(21);
   const [search, setSearch] = useState("");
   const [cars, setCars] = useState<BodyCar[]>([]);
   const [loading, setLoading] = useState(false);
