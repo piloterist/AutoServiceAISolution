@@ -2385,6 +2385,13 @@ table.admin-data-table td {
 
 .job-title {
   font-weight: 700;
+  /* Fixed dark color, not var(--text) - the card's background is now a
+     solid, arbitrary user-picked status color (see MechanicalView.tsx),
+     so a theme-driven color (light text in dark mode) could go
+     near-invisible against it; a fixed dark tone reads reliably against
+     the light/mid status swatches these are picked from, the same
+     approach the Кузовной stage segments already use. */
+  color: #1f2937;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2396,7 +2403,10 @@ table.admin-data-table td {
    for 4 lines at that card's height. */
 .job-sub,
 .job-work {
-  color: var(--text-muted);
+  /* Fixed dark gray, not var(--text-muted) (too light/gray to read on a
+     colored card background - see .job-title above for why this isn't
+     theme-driven). */
+  color: #374151;
   display: -webkit-box;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
