@@ -2303,6 +2303,14 @@ table.admin-data-table td {
   background-color: color-mix(in srgb, var(--today) 45%, transparent);
 }
 
+/* The column currently under the cursor during a Слесарный drag (see
+   MechanicalView.tsx) - visible confirmation of where a drop will land. */
+.planner-col-drop-target {
+  background-color: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
 /* One real element per 30-minute slot (see MechanicalView.tsx) - :hover
    here highlights exactly the slot under the cursor, not the whole
    post/day column. */
@@ -2384,13 +2392,17 @@ table.admin-data-table td {
 table.bt {
   border-collapse: separate;
   border-spacing: 0;
-  width: max-content;
-  min-width: 100%;
-  /* Without this, table-layout:auto lets a cell's content (here, the
-     .stsel status <select>) force its column wider than the .carc/.hcar
-     min/max-width below - the same class of bug as table.admin-data-table
-     needing this same fix earlier. Fixed layout takes column widths only
-     from the first row, so it actually enforces the 93px cap. */
+  /* Exact pixel width set inline (BodyView.tsx, CAR_COL_WIDTH + tableWidth) -
+     not width:max-content/min-width:100%. With table-layout:fixed, if the
+     table's own width exceeds the sum of its columns' declared widths,
+     the browser distributes the extra space across ALL columns
+     proportionally, including .carc/.hcar - min-width:100% was doing
+     exactly that on any screen wider than the day columns' total width,
+     and by a different amount depending on daysCount. table-layout:fixed
+     itself is still needed too: without it, table-layout:auto lets a
+     cell's content (the .stsel status <select>) force its column wider
+     than .carc/.hcar's min/max-width below - the same class of bug as
+     table.admin-data-table needed this same fix for earlier. */
   table-layout: fixed;
 }
 

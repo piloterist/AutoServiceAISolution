@@ -11,6 +11,15 @@ import { BodyCarDialog, carToDraft, emptyCarDraft, type CarDraft } from "./BodyC
 
 const DAY_WIDTH = 92;
 const DAYS_OPTIONS = [7, 14, 21, 28, 35] as const;
+// Must match .hcar/.carc's min-width/max-width in globals.css. table.bt
+// needs an exact pixel width (not the earlier width:max-content;
+// min-width:100%) - with table-layout:fixed, when the table's own width
+// exceeds the sum of its columns' declared widths, the browser
+// distributes the extra space across ALL columns proportionally,
+// including this one, so on a screen wider than the content it grew (and
+// grew by a different amount depending on how many day columns there
+// were) instead of staying fixed.
+const CAR_COL_WIDTH = 93;
 
 function carSpan(car: BodyCar): { start: string; end: string } | null {
   if (car.stages.length === 0) return null;
@@ -248,7 +257,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
       {loading && <p className="admin-hint">Загрузка…</p>}
 
       <div className="tw">
-        <table className="bt">
+        <table className="bt" style={{ width: CAR_COL_WIDTH + tableWidth }}>
           <thead>
             <tr>
               <th className="hcar">

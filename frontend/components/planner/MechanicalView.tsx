@@ -37,6 +37,13 @@ type DragState = {
   clientX: number;
   clientY: number;
   hasMoved: boolean;
+  // Re-resolved on every pointermove (see the drag effect below) instead
+  // of only once at drop - a single elementFromPoint() read exactly at
+  // pointerup proved unreliable (post/day silently failed to update while
+  // time did), so the last-known-good column found while actually moving
+  // is what gets committed.
+  targetDay: string | null;
+  targetPost: number | null;
 };
 
 function money(amount: string | number | null | undefined): string {
@@ -168,6 +175,8 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
       clientX: e.clientX,
       clientY: e.clientY,
       hasMoved: false,
+      targetDay: job.job_date,
+      targetPost: job.post_number,
     };
     dragStateRef.current = next;
     setDragState(next);
@@ -187,11 +196,13 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
       return;
     }
 
-    const target = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>("[data-planner-col]");
+    if (dragging.targetDay === null || dragging.targetPost === null) return;
+    const day = dragging.targetDay;
+    const post = dragging.targetPost;
+    // Recompute the target column's rect fresh (not cached from an
+    // earlier move) since scrolling can shift it between then and drop.
+    const target = document.querySelector<HTMLElement>(`[data-planner-col][data-day="${day}"][data-post="${post}"]`);
     if (!target) return;
-
-    const day = target.dataset.day!;
-    const post = Number(target.dataset.post);
     const rect = target.getBoundingClientRect();
     const pointerMinutes = ((clientY - rect.top) / SLOT_HEIGHT) * SLOT_MINUTES;
     const duration = timeToMinutes(dragging.job.end_time) - timeToMinutes(dragging.job.start_time);
@@ -241,7 +252,22 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
       const dx = e.clientX - current.clientX;
       const dy = e.clientY - current.clientY;
       const hasMoved = current.hasMoved || Math.hypot(dx, dy) > DRAG_THRESHOLD_PX;
-      const next = { ...current, clientX: e.clientX, clientY: e.clientY, hasMoved };
+
+      // Re-resolve the column under the cursor on every move (not just
+      // once at drop) and keep the ghost hidden from hit-testing while
+      // doing it, so the drop always uses a column that was genuinely
+      // under the cursor at some point during the gesture.
+      let targetDay = current.targetDay;
+      let targetPost = current.targetPost;
+      if (hasMoved) {
+        const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-planner-col]");
+        if (el?.dataset.day && el.dataset.post) {
+          targetDay = el.dataset.day;
+          targetPost = Number(el.dataset.post);
+        }
+      }
+
+      const next = { ...current, clientX: e.clientX, clientY: e.clientY, hasMoved, targetDay, targetPost };
       dragStateRef.current = next;
       setDragState(next);
     };
@@ -370,7 +396,13 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
             Array.from({ length: workshop.posts_count }, (_, i) => i + 1).map((post) => (
               <div
                 key={`${day}-${post}-col`}
-                className={day === todayStr ? "col today" : "col"}
+                className={
+                  dragState?.hasMoved && dragState.targetDay === day && dragState.targetPost === post
+                    ? `${day === todayStr ? "col today" : "col"} planner-col-drop-target`
+                    : day === todayStr
+                      ? "col today"
+                      : "col"
+                }
                 style={{ height: colH }}
                 data-planner-col
                 data-day={day}
@@ -383,14 +415,22 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                     trailing closing-time entry in `slots` is excluded - it
                     exists only to label the time column, not a bookable
                     start. */}
-                {creationSlots.map((m) => (
-                  <div
-                    key={m}
-                    className={m % 60 === 0 ? "col-slot col-slot--hour" : "col-slot"}
-                    style={{ height: SLOT_HEIGHT }}
-                    onClick={() => openCreate(day, post, m)}
-                  />
-                ))}
+                {creationSlots.map((m) => {
+                  // A row's border-bottom sits at its END, not its start -
+                  // the row that should get the dark "full hour" border is
+                  // the one ENDING on the hour (m+30), not the one
+                  // starting on it, or the dark line lands half an hour
+                  // too early (at each :30 mark instead of each :00 mark).
+                  const endsOnHour = (m + SLOT_MINUTES) % 60 === 0;
+                  return (
+                    <div
+                      key={m}
+                      className={endsOnHour ? "col-slot col-slot--hour" : "col-slot"}
+                      style={{ height: SLOT_HEIGHT }}
+                      onClick={() => openCreate(day, post, m)}
+                    />
+                  );
+                })}
                 {jobsFor(day, post).map((job) => {
                   const status = job.status_id ? statusById.get(job.status_id) : undefined;
                   const top = ((timeToMinutes(job.start_time) - timeToMinutes(workshop.start_time)) / SLOT_MINUTES) * SLOT_HEIGHT;
@@ -409,6 +449,11 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
                         background: status ? `${status.color}33` : "var(--surface2)",
                         borderLeftColor: status ? status.color : "var(--border)",
                         touchAction: "none",
+                        // Once dragging, this card is just a dimmed marker
+                        // of the origin - it must not intercept
+                        // elementFromPoint() lookups for the column under
+                        // the cursor (see handleMove).
+                        pointerEvents: isDragSource ? "none" : undefined,
                       }}
                       onPointerDown={(e) => startDrag(e, job)}
                     >
