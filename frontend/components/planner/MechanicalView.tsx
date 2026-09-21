@@ -545,7 +545,10 @@ function MechanicalViewInner({
                       style={{
                         top,
                         height: Math.max(18, height),
-                        background: status ? `${status.color}33` : "var(--surface2)",
+                        // CC = 80% opaque (20% transparent) - the previous
+                        // 33 suffix was ~20% opaque, so the card barely
+                        // showed its status color at all.
+                        background: status ? `${status.color}CC` : "var(--surface2)",
                         borderLeftColor: status ? status.color : "var(--border)",
                         touchAction: "none",
                       }}
