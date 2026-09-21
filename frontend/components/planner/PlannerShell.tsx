@@ -67,41 +67,51 @@ export function PlannerShell({
 
   if (departments.length === 0) {
     return (
-      <div className="card">
-        <p>Сначала добавьте подразделение и цех в Настройках.</p>
+      <div>
+        <h1 className="planner-title">Планировщик</h1>
+        <div className="card">
+          <p>Сначала добавьте подразделение и цех в Настройках.</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div>
-      <div className="planner-dept-switch">
-        {departments.map((department) => (
-          <button
-            key={department.id}
-            type="button"
-            className={department.id === departmentId ? "planner-dept-btn planner-dept-btn--on" : "planner-dept-btn"}
-            onClick={() => selectDepartment(department.id)}
-          >
-            {department.name}
-          </button>
-        ))}
-      </div>
-
-      {departmentWorkshopTypes.length > 0 && (
-        <div className="admin-tabs" style={{ marginBottom: "1rem" }}>
-          {departmentWorkshopTypes.map((type) => (
+      {/* Заголовок, переключатель подразделений и цехов - всё в одну
+          строку (продукт-брифинг просил "Планировщик" и подразделения на
+          одной строке; цеха туда же, чтобы не тратить ещё одну строку
+          высоты над самим графиком). */}
+      <div className="planner-header">
+        <h1 className="planner-title">Планировщик</h1>
+        <div className="planner-dept-switch">
+          {departments.map((department) => (
             <button
-              key={type}
+              key={department.id}
               type="button"
-              className={selectedWorkshop?.workshop_type === type ? "admin-tab admin-tab--on" : "admin-tab"}
-              onClick={() => selectWorkshopType(type)}
+              className={department.id === departmentId ? "planner-dept-btn planner-dept-btn--on" : "planner-dept-btn"}
+              onClick={() => selectDepartment(department.id)}
             >
-              {type}
+              {department.name}
             </button>
           ))}
         </div>
-      )}
+
+        {departmentWorkshopTypes.length > 0 && (
+          <div className="admin-tabs">
+            {departmentWorkshopTypes.map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={selectedWorkshop?.workshop_type === type ? "admin-tab admin-tab--on" : "admin-tab"}
+                onClick={() => selectWorkshopType(type)}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       {!selectedWorkshop && (
         <div className="card">

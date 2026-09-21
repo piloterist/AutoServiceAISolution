@@ -168,7 +168,7 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
 
   return (
     <div>
-      <div className="toolbar">
+      <div className="planner-toolbar">
         <div className="grp">
           <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, -viewSpan))}>
             ‹

@@ -245,8 +245,7 @@ main:has(.wide-page) {
    with the side padding trimmed down too. */
 main:has(.full-width-page) {
   max-width: none;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
+  padding: 0.85rem 0.75rem;
 }
 
 .search-input {
@@ -518,12 +517,20 @@ main:has(.full-width-page) {
 .admin-data-table {
   table-layout: auto;
   width: auto;
-  min-width: 100%;
 }
 
 .admin-data-table th,
 .admin-data-table td {
   white-space: nowrap;
+}
+
+/* Belt and suspenders: even with the above, a table whose columns'
+   combined natural width exceeds its .card (long full names, a narrow
+   viewport, ...) would otherwise overflow straight past the card's own
+   border - .card has no overflow handling of its own. Give the table its
+   own horizontal scrollbar instead of letting it spill outside the card. */
+.card:has(.admin-data-table) {
+  overflow-x: auto;
 }
 
 .admin-col-actions {
@@ -1945,10 +1952,31 @@ main:has(.full-width-page) {
    Planner (Слесарный/Кузовной цех)
    ============================================================ */
 
+/* "Планировщик" + department switch + workshop-type tabs, all on one row
+   (per explicit feedback: the heading and switches were each eating a
+   full row of height, pushing the grid - and its own horizontal
+   scrollbar - out of the viewport). */
+.planner-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.planner-title {
+  margin: 0;
+  font-size: 1.3rem;
+  white-space: nowrap;
+}
+
+.planner-header .admin-tabs {
+  margin-bottom: 0;
+}
+
 .planner-dept-switch {
   display: flex;
-  gap: 0.6rem;
-  margin-bottom: 1rem;
+  gap: 0.5rem;
 }
 
 .planner-dept-btn {
@@ -1968,43 +1996,47 @@ main:has(.full-width-page) {
   color: #fff;
 }
 
-.toolbar {
+/* Deliberately its own class, not a reuse of .toolbar (the Work Orders
+   filter bar already owns that name with different rules - a genuine
+   collision was here before, silently overriding that page's toolbar
+   styling). */
+.planner-toolbar {
   display: flex;
-  gap: 0.75rem 1.2rem;
+  gap: 0.5rem 0.9rem;
   flex-wrap: wrap;
   align-items: center;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
-.toolbar .grp {
+.planner-toolbar .grp {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.35rem;
   align-items: center;
   flex-wrap: wrap;
 }
 
-.toolbar button {
-  padding: 0.4rem 0.7rem;
+.planner-toolbar button {
+  padding: 0.35rem 0.6rem;
   border-radius: 7px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   cursor: pointer;
 }
 
-.toolbar input[type="date"],
-.toolbar input[type="search"],
-.toolbar select {
-  padding: 0.4rem 0.6rem;
+.planner-toolbar input[type="date"],
+.planner-toolbar input[type="search"],
+.planner-toolbar select {
+  padding: 0.35rem 0.5rem;
   border-radius: 7px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 
-.toolbar .seg {
+.planner-toolbar .seg {
   display: inline-flex;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2012,14 +2044,14 @@ main:has(.full-width-page) {
   background: var(--surface);
 }
 
-.toolbar .seg button {
+.planner-toolbar .seg button {
   border: 0;
   border-radius: 0;
   background: transparent;
-  padding: 0.4rem 0.75rem;
+  padding: 0.35rem 0.65rem;
 }
 
-.toolbar .seg button.on {
+.planner-toolbar .seg button.on {
   background: var(--accent);
   color: #fff;
   font-weight: 600;
@@ -2054,7 +2086,10 @@ main:has(.full-width-page) {
 
 .mscroll {
   overflow: auto;
-  max-height: 70vh;
+  /* Enough headroom left for the header row + toolbar above it (both
+     compact now) that this, including its own horizontal scrollbar,
+     stays fully inside the viewport without scrolling the page itself. */
+  max-height: calc(100vh - 145px);
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -2239,7 +2274,7 @@ main:has(.full-width-page) {
 
 .tw {
   overflow: auto;
-  max-height: 70vh;
+  max-height: calc(100vh - 145px);
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);

@@ -181,7 +181,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
 
   return (
     <div>
-      <div className="toolbar">
+      <div className="planner-toolbar">
         <div className="grp">
           <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, -7))}>
             ‹

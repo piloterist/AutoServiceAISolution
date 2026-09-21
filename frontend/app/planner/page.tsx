@@ -24,11 +24,15 @@ export default async function PlannerPage() {
 
   return (
     <div className="full-width-page">
-      <h1>Планировщик</h1>
-
+      {/* No <h1> here - PlannerShell renders it inline with the
+          department/workshop switch (see its own comment) once data is
+          loaded; the error path below still needs one of its own. */}
       {error && (
-        <div className="card" style={{ borderColor: "var(--down)" }}>
-          <p>Не удалось загрузить данные: {error}</p>
+        <div>
+          <h1 className="planner-title">Планировщик</h1>
+          <div className="card" style={{ borderColor: "var(--down)" }}>
+            <p>Не удалось загрузить данные: {error}</p>
+          </div>
         </div>
       )}
 
