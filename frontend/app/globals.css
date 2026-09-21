@@ -2435,8 +2435,8 @@ table.bt {
   z-index: 4;
   text-align: left;
   padding: 8px 12px;
-  min-width: 279px;
-  max-width: 279px;
+  min-width: 419px;
+  max-width: 419px;
   border-left: 0;
 }
 
@@ -2452,8 +2452,8 @@ table.bt {
   left: 0;
   z-index: 2;
   background: var(--surface);
-  min-width: 279px;
-  max-width: 279px;
+  min-width: 419px;
+  max-width: 419px;
   padding: 6px 10px !important;
   cursor: pointer;
   border-bottom: 1px solid var(--border);

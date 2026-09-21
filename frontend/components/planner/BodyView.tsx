@@ -19,7 +19,7 @@ const DAYS_OPTIONS = [7, 14, 21, 28, 35] as const;
 // including this one, so on a screen wider than the content it grew (and
 // grew by a different amount depending on how many day columns there
 // were) instead of staying fixed.
-const CAR_COL_WIDTH = 279;
+const CAR_COL_WIDTH = 419;
 
 function carSpan(car: BodyCar): { start: string; end: string } | null {
   if (car.stages.length === 0) return null;
