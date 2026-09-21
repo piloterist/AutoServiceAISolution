@@ -187,14 +187,18 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
     } else {
       await workshopJobsApi.create(workshop.id, write);
     }
-    setDialogOpen(false);
-    reload();
+    // A plain client-side reload() (re-fetch + setJobs) reliably left the
+    // grid showing the pre-write state until the operator refreshed the
+    // browser themselves - true even with cache: "no-store" and a unique
+    // cache-busting URL on the GET, so whatever's wrong isn't HTTP caching.
+    // A full reload is the blunt but guaranteed-correct fix: it's exactly
+    // the manual refresh already confirmed to always show the right data.
+    window.location.reload();
   };
 
   const remove = async () => {
     if (dialogDraft?.jobId) await workshopJobsApi.remove(dialogDraft.jobId);
-    setDialogOpen(false);
-    reload();
+    window.location.reload();
   };
 
   const dayEndMinutes = timeToMinutes(workshop.end_time);
@@ -335,17 +339,26 @@ export function MechanicalView({ workshop, statuses }: { workshop: Workshop; sta
     };
 
     // Optimistic: move/resize the card immediately instead of waiting on
-    // the round trip, then reconcile with the server (or roll back on
-    // error).
+    // the round trip.
     setJobs((prev) =>
       prev.map((j) => (j.id === dragging.job.id ? { ...j, job_date: day, post_number: post, start_time: startTime, end_time: endTime } : j)),
     );
 
-    workshopJobsApi.update(dragging.job.id, write).then(reload, (err) => {
-      setDragError(err instanceof Error ? err.message : "Не удалось сохранить перенос записи");
-      setTimeout(() => setDragError(null), 3000);
-      reload();
-    });
+    workshopJobsApi.update(dragging.job.id, write).then(
+      // A plain client-side reload() here reliably left the grid showing
+      // the pre-drag state until the operator refreshed the browser
+      // themselves - true even with cache: "no-store" and a unique
+      // cache-busting URL on the GET, so whatever's wrong isn't HTTP
+      // caching. A full reload is the blunt but guaranteed-correct fix:
+      // it's exactly the manual refresh already confirmed to always show
+      // the right data.
+      () => window.location.reload(),
+      (err) => {
+        setDragError(err instanceof Error ? err.message : "Не удалось сохранить перенос записи");
+        setTimeout(() => setDragError(null), 3000);
+        reload();
+      },
+    );
   };
 
   const handleDragPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {

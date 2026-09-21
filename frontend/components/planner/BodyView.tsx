@@ -109,20 +109,24 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
   };
   const closeDialog = () => setDialogOpen(false);
 
+  // A plain client-side reload() (re-fetch + setCars) reliably left the
+  // graph showing the pre-write state until the operator refreshed the
+  // browser themselves - true even with cache: "no-store" and a unique
+  // cache-busting URL on the GET, so whatever's wrong isn't HTTP caching.
+  // A full reload is the blunt but guaranteed-correct fix: it's exactly
+  // the manual refresh already confirmed to always show the right data.
   const save = async (write: BodyCarWrite) => {
     if (dialogDraft?.carId) {
       await bodyCarsApi.update(dialogDraft.carId, write);
     } else {
       await bodyCarsApi.create(workshop.id, write);
     }
-    setDialogOpen(false);
-    reload();
+    window.location.reload();
   };
 
   const remove = async () => {
     if (dialogDraft?.carId) await bodyCarsApi.remove(dialogDraft.carId);
-    setDialogOpen(false);
-    reload();
+    window.location.reload();
   };
 
   const changeStatus = async (car: BodyCar, status: string) => {
@@ -136,7 +140,7 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
       status,
       stages: car.stages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
     });
-    reload();
+    window.location.reload();
   };
 
   const computeDraggedStages = (deltaDays: number, drag: NonNullable<typeof stageDrag>): BodyCarStage[] => {
@@ -235,7 +239,15 @@ export function BodyView({ workshop }: { workshop: Workshop }) {
           status: car.status,
           stages: finalStages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
         });
-        reload();
+        // A plain client-side reload() here reliably left the graph
+        // showing the pre-drag stage dates until the operator refreshed
+        // the browser themselves - true even with cache: "no-store" and a
+        // unique cache-busting URL on the GET, so whatever's wrong isn't
+        // HTTP caching. A full reload is the blunt but guaranteed-correct
+        // fix: it's exactly the manual refresh already confirmed to
+        // always show the right data.
+        window.location.reload();
+        return;
       } catch (err) {
         // Without this, a rejected save (e.g. an invalid resulting order)
         // left previewStages showing the dragged-to position forever,
