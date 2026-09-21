@@ -553,14 +553,20 @@ main:has(.full-width-page) {
    entirely, so admin-col-actions's "width: 1%, shrink to content" trick
    does nothing under it and "Изменить Удалить" gets clipped against a
    column fixed-layout still split ~50/50. Admin tables want the opposite:
-   size every column to its content, only the actions column shrinks. */
-.admin-data-table {
+   size every column to its content, only the actions column shrinks.
+   `table.admin-data-table` (element + class, not just .admin-data-table)
+   is deliberate: .data-table itself is declared further down this file,
+   and two single-class rules of equal specificity resolve by source
+   order - .data-table would silently win and undo table-layout: auto
+   again (this happened once already; the extra qualifier makes the
+   override immune to where either rule sits in the file). */
+table.admin-data-table {
   table-layout: auto;
   width: auto;
 }
 
-.admin-data-table th,
-.admin-data-table td {
+table.admin-data-table th,
+table.admin-data-table td {
   white-space: nowrap;
   /* Tighter than .data-table's own 0.6rem 0.9rem - these tables often
      have 5-8 columns, and that padding alone added up to real width. */

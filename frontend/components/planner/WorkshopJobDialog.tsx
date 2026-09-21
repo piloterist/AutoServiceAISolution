@@ -236,7 +236,19 @@ export function WorkshopJobDialog({
           <button type="button" className="admin-btn" onClick={() => setConfirmingDelete(false)}>
             Отмена
           </button>
-          <button type="button" className="admin-btn admin-btn-danger" onClick={onDelete}>
+          <button
+            type="button"
+            className="admin-btn admin-btn-danger"
+            onClick={async () => {
+              await onDelete();
+              // onDelete already closes the main edit dialog via its own
+              // state, but this confirm dialog is a second, independent
+              // <AdminModal> with its own open/close state - without
+              // resetting it too, it stayed open (visibly stuck) after a
+              // successful delete.
+              setConfirmingDelete(false);
+            }}
+          >
             Удалить
           </button>
         </div>

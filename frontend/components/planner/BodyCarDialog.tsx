@@ -226,7 +226,18 @@ export function BodyCarDialog({
           <button type="button" className="admin-btn" onClick={() => setConfirmingDelete(false)}>
             Отмена
           </button>
-          <button type="button" className="admin-btn admin-btn-danger" onClick={onDelete}>
+          <button
+            type="button"
+            className="admin-btn admin-btn-danger"
+            onClick={async () => {
+              await onDelete();
+              // See the same fix in WorkshopJobDialog.tsx - this confirm
+              // dialog is a second, independent <AdminModal>; without
+              // resetting its own open state too, it stayed open after a
+              // successful delete.
+              setConfirmingDelete(false);
+            }}
+          >
             Удалить
           </button>
         </div>
