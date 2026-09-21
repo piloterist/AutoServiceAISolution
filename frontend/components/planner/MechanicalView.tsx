@@ -178,11 +178,20 @@ function MechanicalViewInner({
 
   const dayStats = (day: string) => {
     const dayJobs = jobs.filter((j) => j.job_date === day);
+    // План: every record for the day, any status.
     const plan = dayJobs.reduce((sum, j) => sum + Number(j.amount ?? 0), 0);
+    // Факт: only records the workshop itself has marked "Готова" - the
+    // job's own scheduling status, not the linked work order's status in
+    // 1C (a separate, unrelated lifecycle).
     const fact = dayJobs
-      .filter((j) => j.work_order_status === "Закрыт")
+      .filter((j) => j.status_name === "Готова")
       .reduce((sum, j) => sum + Number(j.amount ?? 0), 0);
-    const bookedMinutes = dayJobs.reduce((sum, j) => sum + (timeToMinutes(j.end_time) - timeToMinutes(j.start_time)), 0);
+    // Загрузка: booked hours for the day excluding "Отмена" (a cancelled
+    // record was never actually going to consume post time), against the
+    // day's total post-hours capacity.
+    const bookedMinutes = dayJobs
+      .filter((j) => j.status_name !== "Отмена")
+      .reduce((sum, j) => sum + (timeToMinutes(j.end_time) - timeToMinutes(j.start_time)), 0);
     const capacity = workshop.posts_count * (timeToMinutes(workshop.end_time) - timeToMinutes(workshop.start_time));
     const load = capacity > 0 ? Math.round((bookedMinutes / capacity) * 100) : 0;
     return { plan, fact, load };
