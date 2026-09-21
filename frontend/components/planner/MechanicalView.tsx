@@ -69,7 +69,7 @@ function jobMatches(job: WorkshopJob, query: string): boolean {
 }
 
 export function MechanicalView({ workshop, statuses }: { workshop: Workshop; statuses: SlesarkaStatus[] }) {
-  const [viewSpan, setViewSpan] = useState<ViewSpan>(1);
+  const [viewSpan, setViewSpan] = useState<ViewSpan>(3);
   const [currentDate, setCurrentDate] = useState(todayIso());
   const [search, setSearch] = useState("");
   const [jobs, setJobs] = useState<WorkshopJob[]>([]);

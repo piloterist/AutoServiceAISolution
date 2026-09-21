@@ -30,9 +30,15 @@ export function searchWorkOrders(q: string): Promise<PlannerWorkOrder[]> {
 }
 
 export const workshopJobsApi = {
+  // no-store: the URL is identical across reloads (same workshop/date
+  // range), so without this the browser's own HTTP cache - not Next's
+  // server-side data cache, which the route already opts out of - could
+  // serve a stale response right after a drag/edit's PUT resolved, with
+  // nothing to trigger a fresher fetch short of a hard page reload.
   list: (workshopId: string, dateFrom: string, dateTo: string) =>
     proxyFetch<WorkshopJob[]>(
       `/api/planner/workshops/${workshopId}/jobs?date_from=${dateFrom}&date_to=${dateTo}`,
+      { cache: "no-store" },
     ),
   create: (workshopId: string, payload: WorkshopJobWrite) =>
     proxyFetch<WorkshopJob>(`/api/planner/workshops/${workshopId}/jobs`, {
@@ -50,7 +56,8 @@ export const workshopJobsApi = {
 };
 
 export const bodyCarsApi = {
-  list: (workshopId: string) => proxyFetch<BodyCar[]>(`/api/planner/workshops/${workshopId}/cars`),
+  list: (workshopId: string) =>
+    proxyFetch<BodyCar[]>(`/api/planner/workshops/${workshopId}/cars`, { cache: "no-store" }),
   create: (workshopId: string, payload: BodyCarWrite) =>
     proxyFetch<BodyCar>(`/api/planner/workshops/${workshopId}/cars`, {
       method: "POST",

@@ -18,8 +18,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // null and Nav renders nothing regardless - see Nav.tsx).
   const user = await getCurrentUser();
 
+  // Chrome (and others) pick the native <input type="date"> picker's
+  // display format from this - "en" was rendering MM/DD/YYYY for a
+  // product whose entire UI is Russian; "ru" gets ДД.ММ.ГГГГ.
   return (
-    <html lang="en">
+    <html lang="ru">
       <body>
         {/* Applies a saved theme choice before first paint - without this,
             the page would flash light and then snap to dark a moment later
