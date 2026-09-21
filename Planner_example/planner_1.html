@@ -1,0 +1,1169 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Планирование цехов — прототип</title>
+<style>
+:root{
+  --bg:#f3f4f7; --surface:#ffffff; --surface2:#f7f8fa; --border:#d9dee5; --border2:#e8ebf0;
+  --text:#1b2330; --muted:#6a7687; --accent:#2f5fd0; --accent-soft:#e5edfc; --accent-fg:#fff;
+  --today:#fff6cf; --weekend:#f0f2f6; --danger:#d83232; --ok:#17924a;
+  --shadow:0 8px 28px rgba(20,30,50,.18);
+  --slot-h:40px;
+  --j-plan-bg:#e3e8f0; --j-plan-bd:#5b6b82;
+  --j-work-bg:#fdeec4; --j-work-bd:#e59a0c;
+  --j-done-bg:#d5f2de; --j-done-bd:#17924a;
+  --j-cancel-bg:#fbdcdc; --j-cancel-bd:#d83232;
+  --h1:70px; --h2:28px; --h3:34px; --h4:26px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#11151b; --surface:#1a2029; --surface2:#212936; --border:#323d4d; --border2:#2a3441;
+    --text:#e5e9ef; --muted:#93a0b2; --accent:#6f9bff; --accent-soft:#243456; --accent-fg:#0d1626;
+    --today:#3b3517; --weekend:#1e2530; --danger:#ff6b6b; --ok:#4cd08a;
+    --shadow:0 8px 28px rgba(0,0,0,.55);
+    --j-plan-bg:#2b3546; --j-plan-bd:#8a9bb5;
+    --j-work-bg:#4a3d16; --j-work-bd:#f0b13a;
+    --j-done-bg:#17402a; --j-done-bd:#4cd08a;
+    --j-cancel-bg:#4a2323; --j-cancel-bd:#ff6b6b;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 11px}
+button:hover{background:var(--surface2)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+button.primary:hover{filter:brightness(1.08)}
+button.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--border))}
+input,select,textarea{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px 9px;min-width:0}
+input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(--accent) 55%,transparent);outline-offset:0;border-color:var(--accent)}
+
+/* ---------- каркас ---------- */
+.app{max-width:100%;padding:14px 18px 24px}
+.top{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin-bottom:12px}
+.brand{font-weight:700;font-size:17px;letter-spacing:.2px}
+.brand small{font-weight:500;color:var(--muted);margin-left:8px;padding:2px 7px;border:1px dashed var(--border);border-radius:99px;font-size:11px}
+.tabs{display:flex;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:11px;padding:3px}
+.tabs button{border:0;background:transparent;padding:7px 16px;border-radius:8px;font-weight:600;color:var(--muted)}
+.tabs button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.14)}
+.tabs button .n{margin-left:6px;font-weight:500;font-size:12px;color:var(--muted)}
+.spacer{flex:1}
+.today-lbl{color:var(--muted);font-size:13px}
+.menu{position:relative}
+.menu .dd{position:absolute;right:0;top:110%;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);padding:5px;z-index:50;min-width:230px;display:none}
+.menu.open .dd{display:block}
+.menu .dd button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:8px 10px;border-radius:7px}
+.menu .dd button:hover{background:var(--surface2)}
+.menu .dd hr{border:0;border-top:1px solid var(--border2);margin:4px 0}
+
+.toolbar{display:flex;gap:10px 16px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.grp{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.grp.right{margin-left:auto}
+.inl{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:13px}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;border-radius:0;background:transparent;padding:6px 11px}
+.seg button.on{background:var(--accent);color:var(--accent-fg);font-weight:600}
+.rangelbl{font-weight:600;min-width:170px;text-align:center}
+.hint{color:var(--muted);font-size:12.5px}
+
+/* ---------- кузовной цех ---------- */
+.tw{overflow:auto;max-height:calc(100vh - 190px);min-height:300px;border:1px solid var(--border);border-radius:11px;background:var(--surface);user-select:none}
+table.bt{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+.bt th,.bt td{padding:0;vertical-align:middle}
+.bt thead th{position:sticky;top:0;z-index:6;background:var(--surface2);height:54px;text-align:center;font-weight:600;border-right:1px solid var(--border2);border-bottom:1px solid var(--border)}
+.bt thead th.hcar{left:0;z-index:8;text-align:left;padding:8px 12px;min-width:280px;max-width:280px}
+.bt thead th.hcar .cnt{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+.bt thead th.hlay{left:280px;z-index:8;min-width:26px;width:26px;background:var(--surface2)}
+.bt thead th .wd{font-size:11px;color:var(--muted);line-height:1.2;padding-top:6px}
+.bt thead th .dn{font-size:16px;line-height:1.1}
+.bt thead th .mo{font-size:10.5px;color:var(--muted);font-weight:400}
+.bt thead th.weekend{background:color-mix(in srgb,var(--weekend) 80%,var(--border))}
+.bt thead th.today{background:var(--today);box-shadow:inset 0 -3px 0 var(--accent)}
+.bt thead th .fillday{position:absolute;right:2px;top:2px;border:0;background:transparent;padding:0 4px;font-size:12px;color:var(--muted);opacity:0}
+.bt thead th:hover .fillday{opacity:1}
+.bt thead th .fillday:hover{color:var(--ok);background:transparent}
+.carc{position:sticky;left:0;z-index:4;background:var(--surface);min-width:280px;max-width:280px;border-left:7px solid var(--car,var(--border));padding:6px 10px!important;cursor:pointer;border-bottom:1px solid var(--border);vertical-align:top!important}
+.carc:hover{background:var(--surface2)}
+.carc .l1{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.carc .order{font-weight:700;font-size:12.5px;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:6px}
+.carc .order i{width:11px;height:11px;border-radius:50%;background:var(--car);display:inline-block;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.18)}
+.carc .stsel{font-size:11.5px;padding:1px 4px;border-radius:99px;border:1px solid var(--border);background:color-mix(in srgb,var(--st) 24%,var(--surface))}
+.carc .model{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.carc .dates{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.carc .dates b{color:var(--text);font-weight:600}
+.late{color:var(--danger);font-weight:700}
+.early{color:var(--ok);font-weight:700}
+.only-plan .carc .dates.now{display:none}
+.lay{position:sticky;left:280px;z-index:4;background:var(--surface2);width:26px;min-width:26px;text-align:center;font-size:10.5px;font-weight:700;color:var(--muted);border-right:1px solid var(--border)}
+tr.plan .lay{border-bottom:1px dashed var(--border2)}
+tr.fact .lay,tr.newrow .lay{border-bottom:1px solid var(--border)}
+tr.fact .lay{color:var(--ok)}
+.dc{position:relative;min-width:100px;width:100px;height:32px;border-right:1px solid var(--border2);background:var(--surface);cursor:pointer;padding:0;overflow:visible}
+.dc.weekend{background:var(--weekend)}
+.dc.today::after{content:"";position:absolute;inset:0;background:rgba(255,214,0,.17);pointer-events:none;z-index:1}
+tr.plan .dc{border-bottom:1px dashed var(--border2)}
+tr.fact .dc,tr.newrow .dc{border-bottom:1px solid var(--border)}
+.dc:hover{filter:brightness(.97)}
+.dc.on,.dc.gap{border-right-color:transparent;border-bottom-color:transparent}
+.dc.on{background:var(--car);box-shadow:inset 0 4px 0 var(--surface),inset 0 -4px 0 var(--surface)}
+.dc.gap{background:color-mix(in srgb,var(--car) 30%,var(--surface));box-shadow:inset 0 9px 0 var(--surface),inset 0 -9px 0 var(--surface)}
+.dc.on.sepl{box-shadow:inset 2px 0 0 var(--surface),inset 0 4px 0 var(--surface),inset 0 -4px 0 var(--surface)}
+.dc.hatch{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.5) 0 5px,transparent 5px 10px)}
+.dc.cap-l{border-top-left-radius:9px;border-bottom-left-radius:9px}
+.dc.cap-r{border-top-right-radius:9px;border-bottom-right-radius:9px}
+.dc.miss{background:color-mix(in srgb,var(--danger) 9%,transparent);box-shadow:inset 0 4px 0 var(--surface),inset 0 5px 0 var(--danger),inset 0 -4px 0 var(--surface),inset 0 -5px 0 var(--danger);border-right-color:transparent}
+.dc .lbl{position:absolute;left:8px;top:0;bottom:0;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#1f2937;z-index:2;pointer-events:none}
+.dc .lbl .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.dc .lbl .bd{flex:none;font-size:10.5px;padding:0 6px;border-radius:99px;background:rgba(255,255,255,.72);line-height:16px;color:#1f2937}
+.dc .lbl .bd.late{color:#b42318}
+.dc .lbl .bd.early{color:#0a7a3a}
+.dc.miss .lbl{color:var(--danger);font-weight:600;font-size:11px}
+.dc.miss.lastmiss{}
+tr.done .dc.on,tr.done .dc.gap{filter:saturate(.5);opacity:.85}
+tr.newrow .carc{border-left-color:var(--border);color:var(--muted);font-style:italic;font-size:13px;vertical-align:middle!important}
+tr.newrow .dc:hover{background:var(--accent-soft);filter:none}
+tr.newrow .dc.today:hover::after{background:transparent}
+.bt tfoot td{position:sticky;bottom:0;z-index:5;background:var(--surface2);border-top:1px solid var(--border);height:44px;text-align:center;font-size:10.5px;line-height:1.3;padding:3px 2px;color:var(--muted);white-space:nowrap}
+.bt tfoot td b{color:var(--text);font-size:13px}
+.bt tfoot td.sum{left:0;z-index:7;text-align:left;padding-left:14px;min-width:306px}
+.bt tfoot td.today{background:var(--today)}
+.emptyrow{padding:40px;text-align:center;color:var(--muted)}
+/* диалог кузова */
+#carDlg{width:min(1000px,96vw)}
+.swatches{display:flex;gap:6px;flex-wrap:wrap;padding-top:2px}
+.swatches button{width:24px;height:24px;border-radius:50%;padding:0;border:2px solid transparent;background:var(--c)}
+.swatches button.on{border-color:var(--text);box-shadow:0 0 0 2px var(--surface) inset}
+.stwrap{overflow-x:auto;padding-bottom:2px}
+.srow2{display:grid;grid-template-columns:128px minmax(110px,1fr) 124px 124px 124px 124px 96px;gap:6px;align-items:center;margin-top:6px;min-width:900px}
+.srow2.hd{margin-top:0;font-size:11.5px;color:var(--muted);font-weight:700}
+.srow2.hd .fx{color:var(--ok)}
+.srow2 input,.srow2 select{font-size:13px;padding:5px 6px;width:100%}
+.srow2 input.fx{background:color-mix(in srgb,var(--ok) 7%,var(--surface));border-color:color-mix(in srgb,var(--ok) 35%,var(--border))}
+.srow2 .qa{display:flex;gap:3px}
+.srow2 .qa button{padding:3px 7px;font-size:12px}
+.srow2.hl{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.carinfo{margin-top:10px;font-size:13px;font-weight:600;color:var(--text);background:var(--surface2);border-radius:8px;padding:7px 10px}
+/* ---------- слесарный цех ---------- */
+.mscroll{overflow:auto;max-height:calc(100vh - 205px);min-height:320px;border:1px solid var(--border);border-radius:11px;background:var(--surface);position:relative}
+.mgrid{display:grid;width:100%;min-width:max-content}
+.mgrid>*{min-width:0}
+.mgrid .corner{position:sticky;left:0;z-index:8;background:var(--surface2);border-right:1px solid var(--border);border-bottom:1px solid var(--border2);font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0 4px;text-align:center}
+.corner.c1{top:0;height:var(--h1)} .corner.c2{top:var(--h1);height:var(--h2)} .corner.c3{top:calc(var(--h1) + var(--h2));height:var(--h3)} .corner.c4{top:calc(var(--h1) + var(--h2) + var(--h3));height:var(--h4)}
+.dayh{position:sticky;top:0;z-index:6;height:var(--h1);background:var(--surface2);border-bottom:1px solid var(--border2);padding:7px 12px;display:flex;flex-direction:column;justify-content:space-between}
+.dayh.today{background:var(--today);box-shadow:inset 0 -3px 0 var(--accent)}
+.dayh .t1{display:flex;gap:8px;align-items:baseline}
+.dayh .t1 b{font-size:14.5px;display:inline-block}
+.dayh .t1 b::first-letter{text-transform:uppercase}
+.dayh .badge{font-size:10.5px;background:var(--accent);color:var(--accent-fg);border-radius:99px;padding:1px 7px;font-weight:600}
+.dayh .t2{display:flex;gap:14px;font-size:12px;color:var(--muted);align-items:center;flex-wrap:wrap}
+.dayh .t2 b{color:var(--text);font-variant-numeric:tabular-nums}
+.dayh .t2 input{width:98px;padding:1px 6px;font-size:12px;text-align:right}
+.dayh .bar{height:6px;border-radius:4px;background:var(--border2);overflow:hidden;position:relative}
+.dayh .bar i{position:absolute;left:0;top:0;bottom:0}
+.dayh .bar i.b{background:color-mix(in srgb,var(--accent) 35%,transparent)}
+.dayh .bar i.f{background:var(--ok)}
+.posth{position:sticky;top:var(--h1);z-index:6;height:var(--h2);background:var(--surface2);border-bottom:1px solid var(--border2);border-right:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12.5px}
+.mech{position:sticky;top:calc(var(--h1) + var(--h2));z-index:6;height:var(--h3);background:var(--surface);border-bottom:1px solid var(--border2);border-right:1px solid var(--border2);padding:3px 4px}
+.mech input{width:100%;height:100%;border:1px solid transparent;background:transparent;text-align:center;font-size:12.5px;padding:0 4px}
+.mech input:hover{border-color:var(--border)}
+.mech input::placeholder{color:var(--muted);opacity:.7}
+.nhc{position:sticky;top:calc(var(--h1) + var(--h2) + var(--h3));z-index:6;height:var(--h4);background:var(--surface2);border-bottom:1px solid var(--border);border-right:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.nhc b{color:var(--text);margin-left:3px}
+.dstart{border-left:2px solid var(--border)}
+.timecol{position:sticky;left:0;z-index:4;background:var(--surface2);border-right:1px solid var(--border)}
+.timecol div{height:var(--slot-h);font-size:11.5px;color:var(--muted);text-align:right;padding:2px 8px 0 0;font-variant-numeric:tabular-nums}
+.timecol div.hr{color:var(--text);font-weight:600}
+.col{position:relative;user-select:none;
+  background-image:linear-gradient(to bottom,transparent calc(var(--slot-h)*2 - 1px),var(--border) calc(var(--slot-h)*2 - 1px)),linear-gradient(to bottom,transparent calc(var(--slot-h) - 1px),var(--border2) calc(var(--slot-h) - 1px));
+  background-size:100% calc(var(--slot-h)*2),100% var(--slot-h);border-right:1px solid var(--border2)}
+.col.today{background-color:color-mix(in srgb,var(--today) 45%,transparent)}
+.col:hover{background-color:color-mix(in srgb,var(--accent-soft) 40%,transparent)}
+.selbox{position:absolute;left:2px;right:2px;background:color-mix(in srgb,var(--accent) 28%,transparent);border:2px solid var(--accent);border-radius:6px;z-index:3;pointer-events:none;font-size:11.5px;font-weight:600;padding:2px 6px;color:var(--text)}
+.ghost{position:absolute;left:2px;right:2px;border:2px dashed var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent);border-radius:6px;z-index:3;pointer-events:none}
+.ghost.bad{border-color:var(--danger);background:color-mix(in srgb,var(--danger) 16%,transparent)}
+.nowline{position:absolute;left:0;right:0;height:0;border-top:2px solid var(--danger);z-index:4;pointer-events:none}
+.nowline::before{content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--danger)}
+.job{position:absolute;left:2px;right:2px;z-index:2;border-radius:6px;padding:3px 7px 3px 8px;overflow:hidden;font-size:12px;line-height:1.28;cursor:grab;
+  background:var(--jb);border:1px solid color-mix(in srgb,var(--jd) 40%,transparent);border-left:5px solid var(--jd)}
+.job.st-plan{--jb:var(--j-plan-bg);--jd:var(--j-plan-bd)}
+.job.st-work{--jb:var(--j-work-bg);--jd:var(--j-work-bd)}
+.job.st-done{--jb:var(--j-done-bg);--jd:var(--j-done-bd)}
+.job.st-cancel{--jb:var(--j-cancel-bg);--jd:var(--j-cancel-bd);opacity:.75;background-image:repeating-linear-gradient(135deg,transparent 0 6px,rgba(216,50,50,.12) 6px 12px)}
+.job.st-cancel .jt b{text-decoration:line-through}
+.job:hover{box-shadow:0 2px 10px rgba(0,0,0,.22);z-index:5}
+.job .jt{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job .jt .pl{font-weight:500;color:var(--muted);font-size:11px;margin-left:4px}
+.job .jw{color:var(--text);opacity:.88;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.job .jm{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.job .jf{font-size:11px;color:var(--ok);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job .jb{position:absolute;right:3px;top:2px;display:none;gap:3px}
+.job:hover .jb{display:flex}
+.job .jb button{padding:0 6px;font-size:11px;border-radius:5px;line-height:18px}
+.job .rz{position:absolute;left:0;right:0;bottom:0;height:7px;cursor:ns-resize}
+.job .rz::after{content:"";position:absolute;left:50%;bottom:2px;width:22px;margin-left:-11px;height:2px;border-radius:2px;background:var(--jd);opacity:.5}
+.legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+.legend span.k{display:inline-flex;align-items:center;gap:5px}
+.legend i{width:12px;height:12px;border-radius:3px;background:var(--jb);border:1px solid var(--jd);border-left:4px solid var(--jd);display:inline-block}
+
+/* ---------- всплывающие элементы ---------- */
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#1b2330;color:#fff;padding:9px 16px;border-radius:10px;box-shadow:var(--shadow);z-index:200;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.show{opacity:1}
+dialog{border:1px solid var(--border);border-radius:14px;padding:0;background:var(--surface);color:var(--text);box-shadow:var(--shadow);width:min(640px,94vw)}
+dialog::backdrop{background:rgba(10,15,25,.45)}
+dialog form{padding:18px 20px 16px}
+dialog h3{margin:0 0 12px;font-size:17px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 12px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px}
+.span2{grid-column:span 2}.span3{grid-column:span 3}.span4{grid-column:span 4}
+dialog label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+dialog label>input,dialog label>select,dialog label>textarea{color:var(--text);font-size:14px;width:100%}
+dialog fieldset{border:1px solid var(--border);border-radius:10px;margin:14px 0 0;padding:10px 12px 12px}
+dialog fieldset.fact{border-color:color-mix(in srgb,var(--ok) 55%,var(--border));background:color-mix(in srgb,var(--ok) 6%,transparent)}
+dialog legend{font-size:12px;font-weight:700;color:var(--muted);padding:0 6px}
+.acts{display:flex;gap:8px;margin-top:16px;align-items:center}
+.acts .grow{flex:1}
+.srow{display:flex;gap:6px;align-items:center;margin-top:6px}
+.srow select{flex:1}
+.srow input{width:64px}
+.presets{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+.err{color:var(--danger);font-size:12.5px;margin-top:8px;min-height:1em}
+.foot{margin-top:12px;color:var(--muted);font-size:12px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div class="brand">Планирование цехов <small>тестовый прототип</small></div>
+    <div class="tabs" id="tabs">
+      <button data-tab="body" class="on">Кузовной цех <span class="n" id="nBody"></span></button>
+      <button data-tab="mech">Слесарный цех <span class="n" id="nMech"></span></button>
+    </div>
+    <div class="spacer"></div>
+    <div class="today-lbl" id="todayLbl"></div>
+    <div class="menu" id="menu">
+      <button id="menuBtn">⋯ Данные</button>
+      <div class="dd">
+        <button data-act="export">Экспорт в JSON</button>
+        <button data-act="import">Импорт из JSON…</button>
+        <hr>
+        <button data-act="reset">Сбросить на демо-данные</button>
+      </div>
+    </div>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+  </div>
+
+  <!-- ===== Кузовной цех ===== -->
+  <section id="panel-body">
+    <div class="toolbar">
+      <div class="grp">
+        <button data-act="b-prev" title="Назад на 7 дней">‹</button>
+        <button data-act="b-today">Сегодня</button>
+        <button data-act="b-next" title="Вперёд на 7 дней">›</button>
+        <label class="inl">с <input type="date" id="bStart"></label>
+        <label class="inl"><select id="bDays"><option>7</option><option>10</option><option>14</option><option>21</option></select> дн.</label>
+      </div>
+      <div class="grp">
+        <input type="search" id="bSearch" placeholder="Поиск: номер, авто…" style="width:190px">
+        <select id="bFilter">
+          <option value="all">Все автомобили</option>
+          <option value="active">Кроме выданных</option>
+          <option value="work">В работе</option>
+          <option value="wait">Ожидание</option>
+          <option value="accept">К приёмке</option>
+          <option value="done">Выданные</option>
+        </select>
+        <div class="seg" id="bView"><button data-v="both" class="on">План + факт</button><button data-v="plan">Только план</button></div>
+      </div>
+      <div class="grp right"><button class="primary" data-act="b-add">+ Добавить авто</button></div>
+    </div>
+    <div class="tw" id="bTable"></div>
+    <div class="foot">Одна машина — один цвет: полоса тянется от заезда до выезда, этапы подписаны на строке. Строка <b>П</b> — план, строка <b>Ф</b> — факт (✓ этап закончен, ▶ идёт сейчас, <span class="late">+N д</span> — опоздание от плана, «нет факта» — этап прошёл, а отметки нет). Клик по пустому дню в нижней строке «Новая машина» — завести работы с этой даты; клик по строке машины — открыть карточку. Кнопка ✓ в шапке дня (при наведении) проставляет факт по плану на этот день.</div>
+  </section>
+
+  <!-- ===== Слесарный цех ===== -->
+  <section id="panel-mech" hidden>
+    <div class="toolbar">
+      <div class="grp">
+        <button data-act="m-prev">‹</button>
+        <button data-act="m-today">Сегодня</button>
+        <button data-act="m-next">›</button>
+        <input type="date" id="mDate">
+        <div class="seg" id="mView"><button data-d="1" class="on">1 день</button><button data-d="3">3 дня</button></div>
+      </div>
+      <div class="grp legend">
+        <span class="k st-plan" style="--jb:var(--j-plan-bg);--jd:var(--j-plan-bd)"><i></i>запись</span>
+        <span class="k" style="--jb:var(--j-work-bg);--jd:var(--j-work-bd)"><i></i>в работе</span>
+        <span class="k" style="--jb:var(--j-done-bg);--jd:var(--j-done-bd)"><i></i>выполнено</span>
+        <span class="k" style="--jb:var(--j-cancel-bg);--jd:var(--j-cancel-bd)"><i></i>не приехал / отмена</span>
+      </div>
+      <div class="grp right"><button class="primary" data-act="m-add">+ Записать авто</button></div>
+    </div>
+    <div class="mscroll" id="mScroll"><div id="mGrid"></div></div>
+    <div class="foot">Протяните мышью по пустому месту поста — создастся запись. Блок можно <b>перетащить</b> (на другой пост/день/время) и <b>растянуть</b> за нижний край. Клик по блоку — карточка с фактом. Кнопки ▶ и ✓ на блоке — быстрая смена статуса.</div>
+  </section>
+</div>
+
+<div id="toast"></div>
+<datalist id="mechList"></datalist>
+
+<!-- Диалог: авто в кузовном -->
+<dialog id="carDlg">
+  <form id="carForm">
+    <h3 id="carTitle">Автомобиль</h3>
+    <div class="g4">
+      <label>Заказ-наряд №<input name="order" required placeholder="СЛ00000371"></label>
+      <label>Статус<select name="status"></select></label>
+      <label class="span2">Цвет машины на графике<div class="swatches" id="carColors"></div><input type="hidden" name="color"></label>
+      <label class="span4">Автомобиль<input name="model" required placeholder="Марка, модель, клиент"></label>
+      <label class="span4">Состав работ / заметка<textarea name="notes" rows="2" placeholder="Пороги, капот, окраска бампера…"></textarea></label>
+    </div>
+    <fieldset>
+      <legend>Этапы работ — даты плана и факта</legend>
+      <div id="presetBox" class="presets" style="margin-top:0;margin-bottom:8px;align-items:center">
+        <label style="flex-direction:row;align-items:center;gap:6px">Заезд <input type="date" name="arrive" style="width:150px"></label>
+        <span class="hint">Шаблон этапов:</span>
+        <button type="button" data-preset="full">Полный ремонт</button>
+        <button type="button" data-preset="paint">Только покраска</button>
+        <button type="button" data-preset="metal">Жесть + покраска</button>
+        <button type="button" data-preset="empty">Пусто</button>
+      </div>
+      <div class="stwrap">
+        <div class="srow2 hd"><span>Этап</span><span>Заметка</span><span>План: с</span><span>План: по</span><span class="fx">Факт: с</span><span class="fx">Факт: по</span><span></span></div>
+        <div id="stageRows"></div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" id="addStage">+ этап</button><span class="hint">▶ — начали сегодня, ✓ — закончили сегодня. Даты факта можно ставить вручную.</span></div>
+      <div class="carinfo" id="carInfo"></div>
+    </fieldset>
+    <fieldset id="shiftBox" hidden>
+      <legend>Сдвинуть план (например, задержка из-за запчастей)</legend>
+      <div class="g3">
+        <label>Этапы плана, начиная с даты<input type="date" name="shiftFrom"></label>
+        <label>На сколько дней (±)<input type="number" name="shiftBy" value="0" min="-30" max="30"></label>
+        <div class="hint" style="align-self:end">Даты «план: с/по» начиная с этой даты уедут вперёд/назад. Этап, который уже идёт, растянется.</div>
+      </div>
+    </fieldset>
+    <div class="err" id="carErr"></div>
+    <div class="acts">
+      <button type="button" class="danger" id="carDel" hidden>Удалить</button>
+      <span class="grow"></span>
+      <button type="button" data-close>Отмена</button>
+      <button class="primary" type="submit">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Диалог: запись в слесарном -->
+<dialog id="jobDlg">
+  <form id="jobForm">
+    <h3 id="jobTitle">Запись</h3>
+    <div class="g4">
+      <label class="span2">Автомобиль<input name="car" required placeholder="Toyota Camry"></label>
+      <label>Гос. номер<input name="plate" placeholder="А123ВС797"></label>
+      <label>Заказ-наряд №<input name="order"></label>
+      <label class="span2">Клиент<input name="client"></label>
+      <label class="span2">Телефон<input name="phone" type="tel"></label>
+      <label class="span4">Работы<textarea name="work" rows="2" placeholder="ТО, диагностика, замена сцепления…"></textarea></label>
+    </div>
+    <fieldset>
+      <legend>План</legend>
+      <div class="g4">
+        <label>Дата<input type="date" name="date" required></label>
+        <label>Пост<select name="post"></select></label>
+        <label>Начало<input type="time" name="start" step="300" required></label>
+        <label>Окончание<input type="time" name="end" step="300" required></label>
+        <label>Норма-часы<input type="number" name="nh" step="0.1" min="0"></label>
+        <label>Сумма, ₽<input type="number" name="amount" step="100" min="0"></label>
+        <label class="span2">Статус<select name="status"></select></label>
+      </div>
+    </fieldset>
+    <fieldset class="fact">
+      <legend>Факт</legend>
+      <div class="g4">
+        <label>Начали<input type="time" name="fStart" step="300"></label>
+        <label>Закончили<input type="time" name="fEnd" step="300"></label>
+        <label>Отработано н/ч<input type="number" name="fNh" step="0.1" min="0"></label>
+        <label>Итого, ₽<input type="number" name="fAmount" step="100" min="0"></label>
+      </div>
+      <div style="margin-top:8px"><button type="button" id="jobFactCopy">Завершить: факт = план</button></div>
+    </fieldset>
+    <div class="err" id="jobErr"></div>
+    <div class="acts">
+      <button type="button" class="danger" id="jobDel" hidden>Удалить</button>
+      <span class="grow"></span>
+      <button type="button" data-close>Отмена</button>
+      <button class="primary" type="submit">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+'use strict';
+/* ================= утилиты ================= */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid = () => Math.random().toString(36).slice(2, 9);
+const pad = n => String(n).padStart(2, '0');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parse = s => { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); };
+const addDays = (s, n) => { const d = parse(s); d.setDate(d.getDate() + n); return iso(d); };
+const todayIso = () => iso(new Date());
+const isWeekend = s => { const w = parse(s).getDay(); return w === 0 || w === 6; };
+const WD = ['ВС','ПН','ВТ','СР','ЧТ','ПТ','СБ'];
+const WDL = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+const MON = ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
+const MONG = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const mToStr = m => m == null || m === '' ? '' : `${pad(Math.floor(m/60))}:${pad(m%60)}`;
+const strToM = s => { if (!s) return null; const [h, m] = s.split(':').map(Number); return h*60 + m; };
+const money = n => Math.round(n || 0).toLocaleString('ru-RU');
+const num1 = n => (Math.round((+n || 0) * 10) / 10).toString().replace('.', ',');
+const clone = o => JSON.parse(JSON.stringify(o));
+
+function toast(msg) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+/* ================= справочники ================= */
+const STAGES = [
+  {k:'accept',   l:'Приёмка',      c:'#bae6fd'},
+  {k:'teardown', l:'Разбор',       c:'#ddd6fe'},
+  {k:'metal',    l:'Жесть',        c:'#d6d3d1'},
+  {k:'prep',     l:'Подготовка',   c:'#fde68a'},
+  {k:'paint',    l:'Окраска',      c:'#f9a8d4'},
+  {k:'assembly', l:'Сборка',       c:'#a7f3d0'},
+  {k:'polish',   l:'Полировка',    c:'#67e8f9'},
+  {k:'issue',    l:'Выдача',       c:'#86efac'},
+  {k:'wait_sk',  l:'Ответ от СК',  c:'#fdba74', w:1},
+  {k:'wait_parts',l:'Ждём з/ч',    c:'#fca5a5', w:1},
+  {k:'wait_pay', l:'Оплата',       c:'#d8b4fe', w:1},
+  {k:'other',    l:'Другое (в заметке)', c:'#e5e7eb'},
+];
+const CAR_COLORS = ['#93c5fd','#f9a8d4','#86efac','#fcd34d','#c4b5fd','#fdba74','#5eead4','#fca5a5','#a5b4fc','#bef264','#67e8f9','#f0abfc'];
+const ST = Object.fromEntries(STAGES.map(s => [s.k, s]));
+const CAR_ST = {
+  accept: {l:'К приёмке', c:'#e6c200'},
+  work:   {l:'В работе',  c:'#22c55e'},
+  wait:   {l:'Ожидание',  c:'#f97316'},
+  done:   {l:'Выдан',     c:'#9ca3af'},
+};
+const JOB_ST = {plan:'Запись', work:'В работе', done:'Выполнено', cancel:'Не приехал / отмена'};
+const PRESETS = {
+  full:  [['accept',1],['teardown',1],['metal',2],['prep',1],['paint',1],['assembly',1],['polish',1],['issue',1]],
+  paint: [['accept',1],['prep',1],['paint',1],['assembly',1],['issue',1]],
+  metal: [['accept',1],['teardown',1],['metal',3],['prep',1],['paint',1],['assembly',1],['issue',1]],
+  empty: [],
+};
+const DAY_START = 9*60, DAY_END = 20*60, SLOT = 30, SLOT_H = 40;
+const NSLOTS = (DAY_END - DAY_START) / SLOT;
+const KEY = 'workshop-planner-v1';
+
+/* ================= хранилище ================= */
+let memStore = null;
+function load() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : memStore; } catch (e) { return memStore; } }
+function save() { memStore = JSON.parse(JSON.stringify(S)); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+/* ================= демо-данные (по скриншотам) ================= */
+function seed() {
+  const t = todayIso();
+  const D = n => addDays(t, n - 19);              // n — число месяца из скриншота (сегодня = 19)
+  /* car(номер, авто, статус, [[этап, план с, план по, заметка, [факт с, факт по]]…])
+     если факт не задан: этап, начатый до сегодня, — начат; закончившийся до сегодня — закончен */
+  const car = (order, model, status, stages, notes = '') => ({
+    id: uid(), order, model, status, notes, color: CAR_COLORS[carSeq++ % CAR_COLORS.length],
+    stages: stages.map(([k, a, b, n, f]) => {
+      let fs = '', fe = '';
+      if (f) { fs = f[0] ? D(f[0]) : ''; fe = f[1] ? D(f[1]) : ''; }
+      else { if (a <= 19) fs = D(a); if (b < 19) fe = D(b); }
+      return {id: uid(), s: k, n: n || '', ps: D(a), pe: D(b), fs, fe};
+    }),
+  });
+  let carSeq = 0;
+  const cars = [
+    car('СЛ00000349','Туксон бампер','done',[['paint',8,9],['issue',10,10]]),
+    car('СЛ00000345','Опель Астра','done',[['assembly',9,10],['issue',11,11]]),
+    car('СЛ00000352','Тиида','done',[['polish',9,10],['issue',11,11]]),
+    car('СЛ00000353','Октавия рекламация','done',[['prep',12,13],['paint',14,14],['assembly',15,16],['issue',17,17]]),
+    car('СЛ00000359','Рав 4','done',[['wait_pay',12,12],['wait_parts',13,13,'з/ч у нас'],['teardown',14,14],['paint',15,15],['assembly',16,17],['issue',18,18]]),
+    car('СЛ00000357','Фокус','done',[['prep',14,15,'',[14,16]],['paint',16,17,'',[17,17]],['issue',18,18]]),
+    car('СЛ00000358','Мерен ГЛА','work',[['prep',14,16],['paint',17,18],['assembly',19,19]]),
+    car('СЛ00000361','Кадиак','work',[['accept',13,13],['prep',14,16],['paint',17,17],['assembly',18,18],['issue',19,19]]),
+    car('СЛ00000356','Мерс V Эвалар','work',[['prep',14,14],['paint',15,15],['assembly',16,18],['polish',19,19],['issue',20,20]]),
+    car('СЛ00000337','Орландо','wait',[['teardown',12,13],['wait_sk',14,19],['metal',20,22]]),
+    car('СЛ00000343','Элантра пороги','work',[['metal',14,18,'кончить жесть'],['prep',19,19],['paint',20,20],['assembly',21,21],['polish',22,22],['issue',23,23]]),
+    car('СЛ00000354','Патрон','work',[['metal',14,16,'ремонт',[14,17]],['prep',17,18,'',[18,0]],['paint',19,19,'',[0,0]],['assembly',20,20],['issue',21,21]]),
+    car('СЛ00000362','Фокус 3 Дмитрий','work',[['accept',13,14,'в работу'],['metal',15,16],['prep',17,19],['paint',20,20],['issue',22,22]]),
+    car('СЛ00000363','Ауди А4 пороги капот 10 дней','work',[['accept',14,14],['teardown',15,15],['metal',16,20],['prep',21,21],['paint',22,22],['assembly',23,24],['issue',25,25]]),
+    car('СЛ00000364','Ренж Ровер','work',[['teardown',15,15],['prep',16,17],['paint',18,18],['assembly',19,20],['issue',21,21]]),
+    car('СЛ00000366','Соренто','work',[['accept',16,16],['wait_parts',17,18,'фара ?'],['teardown',19,19],['metal',20,21]]),
+    car('СЛ00000367','Рав 4','work',[['teardown',17,17],['metal',18,20],['prep',21,21],['paint',22,22]]),
+    car('СЛ00000370','Хендай Крета','wait',[]),
+    car('СЛ00000368','Киа Спортейдж','wait',[]),
+    car('—','Октавия А7 замена порога Жан','accept',[['accept',20,20],['metal',21,23]]),
+    car('СЛ00000200','Ауди Q3 порог прав','accept',[['accept',21,21],['metal',22,24]]),
+  ];
+
+  /* слесарный цех: записи вокруг сегодняшнего дня */
+  const J = (off, post, s, e, carName, plate, work, nh, amount, status, extra = {}) => {
+    const j = {id: uid(), date: addDays(t, off), post, start: strToM(s), end: strToM(e), car: carName, plate, order: '', client: '', phone: '', work, nh, amount, status,
+      fStart: null, fEnd: null, fNh: null, fAmount: null};
+    if (status === 'done') { j.fStart = j.start; j.fEnd = j.end; j.fNh = nh; j.fAmount = amount; }
+    return Object.assign(j, extra);
+  };
+  const jobs = [
+    // вчера
+    J(-1,1,'09:00','11:00','Renault Duster','М450КР797','ТО-30, замена масла и фильтров',2,11800,'done'),
+    J(-1,1,'11:30','15:00','Kia Ceed','Т118НА777','Замена цепи ГРМ',3.5,32000,'done',{fEnd:strToM('15:40'),fNh:3.8}),
+    J(-1,2,'10:00','13:00','VW Tiguan','О772ЕЕ199','Диагностика подвески, замена рычагов',3,24500,'done'),
+    J(-1,3,'09:30','12:00','Skoda Rapid','К051ММ750','Замена колодок, дисков передних',2.5,13900,'done'),
+    J(-1,4,'12:00','14:00','Nissan X-Trail','Е909ХХ177','Замена ремня генератора',2,7600,'cancel'),
+    // сегодня
+    J(0,1,'09:00','11:00','Toyota Camry','А123ВС797','ТО-60: масло, фильтры, свечи',2,14800,'done',{fStart:strToM('09:05'),fEnd:strToM('10:50'),fNh:1.8}),
+    J(0,1,'11:30','14:30','Kia Rio','В204ОР77','Ремонт передней подвески',3,21500,'work',{fStart:strToM('11:40')}),
+    J(0,1,'15:00','17:00','VW Passat B7','Х317ТУ99','Диагностика двигателя',2,6000,'plan'),
+    J(0,2,'09:30','13:00','Ford Focus 3','У640КК197','Замена сцепления',3.5,28000,'done',{fEnd:strToM('13:20'),fNh:3.8}),
+    J(0,2,'14:00','18:00','Audi A6 C7','Р555АА750','Замена ремня ГРМ + помпа',4,42000,'plan'),
+    J(0,3,'10:00','12:00','Hyundai Solaris','Н321СС77','Замена колодок и дисков',2,9800,'work',{fStart:strToM('10:10')}),
+    J(0,3,'12:30','14:00','Skoda Octavia A7','С777ТТ199','Развал-схождение',1.5,3500,'plan'),
+    J(0,3,'14:30','17:30','Mitsubishi Outlander','М008МВ197','Замена сальников КПП',3,18500,'plan'),
+    J(0,4,'09:00','10:30','Renault Logan','А890ХО77','Диагностика ходовой',1.5,2500,'done'),
+    J(0,4,'11:00','16:00','BMW X5 E70','К777КК777','Замена цепи ГРМ',5,55000,'work',{fStart:strToM('11:05')}),
+    J(0,5,'10:00','12:00','Chevrolet Lacetti','Е145РР750','ТО, замена масла',2,8900,'done',{fEnd:strToM('12:10'),fNh:2}),
+    J(0,5,'12:00','14:30','VW Caravelle','В412МО77','Мотор печки, замена',2.5,12000,'work',{fStart:strToM('12:10'),phone:''}),
+    J(0,5,'15:00','17:00','Nissan Qashqai','Т063АА799','Замена ремня генератора',2,7600,'plan'),
+    // завтра и послезавтра
+    J(1,1,'09:00','12:00','Suzuki Grand Vitara','Х128КН77','ТО, ГРМ',3,19800,'plan'),
+    J(1,2,'10:00','13:30','Toyota RAV4','О300ОО197','Замена рулевой рейки',3.5,38000,'plan'),
+    J(1,4,'09:30','11:30','Lada Vesta','С210АМ750','ТО-15',2,6900,'plan'),
+    J(1,5,'12:00','17:00','Mercedes E-class','К909КК99','Ремонт пневмоподвески',5,47000,'plan'),
+    J(2,1,'09:00','13:00','Skoda Kodiaq','Н700АН77','Замена сцепления DSG',4,52000,'plan'),
+    J(2,3,'11:00','14:00','Hyundai Tucson','А505ВВ197','Диагностика, замена датчиков',3,15400,'plan'),
+  ];
+  const mechanics = {};
+  [-1,0,1,2].forEach(o => { mechanics[addDays(t, o)] = {1:'Иванов',2:'Петров',3:'Сидоров',4:'Козлов',5:'Морозов'}; });
+  const dayPlan = {};
+  [-1,0,1,2].forEach(o => dayPlan[addDays(t, o)] = 180000);
+  return {v:1, body:{cars}, mech:{posts:5, roster:['Иванов','Петров','Сидоров','Козлов','Морозов'], mechanics, dayPlan, jobs}};
+}
+
+/* ===== миграция старого формата кузова (по-дневные plan/fact) в этапы с датами ===== */
+function migrateBody(cars) {
+  const runsOf = m => {
+    const out = [];
+    Object.keys(m || {}).sort().forEach(d => {
+      const v = m[d], l = out[out.length - 1];
+      if (l && l.s === v.s && l.n === (v.n || '') && addDays(l.pe, 1) === d) l.pe = d;
+      else out.push({s: v.s, n: v.n || '', ps: d, pe: d});
+    });
+    return out;
+  };
+  const t = todayIso();
+  cars.forEach((c, i) => {
+    if (!c.color) c.color = CAR_COLORS[i % CAR_COLORS.length];
+    if (c.stages) return;
+    const fact = c.fact || {};
+    c.stages = runsOf(c.plan).map(r => {
+      const fd = Object.keys(fact).filter(d => d >= r.ps && d <= r.pe && fact[d].s === r.s).sort();
+      const last = fd[fd.length - 1];
+      return {id: uid(), s: r.s, n: r.n, ps: r.ps, pe: r.pe, fs: fd[0] || '', fe: last && last < t ? last : ''};
+    });
+    delete c.plan; delete c.fact;
+  });
+}
+
+let S = load() || seed();
+migrateBody(S.body.cars);
+save();
+
+/* ================= состояние интерфейса ================= */
+const V = {
+  tab: 'body',
+  bStart: addDays(todayIso(), -7), bDays: 14, q: '', filter: 'all', view: 'both', brush: null, paint: null,
+  mDate: todayIso(), mDays: 1,
+  sel: null, rz: null, dragJob: null,
+};
+
+/* ================= вкладки ================= */
+function setTab(t) {
+  V.tab = t;
+  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  $('#panel-body').hidden = t !== 'body';
+  $('#panel-mech').hidden = t !== 'mech';
+  render();
+}
+$('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); });
+
+/* ================= КУЗОВНОЙ ЦЕХ ================= */
+const CW = 100;   // ширина дня в px — совпадает с .dc в CSS
+const diffD = (a, b) => Math.round((parse(b) - parse(a)) / 864e5);
+const fmtDM = s => { const d = parse(s); return pad(d.getDate()) + '.' + pad(d.getMonth() + 1); };
+const stName = s => s.s === 'other' ? (s.n || 'Другое') : (ST[s.s] ? ST[s.s].l : '?');
+const stLabel = s => s.s === 'other' ? (s.n || 'Другое') : stName(s) + (s.n ? ' · ' + s.n : '');
+const getCar = id => S.body.cars.find(c => c.id === id);
+const validStages = c => c.stages.filter(s => s.ps && s.pe);
+
+function planSpan(c) {
+  let a = null, b = null;
+  validStages(c).forEach(s => { if (!a || s.ps < a) a = s.ps; if (!b || s.pe > b) b = s.pe; });
+  return a ? {a, b} : null;
+}
+const factEnd = (s, t) => s.fe || (s.fs ? (t > s.fs ? t : s.fs) : null);
+function factSpan(c, t) {
+  let a = null, b = null;
+  c.stages.forEach(s => { if (!s.fs) return; const e = factEnd(s, t); if (!a || s.fs < a) a = s.fs; if (!b || e > b) b = e; });
+  return a ? {a, b} : null;
+}
+/* что показываем в клетке (машина × день × слой): 's<i>' этап, 'm<i>' нет факта, 'g' между этапами, '' пусто */
+function cellKey(c, layer, d, span, t) {
+  const st = c.stages;
+  if (layer === 'plan') {
+    for (let i = 0; i < st.length; i++) if (st[i].ps && st[i].pe && st[i].ps <= d && d <= st[i].pe) return 's' + i;
+  } else {
+    for (let i = 0; i < st.length; i++) if (st[i].fs && st[i].fs <= d && d <= factEnd(st[i], t)) return 's' + i;
+    for (let i = 0; i < st.length; i++) if (!st[i].fs && st[i].ps && st[i].pe < t && st[i].ps <= d && d <= st[i].pe) return 'm' + i;
+  }
+  return span && d >= span.a && d <= span.b ? 'g' : '';
+}
+/* просрочка по последнему этапу: >0 опоздали, <0 раньше */
+function carDelay(c, t) {
+  const st = validStages(c).sort((x, y) => x.pe < y.pe ? -1 : 1), l = st[st.length - 1];
+  if (!l) return 0;
+  if (l.fe) return diffD(l.pe, l.fe);
+  return t > l.pe && (l.fs || c.status !== 'wait') ? diffD(l.pe, t) : 0;
+}
+function nowText(c, t) {
+  const sp = planSpan(c); if (!sp) return 'работы не заведены';
+  const cur = validStages(c).find(s => s.ps <= t && t <= s.pe);
+  if (cur) return 'сегодня: ' + stName(cur);
+  if (t < sp.a) return 'заезд через ' + diffD(t, sp.a) + ' дн.';
+  if (t > sp.b) return 'по плану уже выехал';
+  return 'сегодня: между этапами';
+}
+
+function layerCells(c, layer, days, t) {
+  const span = layer === 'plan' ? planSpan(c) : factSpan(c, t);
+  const keys = days.map(d => cellKey(c, layer, d, span, t));
+  let h = '';
+  for (let i = 0; i < days.length; i++) {
+    const d = days[i], k = keys[i], cls = ['dc'];
+    if (d === t) cls.push('today'); if (isWeekend(d)) cls.push('weekend');
+    let inner = '', title = '';
+    if (k) {
+      cls.push(k === 'g' ? 'gap' : k[0] === 'm' ? 'miss' : 'on');
+      const start = k !== (i > 0 ? keys[i - 1] : '');
+      if (span) { if (d === span.a) cls.push('cap-l'); if (d === span.b) cls.push('cap-r'); }
+      if (k[0] === 's') {
+        const s = c.stages[+k.slice(1)];
+        if (ST[s.s] && ST[s.s].w) cls.push('hatch');
+        if (start && i > 0 && !(span && d === span.a)) cls.push('sepl');
+        title = stLabel(s) + '\nплан: ' + fmtDM(s.ps) + ' – ' + fmtDM(s.pe) + (s.fs ? '\nфакт: ' + fmtDM(s.fs) + ' – ' + (s.fe ? fmtDM(s.fe) : 'идёт') : '');
+      }
+      if (start && k !== 'g') {
+        let n = 1; while (i + n < days.length && keys[i + n] === k) n++;
+        const s = c.stages[+k.slice(1)], w = n * CW - 12;
+        if (k[0] === 'm') inner = `<div class="lbl" style="width:${w}px"><span class="t">нет факта: ${esc(stName(s))}</span></div>`;
+        else if (layer === 'plan') inner = `<div class="lbl" style="width:${w}px"><span class="t">${esc(stLabel(s))}</span></div>`;
+        else {
+          let bd = '';
+          const dl = s.fe ? diffD(s.pe, s.fe) : (t > s.pe ? diffD(s.pe, t) : 0);
+          if (dl > 0) bd = `<span class="bd late">+${dl} д</span>`; else if (dl < 0) bd = `<span class="bd early">−${-dl} д</span>`;
+          inner = `<div class="lbl" style="width:${w}px"><span class="t">${s.fe ? '✓ ' : '▶ '}${esc(stLabel(s))}</span>${bd}</div>`;
+        }
+      }
+    }
+    h += `<td class="${cls.join(' ')}" data-date="${d}"${title ? ` title="${esc(title)}"` : ''}>${inner}</td>`;
+  }
+  return h;
+}
+
+function renderBody() {
+  const days = Array.from({length: V.bDays}, (_, i) => addDays(V.bStart, i)), t = todayIso();
+  const q = V.q.trim().toLowerCase(), onlyPlan = V.view === 'plan';
+  const w0 = days[0], w1 = days[days.length - 1];
+  const inWin = c => {   // машина видна, если её заезд–выезд (план или факт) пересекается с показанным периодом; без дат — всегда
+    const sp = planSpan(c), fp = factSpan(c, t), hit = x => x && x.a <= w1 && x.b >= w0;
+    return (!sp && !fp) || hit(sp) || hit(fp);
+  };
+  const cars = S.body.cars.filter(c =>
+    (V.filter === 'all' || (V.filter === 'active' ? c.status !== 'done' : c.status === V.filter)) &&
+    (q ? (c.order + ' ' + c.model + ' ' + (c.notes || '')).toLowerCase().includes(q) : inWin(c)));
+
+  let h = `<table class="bt ${onlyPlan ? 'only-plan' : ''}"><thead><tr><th class="hcar">Список автомобилей в цеху<span class="cnt">${cars.length} из ${S.body.cars.length}${cars.length < S.body.cars.length && !q ? ' (остальные вне периода/фильтра)' : ''}</span></th><th class="hlay"></th>`;
+  days.forEach(d => {
+    const dt = parse(d), cls = [d === t ? 'today' : '', isWeekend(d) ? 'weekend' : ''].join(' ');
+    h += `<th class="${cls}" data-date="${d}"><div class="wd">${WD[dt.getDay()]}</div><div class="dn">${dt.getDate()}</div><div class="mo">${MON[dt.getMonth()]}</div>${d <= t ? `<button class="fillday" data-fill="${d}" title="Факт по плану на этот день">✓</button>` : ''}</th>`;
+  });
+  h += '</tr></thead><tbody>';
+  cars.forEach(c => {
+    const stc = CAR_ST[c.status], sp = planSpan(c), dl = carDelay(c, t);
+    const dlTxt = dl > 0 ? ` <span class="late">+${dl} д</span>` : dl < 0 ? ` <span class="early">−${-dl} д</span>` : '';
+    const rs = onlyPlan ? 1 : 2;
+    const left = `<td class="carc" rowspan="${rs}" title="Открыть карточку">
+      <div class="l1"><span class="order"><i></i>${esc(c.order)}</span>
+        <select class="stsel" data-stsel style="--st:${stc.c}">${Object.entries(CAR_ST).map(([k, v]) => `<option value="${k}" ${k === c.status ? 'selected' : ''}>${v.l}</option>`).join('')}</select></div>
+      <div class="model" title="${esc(c.model)}">${esc(c.model)}</div>
+      <div class="dates">${sp ? `<b>${fmtDM(sp.a)} → ${fmtDM(sp.b)}</b> · ${diffD(sp.a, sp.b) + 1} дн.${dlTxt}` : '<i>нет дат</i>'}</div>
+      <div class="dates now">${esc(nowText(c, t))}${c.notes ? ' · ' + esc(c.notes) : ''}</div></td>`;
+    const cls = c.status === 'done' ? 'done' : '';
+    h += `<tr class="cr plan ${cls}" data-id="${c.id}" style="--car:${c.color}">${left}<td class="lay">П</td>${layerCells(c, 'plan', days, t)}</tr>`;
+    if (!onlyPlan) h += `<tr class="cr fact ${cls}" data-id="${c.id}" style="--car:${c.color}"><td class="lay">Ф</td>${layerCells(c, 'fact', days, t)}</tr>`;
+  });
+  if (!cars.length) h += `<tr><td class="emptyrow" colspan="${days.length + 2}">Ничего не найдено</td></tr>`;
+  for (let i = 0; i < 3; i++) {
+    h += `<tr class="cr newrow"><td class="carc" data-newrow>＋ Новая машина — кликните по дню заезда</td><td class="lay">+</td>` +
+      days.map(d => `<td class="dc ${d === t ? 'today' : ''} ${isWeekend(d) ? 'weekend' : ''}" data-date="${d}"></td>`).join('') + '</tr>';
+  }
+  h += '</tbody><tfoot><tr><td class="sum" colspan="2">Итого за день <span class="hint">(план / факт)</span></td>';
+  const pre = S.body.cars.map(c => ({c, pp: planSpan(c), fsn: factSpan(c, t)}));
+  const cnt = (d, layer, pred) => pre.reduce((n, x) => {
+    const k = cellKey(x.c, layer, d, layer === 'plan' ? x.pp : x.fsn, t);
+    if (!k || k[0] === 'm') return n;
+    return n + (pred(k[0] === 's' ? x.c.stages[+k.slice(1)].s : null) ? 1 : 0);
+  }, 0);
+  days.forEach(d => {
+    const two = pred => { const p = cnt(d, 'plan', pred), f = cnt(d, 'fact', pred); return d <= t ? `${p}/${f}` : `${p}`; };
+    h += `<td class="${d === t ? 'today' : ''}"><b>${two(() => true)}</b> в цеху<br>окр ${two(s => s === 'paint')} · выд ${two(s => s === 'issue')}</td>`;
+  });
+  h += '</tr></tfoot></table>';
+
+  const box = $('#bTable'), sx = box.scrollLeft, sy = box.scrollTop;
+  box.innerHTML = h; box.scrollLeft = sx; box.scrollTop = sy;
+  $('#bStart').value = V.bStart; $('#bDays').value = V.bDays;
+}
+
+/* клики по таблице */
+const bTable = $('#bTable');
+bTable.addEventListener('click', e => {
+  const fill = e.target.closest('[data-fill]');
+  if (fill) {
+    const d = fill.dataset.fill; let n = 0;
+    S.body.cars.forEach(c => c.stages.forEach(s => {
+      if (!s.ps || !s.pe) return; let ch = false;
+      if (s.ps <= d && !s.fs) { s.fs = s.ps; ch = true; }
+      if (s.pe <= d && !s.fe) { if (!s.fs) s.fs = s.ps; s.fe = s.pe; ch = true; }
+      if (ch) n++;
+    }));
+    save(); render(); toast(n ? `Факт проставлен по плану: этапов — ${n}` : 'Нечего проставлять — факт уже заполнен'); return;
+  }
+  if (e.target.closest('[data-stsel]')) return;
+  const tr = e.target.closest('tr.cr'); if (!tr) return;
+  const td = e.target.closest('td.dc');
+  if (tr.classList.contains('newrow')) { openCarDlg(null, {date: td ? td.dataset.date : todayIso()}); return; }
+  openCarDlg(tr.dataset.id, {date: td ? td.dataset.date : null});
+});
+bTable.addEventListener('change', e => {
+  const sel = e.target.closest('[data-stsel]'); if (!sel) return;
+  getCar(sel.closest('tr').dataset.id).status = sel.value; save(); render();
+});
+
+/* панель инструментов */
+$('#panel-body').addEventListener('click', e => {
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  const act = a.dataset.act;
+  if (act === 'b-prev') V.bStart = addDays(V.bStart, -7);
+  else if (act === 'b-next') V.bStart = addDays(V.bStart, 7);
+  else if (act === 'b-today') V.bStart = addDays(todayIso(), -7);
+  else if (act === 'b-add') { openCarDlg(null, {date: todayIso()}); return; }
+  renderBody();
+});
+$('#bStart').addEventListener('change', e => { if (e.target.value) { V.bStart = e.target.value; renderBody(); } });
+$('#bDays').addEventListener('change', e => { V.bDays = +e.target.value; renderBody(); });
+$('#bSearch').addEventListener('input', e => { V.q = e.target.value; renderBody(); });
+$('#bFilter').addEventListener('change', e => { V.filter = e.target.value; renderBody(); });
+$('#bView').addEventListener('click', e => {
+  const b = e.target.closest('button[data-v]'); if (!b) return; V.view = b.dataset.v;
+  $$('#bView button').forEach(x => x.classList.toggle('on', x === b)); renderBody();
+});
+
+/* ---- диалог машины ---- */
+const carDlg = $('#carDlg'), carForm = $('#carForm');
+let carEditId = null;
+$$('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+carForm.status.innerHTML = Object.entries(CAR_ST).map(([k, v]) => `<option value="${k}">${v.l}</option>`).join('');
+$('#carColors').innerHTML = CAR_COLORS.map(c => `<button type="button" data-c="${c}" style="--c:${c}" title="${c}"></button>`).join('');
+function setColor(c) { carForm.color.value = c; $$('#carColors button').forEach(b => b.classList.toggle('on', b.dataset.c === c)); }
+$('#carColors').addEventListener('click', e => { const b = e.target.closest('[data-c]'); if (b) setColor(b.dataset.c); });
+
+function rowHtml(s) {
+  return `<div class="srow2" data-r="${s.id || uid()}">
+    <select data-f="s">${STAGES.map(x => `<option value="${x.k}" ${x.k === s.s ? 'selected' : ''}>${x.l}</option>`).join('')}</select>
+    <input data-f="n" placeholder="заметка" value="${esc(s.n || '')}">
+    <input type="date" data-f="ps" value="${s.ps || ''}"><input type="date" data-f="pe" value="${s.pe || ''}">
+    <input type="date" data-f="fs" class="fx" value="${s.fs || ''}"><input type="date" data-f="fe" class="fx" value="${s.fe || ''}">
+    <span class="qa"><button type="button" data-qa="start" title="Начали сегодня">▶</button><button type="button" data-qa="end" title="Закончили сегодня">✓</button><button type="button" data-rm title="Убрать этап">×</button></span></div>`;
+}
+function readRows() {
+  return $$('#stageRows .srow2').map(r => {
+    const g = f => $(`[data-f="${f}"]`, r).value;
+    return {id: r.dataset.r, s: g('s'), n: g('n').trim(), ps: g('ps'), pe: g('pe'), fs: g('fs'), fe: g('fe')};
+  });
+}
+function setRows(list) { $('#stageRows').innerHTML = list.map(rowHtml).join(''); updCarInfo(); }
+function updCarInfo() {
+  const rows = readRows().filter(r => r.ps && r.pe), el = $('#carInfo');
+  if (!rows.length) { el.textContent = 'Добавьте этапы — заезд и выезд посчитаются автоматически'; return; }
+  const a = rows.reduce((m, r) => r.ps < m ? r.ps : m, rows[0].ps), b = rows.reduce((m, r) => r.pe > m ? r.pe : m, rows[0].pe);
+  el.textContent = `Заезд ${fmtDM(a)} → выезд ${fmtDM(b)} · ${diffD(a, b) + 1} дн. в цеху`;
+}
+function applyPreset(name) {
+  let d = carForm.arrive.value || todayIso();
+  setRows(PRESETS[name].map(([k, n]) => { const ps = d, pe = addDays(d, n - 1); d = addDays(pe, 1); return {id: uid(), s: k, n: '', ps, pe, fs: '', fe: ''}; }));
+}
+$('#presetBox').addEventListener('click', e => { const b = e.target.closest('[data-preset]'); if (b) applyPreset(b.dataset.preset); });
+carForm.arrive.addEventListener('change', () => { if ($$('#stageRows .srow2').length === 0) applyPreset('full'); });
+$('#stageRows').addEventListener('input', e => {
+  const f = e.target.dataset.f, row = e.target.closest('.srow2');
+  if (f === 'ps') { const pe = $('[data-f="pe"]', row); if (!pe.value || pe.value < e.target.value) pe.value = e.target.value; }
+  if (f === 'fs') { const fe = $('[data-f="fe"]', row); if (fe.value && fe.value < e.target.value) fe.value = e.target.value; }
+  updCarInfo();
+});
+$('#stageRows').addEventListener('click', e => {
+  const row = e.target.closest('.srow2'); if (!row) return;
+  if (e.target.closest('[data-rm]')) { row.remove(); updCarInfo(); return; }
+  const qa = e.target.closest('[data-qa]'); if (!qa) return;
+  const g = f => $(`[data-f="${f}"]`, row), t = todayIso();
+  if (qa.dataset.qa === 'start') { if (!g('fs').value) g('fs').value = t; }
+  else { if (!g('fs').value) g('fs').value = g('ps').value || t; g('fe').value = t < g('fs').value ? g('fs').value : t; }
+});
+$('#addStage').addEventListener('click', () => {
+  const rows = readRows(), last = rows[rows.length - 1];
+  const idx = last ? STAGES.findIndex(s => s.k === last.s) : -1;
+  const ps = last && last.pe ? addDays(last.pe, 1) : (carForm.arrive.value || todayIso());
+  $('#stageRows').insertAdjacentHTML('beforeend', rowHtml({id: uid(), s: STAGES[Math.min(idx + 1, 7)].k, ps, pe: ps, fs: '', fe: ''}));
+  updCarInfo();
+});
+
+function openCarDlg(id, opts = {}) {
+  carEditId = id; const c = id ? getCar(id) : null; carForm.reset(); $('#carErr').textContent = '';
+  $('#carTitle').textContent = c ? 'Карточка автомобиля' : 'Новая машина в кузовном цехе';
+  $('#carDel').hidden = !c; $('#presetBox').hidden = !!c; $('#shiftBox').hidden = !c;
+  if (c) {
+    carForm.order.value = c.order; carForm.model.value = c.model; carForm.notes.value = c.notes || ''; carForm.status.value = c.status;
+    setColor(c.color); carForm.shiftFrom.value = todayIso(); carForm.shiftBy.value = 0;
+    setRows(c.stages.slice().sort((a, b) => (a.ps || '') < (b.ps || '') ? -1 : 1));
+    if (opts.date) { const hit = readRows().findIndex(r => r.ps && r.ps <= opts.date && opts.date <= r.pe); if (hit >= 0) { const el = $$('#stageRows .srow2')[hit]; el.classList.add('hl'); } }
+  } else {
+    const nums = S.body.cars.map(x => parseInt((x.order.match(/\d+/) || [0])[0], 10)).filter(Boolean);
+    carForm.order.value = 'СЛ' + String((nums.length ? Math.max(...nums) : 0) + 1).padStart(8, '0');
+    carForm.status.value = 'accept';
+    const use = {}; CAR_COLORS.forEach(x => use[x] = 0); S.body.cars.forEach(x => { if (x.status !== 'done' && use[x.color] != null) use[x.color]++; });
+    setColor(CAR_COLORS.slice().sort((a, b) => use[a] - use[b])[0]);
+    carForm.arrive.value = opts.date || todayIso(); applyPreset('full');
+  }
+  carDlg.showModal(); carForm.model.focus();
+}
+carForm.addEventListener('submit', e => {
+  e.preventDefault(); const f = carForm, err = m => { $('#carErr').textContent = m; };
+  let rows = readRows().filter(r => r.ps || r.pe || r.fs || r.fe);
+  const by = +f.shiftBy.value || 0, from = f.shiftFrom.value;
+  if (carEditId && by && from) rows.forEach(r => { if (r.ps && r.ps >= from) r.ps = addDays(r.ps, by); if (r.pe && r.pe >= from) r.pe = addDays(r.pe, by); });
+  for (const r of rows) {
+    const nm = ST[r.s] ? ST[r.s].l : 'этап';
+    if (!r.ps || !r.pe) return err(`Этап «${nm}»: укажите плановые даты «с» и «по».`);
+    if (r.pe < r.ps) return err(`Этап «${nm}»: плановое «по» раньше «с».`);
+    if (r.fe && !r.fs) return err(`Этап «${nm}»: указано окончание факта, но нет начала.`);
+    if (r.fe && r.fe < r.fs) return err(`Этап «${nm}»: фактическое «по» раньше «с».`);
+  }
+  rows.sort((a, b) => a.ps < b.ps ? -1 : a.ps > b.ps ? 1 : 0);
+  const stages = rows.map(r => ({id: r.id, s: r.s, n: r.n, ps: r.ps, pe: r.pe, fs: r.fs, fe: r.fe}));
+  let status = f.status.value;
+  const c = carEditId ? getCar(carEditId) : {id: uid(), plan: undefined};
+  if (stages.some(s => s.s === 'issue' && s.fe) && status !== 'done' && (!carEditId || c.status !== 'done')) { status = 'done'; toast('Выдача отмечена — статус «Выдан»'); }
+  Object.assign(c, {order: f.order.value.trim(), model: f.model.value.trim(), notes: f.notes.value.trim(), status, color: f.color.value || CAR_COLORS[0], stages});
+  delete c.plan;
+  if (!carEditId) {
+    S.body.cars.push(c);
+    const a = stages.length ? stages[0].ps : null;
+    if (a && (a < V.bStart || a >= addDays(V.bStart, V.bDays))) V.bStart = addDays(a, -2);
+    toast('Машина добавлена в график');
+  } else if (by) toast(`План сдвинут на ${by > 0 ? '+' : ''}${by} дн.`);
+  save(); carDlg.close(); render();
+});
+$('#carDel').addEventListener('click', () => {
+  const c = getCar(carEditId); if (!c || !confirm(`Удалить «${c.model}» вместе с планом и фактом?`)) return;
+  S.body.cars = S.body.cars.filter(x => x.id !== carEditId); save(); carDlg.close(); render();
+});
+
+/* ================= СЛЕСАРНЫЙ ЦЕХ ================= */
+const jobsOn = (d, p) => S.mech.jobs.filter(j => j.date === d && (p == null || j.post === p));
+function dayStats(d) {
+  const js = jobsOn(d).filter(j => j.status !== 'cancel');
+  const booked = js.reduce((s, j) => s + (+j.amount || 0), 0);
+  const fact = js.filter(j => j.status === 'done').reduce((s, j) => s + (j.fAmount != null && j.fAmount !== '' ? +j.fAmount : (+j.amount || 0)), 0);
+  const mins = js.reduce((s, j) => s + (j.end - j.start), 0);
+  const cap = S.mech.posts * (DAY_END - DAY_START);
+  return {booked, fact, load: mins / cap, plan: S.mech.dayPlan[d] || 0};
+}
+function postNh(d, p) {
+  const js = jobsOn(d, p).filter(j => j.status !== 'cancel');
+  return {plan: js.reduce((s, j) => s + (+j.nh || 0), 0),
+          fact: js.filter(j => j.status === 'done').reduce((s, j) => s + (j.fNh != null && j.fNh !== '' ? +j.fNh : (+j.nh || 0)), 0)};
+}
+function conflicts(job) {
+  if (job.status === 'cancel') return null;
+  return S.mech.jobs.find(o => o.id !== job.id && o.status !== 'cancel' && o.date === job.date && o.post === job.post && o.start < job.end && o.end > job.start) || null;
+}
+
+function jobHtml(j) {
+  const top = (j.start - DAY_START) / SLOT * SLOT_H, hgt = Math.max(18, (j.end - j.start) / SLOT * SLOT_H - 2);
+  const nhTxt = j.nh ? ` · ${num1(j.nh)} н/ч` : '', amTxt = j.amount ? ` · ${money(j.amount)} ₽` : '';
+  let fact = '';
+  if (j.status === 'done') fact = `<div class="jf">✓ факт ${mToStr(j.fStart ?? j.start)}–${mToStr(j.fEnd ?? j.end)}${j.fNh != null && j.fNh !== '' ? ' · ' + num1(j.fNh) + ' н/ч' : ''}</div>`;
+  else if (j.status === 'work') fact = `<div class="jf" style="color:var(--j-work-bd)">▶ в работе${j.fStart != null ? ' с ' + mToStr(j.fStart) : ''}</div>`;
+  return `<div class="job st-${j.status}" draggable="true" data-id="${j.id}" style="top:${top}px;height:${hgt}px" title="${esc(j.car + ' ' + j.plate + '\n' + j.work)}">
+    <div class="jt"><b>${esc(j.car)}</b><span class="pl">${esc(j.plate)}</span></div>
+    ${j.work ? `<div class="jw">${esc(j.work)}</div>` : ''}
+    <div class="jm">${mToStr(j.start)}–${mToStr(j.end)}${nhTxt}${amTxt}</div>${fact}
+    <div class="jb">${j.status === 'plan' ? '<button data-q="work" title="Начали работу">▶</button>' : ''}${j.status !== 'done' && j.status !== 'cancel' ? '<button data-q="done" title="Выполнено (факт = план)">✓</button>' : ''}</div>
+    <div class="rz" data-rz></div></div>`;
+}
+
+function renderMech() {
+  const dates = Array.from({length: V.mDays}, (_, i) => addDays(V.mDate, i)), P = S.mech.posts, t = todayIso();
+  const colH = NSLOTS * SLOT_H, N = dates.length * P;
+  let h = `<div class="mgrid" style="grid-template-columns:62px repeat(${N},minmax(${V.mDays > 1 ? 150 : 175}px,1fr))">`;
+  h += '<div class="corner c1"></div>';
+  dates.forEach(d => {
+    const dt = parse(d), st = dayStats(d), pct = st.plan ? Math.min(100, st.fact / st.plan * 100) : 0, bpct = st.plan ? Math.min(100, st.booked / st.plan * 100) : 0;
+    h += `<div class="dayh ${d === t ? 'today' : ''} dstart" style="grid-column:span ${P}">
+      <div class="t1"><b>${WDL[dt.getDay()]}, ${dt.getDate()} ${MONG[dt.getMonth()]}</b>${d === t ? '<span class="badge">сегодня</span>' : ''}</div>
+      <div class="t2"><span>План <input data-dayplan="${d}" value="${st.plan ? money(st.plan) : ''}" placeholder="0"> ₽</span>
+        <span>Записано <b>${money(st.booked)}</b></span><span>Факт <b style="color:var(--ok)">${money(st.fact)}</b></span><span>Загрузка <b>${Math.round(st.load * 100)}%</b></span></div>
+      <div class="bar"><i class="b" style="width:${bpct}%"></i><i class="f" style="width:${pct}%"></i></div></div>`;
+  });
+  h += '<div class="corner c2">Пост</div>';
+  dates.forEach((d, di) => { for (let p = 1; p <= P; p++) h += `<div class="posth ${p === 1 ? 'dstart' : ''}">Пост ${p}</div>`; });
+  h += '<div class="corner c3">Механик</div>';
+  dates.forEach(d => { for (let p = 1; p <= P; p++) h += `<div class="mech ${p === 1 ? 'dstart' : ''}"><input list="mechList" data-mech="${d}|${p}" value="${esc((S.mech.mechanics[d] || {})[p] || '')}" placeholder="— механик —"></div>`; });
+  h += '<div class="corner c4">н/ч</div>';
+  dates.forEach(d => { for (let p = 1; p <= P; p++) { const n = postNh(d, p); h += `<div class="nhc ${p === 1 ? 'dstart' : ''}" title="норма-часы: план / факт">${num1(n.plan)} / <b>${num1(n.fact)}</b></div>`; } });
+  h += `<div class="timecol" style="height:${colH}px">`;
+  for (let i = 0; i < NSLOTS; i++) { const m = DAY_START + i * SLOT; h += `<div class="${i % 2 ? '' : 'hr'}">${i % 2 ? '' : mToStr(m)}</div>`; }
+  h += '</div>';
+  const now = new Date(), nowM = now.getHours() * 60 + now.getMinutes();
+  dates.forEach(d => {
+    for (let p = 1; p <= P; p++) {
+      h += `<div class="col ${d === t ? 'today' : ''} ${p === 1 ? 'dstart' : ''}" data-date="${d}" data-post="${p}" style="height:${colH}px">${jobsOn(d, p).map(jobHtml).join('')}`;
+      if (d === t && nowM >= DAY_START && nowM <= DAY_END) h += `<div class="nowline" style="top:${(nowM - DAY_START) / SLOT * SLOT_H}px"></div>`;
+      h += '</div>';
+    }
+  });
+  h += '</div>';
+  const sc = $('#mScroll'), sx = sc.scrollLeft, sy = sc.scrollTop;
+  $('#mGrid').innerHTML = h; sc.scrollLeft = sx; sc.scrollTop = sy;
+  $('#mDate').value = V.mDate;
+  $('#mechList').innerHTML = S.mech.roster.map(n => `<option value="${esc(n)}">`).join('');
+  $('#nMech').textContent = jobsOn(t).filter(j => j.status !== 'cancel').length + ' записей сегодня';
+}
+
+/* создание записи протяжкой */
+const mGrid = $('#mGrid');
+function selRange() {
+  const s = V.sel, a = Math.min(s.s0, s.s1), b = Math.max(s.s0, s.s1);
+  let start = DAY_START + a * SLOT, end = DAY_START + (b + 1) * SLOT;
+  if (s.s0 === s.s1) end = Math.min(DAY_END, start + 60);
+  const anchor = DAY_START + s.s0 * SLOT;
+  jobsOn(s.col.dataset.date, +s.col.dataset.post).filter(j => j.status !== 'cancel').forEach(j => {
+    if (j.start < end && j.end > start) { if (j.start >= anchor) end = Math.min(end, j.start); else start = Math.max(start, j.end); }
+  });
+  return [start, end];
+}
+function updSel() {
+  const [a, b] = selRange(), bx = V.sel.box;
+  bx.style.top = (a - DAY_START) / SLOT * SLOT_H + 'px'; bx.style.height = Math.max(6, (b - a) / SLOT * SLOT_H - 1) + 'px';
+  bx.textContent = b > a ? `${mToStr(a)}–${mToStr(b)}` : '';
+}
+mGrid.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  if (e.target.closest('.job')) return;
+  const col = e.target.closest('.col'); if (!col) return;
+  const r = col.getBoundingClientRect(), s = clamp(Math.floor((e.clientY - r.top) / SLOT_H), 0, NSLOTS - 1);
+  const box = document.createElement('div'); box.className = 'selbox'; col.appendChild(box);
+  V.sel = {col, s0: s, s1: s, r, box}; updSel(); e.preventDefault();
+});
+document.addEventListener('mousemove', e => {
+  if (V.sel) { V.sel.s1 = clamp(Math.floor((e.clientY - V.sel.r.top) / SLOT_H), 0, NSLOTS - 1); updSel(); }
+  if (V.rz) doResize(e);
+});
+document.addEventListener('mouseup', () => {
+  if (V.sel) {
+    const [a, b] = selRange(), col = V.sel.col; V.sel.box.remove(); V.sel = null;
+    if (b - a >= 15) openJobDlg(null, {date: col.dataset.date, post: +col.dataset.post, start: a, end: b});
+  }
+  if (V.rz) { const rz = V.rz; V.rz = null; if (rz.moved) { save(); V.justResized = true; setTimeout(() => V.justResized = false, 50); } render(); }
+});
+
+/* растяжка */
+mGrid.addEventListener('mousedown', e => {
+  const rz = e.target.closest('[data-rz]'); if (!rz || e.button !== 0) return;
+  e.preventDefault(); e.stopPropagation();
+  const el = rz.closest('.job'), j = S.mech.jobs.find(x => x.id === el.dataset.id);
+  V.rz = {j, el, y0: e.clientY, end0: j.end, moved: false};
+}, true);
+function doResize(e) {
+  const r = V.rz, j = r.j, dy = e.clientY - r.y0;
+  let end = Math.round((r.end0 + dy / SLOT_H * SLOT) / 15) * 15;
+  end = clamp(end, j.start + 15, DAY_END);
+  const old = j.end; j.end = end;
+  if (conflicts(j)) j.end = old; else if (j.end !== r.end0) r.moved = true;
+  r.el.style.height = Math.max(18, (j.end - j.start) / SLOT * SLOT_H - 2) + 'px';
+}
+
+/* клики по блокам, быстрые статусы, поля шапки */
+mGrid.addEventListener('click', e => {
+  const q = e.target.closest('[data-q]');
+  const jobEl = e.target.closest('.job'); if (!jobEl || V.justResized) return;
+  const j = S.mech.jobs.find(x => x.id === jobEl.dataset.id);
+  if (q) {
+    j.status = q.dataset.q;
+    if (j.status === 'work' && j.fStart == null) { const n = new Date(); j.fStart = Math.round((n.getHours() * 60 + n.getMinutes()) / 5) * 5; }
+    if (j.status === 'done') { j.fStart ??= j.start; j.fEnd ??= j.end; j.fNh ??= j.nh; j.fAmount ??= j.amount; }
+    save(); render(); return;
+  }
+  openJobDlg(j.id);
+});
+mGrid.addEventListener('change', e => {
+  const dp = e.target.closest('[data-dayplan]');
+  if (dp) { S.mech.dayPlan[dp.dataset.dayplan] = parseInt(dp.value.replace(/\D/g, ''), 10) || 0; save(); renderMech(); return; }
+  const m = e.target.closest('[data-mech]');
+  if (m) {
+    const [d, p] = m.dataset.mech.split('|'), v = m.value.trim();
+    (S.mech.mechanics[d] ||= {})[p] = v;
+    if (v && !S.mech.roster.includes(v)) S.mech.roster.push(v);
+    save(); renderMech();
+  }
+});
+
+/* перетаскивание блоков */
+mGrid.addEventListener('dragstart', e => {
+  const el = e.target.closest && e.target.closest('.job'); if (!el || V.rz) { e.preventDefault(); return; }
+  const j = S.mech.jobs.find(x => x.id === el.dataset.id);
+  V.dragJob = {j, grab: (e.clientY - el.getBoundingClientRect().top) / SLOT_H * SLOT};
+  e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', j.id);
+  setTimeout(() => el.style.opacity = '.35', 0);
+});
+function dropTarget(e, col) {
+  const dj = V.dragJob, dur = dj.j.end - dj.j.start;
+  const y = e.clientY - col.getBoundingClientRect().top;
+  let start = DAY_START + Math.round((y / SLOT_H * SLOT - dj.grab) / 15) * 15;
+  start = clamp(start, DAY_START, DAY_END - dur);
+  const test = {...dj.j, date: col.dataset.date, post: +col.dataset.post, start, end: start + dur};
+  return {test, bad: !!conflicts(test)};
+}
+mGrid.addEventListener('dragover', e => {
+  const col = e.target.closest('.col'); if (!col || !V.dragJob) return;
+  e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  $$('.ghost', mGrid).forEach(g => g.remove());
+  const {test, bad} = dropTarget(e, col), g = document.createElement('div');
+  g.className = 'ghost' + (bad ? ' bad' : '');
+  g.style.top = (test.start - DAY_START) / SLOT * SLOT_H + 'px'; g.style.height = (test.end - test.start) / SLOT * SLOT_H - 2 + 'px';
+  col.appendChild(g);
+});
+mGrid.addEventListener('drop', e => {
+  const col = e.target.closest('.col'); if (!col || !V.dragJob) return;
+  e.preventDefault();
+  const {test, bad} = dropTarget(e, col);
+  if (bad) toast('На этом посту в это время уже есть запись');
+  else { Object.assign(V.dragJob.j, {date: test.date, post: test.post, start: test.start, end: test.end}); save(); }
+  V.dragJob = null; render();
+});
+mGrid.addEventListener('dragend', () => { V.dragJob = null; render(); });
+
+/* панель инструментов слесарки */
+$('#panel-mech').addEventListener('click', e => {
+  const a = e.target.closest('[data-act]'); if (!a) return; const act = a.dataset.act;
+  if (act === 'm-prev') V.mDate = addDays(V.mDate, -V.mDays);
+  else if (act === 'm-next') V.mDate = addDays(V.mDate, V.mDays);
+  else if (act === 'm-today') V.mDate = todayIso();
+  else if (act === 'm-add') { openJobDlg(null, {date: V.mDate, post: 1, start: 10 * 60, end: 11 * 60}); return; }
+  renderMech();
+});
+$('#mDate').addEventListener('change', e => { if (e.target.value) { V.mDate = e.target.value; renderMech(); } });
+$('#mView').addEventListener('click', e => {
+  const b = e.target.closest('button[data-d]'); if (!b) return; V.mDays = +b.dataset.d;
+  $$('#mView button').forEach(x => x.classList.toggle('on', x === b)); renderMech();
+});
+
+/* ---- диалог записи ---- */
+const jobDlg = $('#jobDlg'), jobForm = $('#jobForm');
+let jobEditId = null;
+jobForm.post.innerHTML = Array.from({length: S.mech.posts}, (_, i) => `<option value="${i + 1}">Пост ${i + 1}</option>`).join('');
+jobForm.status.innerHTML = Object.entries(JOB_ST).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+function openJobDlg(id, pre) {
+  jobEditId = id; const j = id ? S.mech.jobs.find(x => x.id === id) : null; jobForm.reset(); $('#jobErr').textContent = '';
+  $('#jobTitle').textContent = j ? 'Запись на пост' : 'Новая запись';
+  $('#jobDel').hidden = !j;
+  const src = j || {date: pre.date, post: pre.post, start: pre.start, end: pre.end, status: 'plan', nh: '', amount: '', car: '', plate: '', order: '', client: '', phone: '', work: '', fStart: null, fEnd: null, fNh: null, fAmount: null};
+  const f = jobForm;
+  f.car.value = src.car; f.plate.value = src.plate; f.order.value = src.order || ''; f.client.value = src.client || ''; f.phone.value = src.phone || ''; f.work.value = src.work || '';
+  f.date.value = src.date; f.post.value = src.post; f.start.value = mToStr(src.start); f.end.value = mToStr(src.end);
+  f.nh.value = src.nh ?? ''; f.amount.value = src.amount ?? ''; f.status.value = src.status;
+  f.fStart.value = mToStr(src.fStart); f.fEnd.value = mToStr(src.fEnd); f.fNh.value = src.fNh ?? ''; f.fAmount.value = src.fAmount ?? '';
+  if (!j && pre && pre.end > pre.start && !f.nh.value) f.nh.value = (pre.end - pre.start) / 60;
+  jobDlg.showModal(); f.car.focus();
+}
+$('#jobFactCopy').addEventListener('click', () => {
+  const f = jobForm; f.status.value = 'done'; f.fStart.value = f.start.value; f.fEnd.value = f.end.value; f.fNh.value = f.nh.value; f.fAmount.value = f.amount.value;
+});
+jobForm.addEventListener('submit', e => {
+  e.preventDefault(); const f = jobForm;
+  const num = v => v === '' ? null : +v;
+  const j = {
+    id: jobEditId || uid(), car: f.car.value.trim(), plate: f.plate.value.trim(), order: f.order.value.trim(), client: f.client.value.trim(), phone: f.phone.value.trim(), work: f.work.value.trim(),
+    date: f.date.value, post: +f.post.value, start: strToM(f.start.value), end: strToM(f.end.value),
+    nh: num(f.nh.value), amount: num(f.amount.value), status: f.status.value,
+    fStart: strToM(f.fStart.value), fEnd: strToM(f.fEnd.value), fNh: num(f.fNh.value), fAmount: num(f.fAmount.value),
+  };
+  const err = m => { $('#jobErr').textContent = m; };
+  if (j.end <= j.start) return err('Окончание должно быть позже начала.');
+  if (j.start < DAY_START || j.end > DAY_END) return err(`Запись должна быть в пределах рабочего дня ${mToStr(DAY_START)}–${mToStr(DAY_END)}.`);
+  const c = conflicts(j);
+  if (c) return err(`Пост ${j.post} занят в это время: ${c.car} (${mToStr(c.start)}–${mToStr(c.end)}).`);
+  if (j.status === 'done') { j.fStart ??= j.start; j.fEnd ??= j.end; }
+  const i = S.mech.jobs.findIndex(x => x.id === j.id);
+  if (i >= 0) S.mech.jobs[i] = j; else S.mech.jobs.push(j);
+  V.mDate = V.mDays === 1 || j.date < V.mDate || j.date >= addDays(V.mDate, V.mDays) ? j.date : V.mDate;
+  save(); jobDlg.close(); render();
+});
+$('#jobDel').addEventListener('click', () => {
+  if (!confirm('Удалить запись?')) return;
+  S.mech.jobs = S.mech.jobs.filter(x => x.id !== jobEditId); save(); jobDlg.close(); render();
+});
+
+/* ================= меню данных ================= */
+const menu = $('#menu');
+$('#menuBtn').addEventListener('click', e => { e.stopPropagation(); menu.classList.toggle('open'); });
+document.addEventListener('click', () => menu.classList.remove('open'));
+menu.addEventListener('click', e => {
+  const a = e.target.closest('[data-act]'); if (!a) return;
+  if (a.dataset.act === 'export') {
+    const b = new Blob([JSON.stringify(S, null, 2)], {type: 'application/json'});
+    const l = document.createElement('a'); l.href = URL.createObjectURL(b); l.download = `planner-${todayIso()}.json`; l.click();
+  } else if (a.dataset.act === 'import') $('#importFile').click();
+  else if (a.dataset.act === 'reset') { if (confirm('Заменить все данные демо-набором?')) { S = seed(); save(); render(); toast('Демо-данные восстановлены'); } }
+});
+$('#importFile').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  f.text().then(t => { const d = JSON.parse(t); if (!d.body || !d.mech) throw 0; S = d; migrateBody(S.body.cars); save(); render(); toast('Данные импортированы'); }).catch(() => toast('Не удалось прочитать файл'));
+  e.target.value = '';
+});
+
+/* ================= общее ================= */
+function render() {
+  if (V.tab === 'body') { renderBody(); } else { renderMech(); }
+  $('#nBody').textContent = S.body.cars.filter(c => c.status !== 'done').length + ' авто';
+  $('#nMech').textContent = jobsOn(todayIso()).filter(j => j.status !== 'cancel').length + ' записей сегодня';
+}
+(function init() {
+  const n = new Date();
+  $('#todayLbl').textContent = `${WDL[n.getDay()]}, ${n.getDate()} ${MONG[n.getMonth()]} ${n.getFullYear()}`;
+  render();
+})();
+</script>
+</body>
+</html>

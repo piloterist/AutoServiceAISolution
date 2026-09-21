@@ -1,0 +1,138 @@
+"""Contracts for the Planner (Слесарный/Кузовной цех) - see
+services/planner_service.py and models/workshop_job.py, models/body_car.py.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date, time
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, model_validator
+
+from app.models.planner_constants import BODY_STAGE_TYPES, CAR_STATUSES
+
+# ---- ЗН autocomplete (used by both dialogs) --------------------------------
+
+
+class WorkOrderSearchResult(BaseModel):
+    id: uuid.UUID
+    external_number: str
+    vehicle_description: str | None
+    vin: str | None
+    customer_name: str | None
+    amount: Decimal
+
+    model_config = {"from_attributes": True}
+
+
+# ---- Слесарный (WorkshopJob) -----------------------------------------------
+
+
+class WorkshopJobOut(BaseModel):
+    id: uuid.UUID
+    workshop_id: uuid.UUID
+    work_order_id: uuid.UUID | None
+    work_order_number: str | None
+    amount: Decimal | None  # live from the linked ЗН, never stored - see model docstring
+    car_description: str | None
+    vin: str | None
+    plate: str | None
+    client_name: str | None
+    work_description: str | None
+    job_date: date
+    post_number: int
+    start_time: time
+    end_time: time
+    norm_hours: Decimal | None
+    status_id: uuid.UUID | None
+    status_name: str | None
+    status_color: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class WorkshopJobWrite(BaseModel):
+    work_order_id: uuid.UUID | None = None
+    car_description: str | None = None
+    vin: str | None = None
+    plate: str | None = None
+    client_name: str | None = None
+    work_description: str | None = None
+    job_date: date
+    post_number: int = Field(gt=0)
+    start_time: time
+    end_time: time
+    norm_hours: Decimal | None = None
+    status_id: uuid.UUID | None = None
+
+    @model_validator(mode="after")
+    def _check_times(self) -> WorkshopJobWrite:
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+        return self
+
+
+# ---- Кузовной (BodyCar + BodyCarStage) -------------------------------------
+
+
+class BodyCarStageWrite(BaseModel):
+    stage_name: str
+    note: str | None = None
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def _check_dates(self) -> BodyCarStageWrite:
+        if self.stage_name not in BODY_STAGE_TYPES:
+            raise ValueError(f"stage_name must be one of {BODY_STAGE_TYPES}")
+        if self.end_date < self.start_date:
+            raise ValueError("end_date must not be before start_date")
+        return self
+
+
+class BodyCarStageOut(BodyCarStageWrite):
+    id: uuid.UUID
+
+    model_config = {"from_attributes": True}
+
+
+class BodyCarOut(BaseModel):
+    id: uuid.UUID
+    workshop_id: uuid.UUID
+    work_order_id: uuid.UUID | None
+    work_order_number: str | None
+    amount: Decimal | None
+    car_description: str | None
+    vin: str | None
+    plate: str | None
+    client_name: str | None
+    work_description: str | None
+    color: str
+    status: str
+    stages: list[BodyCarStageOut]
+
+    model_config = {"from_attributes": True}
+
+
+class BodyCarWrite(BaseModel):
+    work_order_id: uuid.UUID | None = None
+    car_description: str | None = None
+    vin: str | None = None
+    plate: str | None = None
+    client_name: str | None = None
+    work_description: str | None = None
+    status: str
+    stages: list[BodyCarStageWrite] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check(self) -> BodyCarWrite:
+        if self.status not in CAR_STATUSES:
+            raise ValueError(f"status must be one of {CAR_STATUSES}")
+        # "Проверять, что выбранные даты строк позже не раньше даты строки
+        # которая выше" - each stage's start must not precede the previous
+        # stage's start (rows may still share a date).
+        for previous, current in zip(self.stages, self.stages[1:], strict=False):
+            if current.start_date < previous.start_date:
+                raise ValueError("stage dates must not go backwards row by row")
+        return self

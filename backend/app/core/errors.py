@@ -6,6 +6,7 @@ Unexpected exceptions are logged with full context but never leak internals to t
 
 import structlog
 from fastapi import Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -23,9 +24,14 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException) 
 async def validation_exception_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    # exc.errors() can carry a raw exception object in each error's "ctx"
+    # (e.g. a @model_validator that raises a plain ValueError - a standard
+    # Pydantic pattern) - jsonable_encoder is what FastAPI's own default
+    # handler uses to sanitize that; building the JSONResponse straight
+    # from exc.errors() skips it and 500s instead of 422ing.
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"status": "error", "detail": exc.errors()},
+        content={"status": "error", "detail": jsonable_encoder(exc.errors())},
     )
 
 
