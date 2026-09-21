@@ -71,8 +71,8 @@ export default async function WorkOrderDetailPage({
 
           <div className="card detail-header">
             <div className="detail-field">
-              <span className="detail-label">Дата</span>
-              <span>{formatDate(workOrder.document_date)}</span>
+              <span className="detail-label">Дата создания</span>
+              <span>{workOrder.created_date ? formatDate(workOrder.created_date) : "—"}</span>
             </div>
             <div className="detail-field">
               <span className="detail-label">Контрагент</span>

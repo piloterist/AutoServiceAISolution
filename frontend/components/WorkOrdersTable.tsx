@@ -13,7 +13,7 @@ import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } fro
 // for why this is grid-per-row rather than a real <table>: a virtualizer
 // has to absolutely-position each row by a computed offset, which a native
 // <table>'s row-flow layout doesn't support.
-// 1 Дата создания | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
+// 1 Дата документа | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
 // 5 Контрагент | 6 Статус | 7 Внутренний | 8 Подразделение | 9 Вид ремонта |
 // 10 Сумма | 11 Сумма оплаты | 12 % оплаты
 const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 14% 9% 7% 9% 9% 9% 7% 8% 7%";
@@ -96,7 +96,7 @@ function isWithinDateRange(iso: string | null, dateFrom: string, dateTo: string)
 
 type Row = {
   item: WorkOrderListItem;
-  createdDate: string;
+  documentDate: string;
   closedDate: string;
   number: string;
   vehicle: string;
@@ -111,7 +111,7 @@ type Row = {
 };
 
 type ColumnKey =
-  | "createdDate"
+  | "documentDate"
   | "closedDate"
   | "number"
   | "vehicle"
@@ -125,7 +125,7 @@ type ColumnKey =
   | "paymentPercent";
 
 const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
-  { key: "createdDate", label: "Дата создания" },
+  { key: "documentDate", label: "Дата документа" },
   { key: "closedDate", label: "Дата закрытия" },
   { key: "number", label: "Номер" },
   { key: "vehicle", label: "Автомобиль" },
@@ -206,7 +206,7 @@ function buildClipboardText(rows: Row[]): string {
   const header = COLUMNS.map((col) => col.label).join("\t");
   const lines = rows.map((row) =>
     [
-      row.createdDate,
+      row.documentDate,
       row.closedDate,
       row.number,
       row.vehicle || "—",
@@ -324,7 +324,7 @@ export function WorkOrdersTable({
 
   const [search, setSearch] = useState(() => persisted?.search ?? "");
   const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>(() => ({
-    createdDate: persisted?.columnFilters.createdDate ?? "",
+    documentDate: persisted?.columnFilters.documentDate ?? "",
     closedDate: persisted?.columnFilters.closedDate ?? "",
     number: persisted?.columnFilters.number ?? "",
     vehicle: persisted?.columnFilters.vehicle ?? "",
@@ -383,7 +383,7 @@ export function WorkOrdersTable({
   const resetFilters = () => {
     setSearch("");
     setColumnFilters({
-      createdDate: "",
+      documentDate: "",
       closedDate: "",
       number: "",
       vehicle: "",
@@ -410,7 +410,7 @@ export function WorkOrdersTable({
     () =>
       items.map((item) => ({
         item,
-        createdDate: formatDateOrDash(item.created_date),
+        documentDate: formatDateOrDash(item.document_date),
         closedDate: formatDateOrDash(item.closed_date),
         number: item.external_number,
         vehicle: item.vehicle_description ?? "",
@@ -769,7 +769,7 @@ export function WorkOrdersTable({
                   }}
                 >
                   <div className="vt-cell" role="gridcell">
-                    {row.createdDate}
+                    {row.documentDate}
                   </div>
                   <div className="vt-cell" role="gridcell">
                     {row.closedDate}
