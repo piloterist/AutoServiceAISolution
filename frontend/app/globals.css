@@ -2391,7 +2391,7 @@ table.admin-data-table td {
      near-invisible against it; a fixed dark tone reads reliably against
      the light/mid status swatches these are picked from, the same
      approach the Кузовной stage segments already use. */
-  color: #1f2937;
+  color: #000;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2403,10 +2403,10 @@ table.admin-data-table td {
    for 4 lines at that card's height. */
 .job-sub,
 .job-work {
-  /* Fixed dark gray, not var(--text-muted) (too light/gray to read on a
+  /* Fixed near-black, not var(--text-muted) (too light/gray to read on a
      colored card background - see .job-title above for why this isn't
      theme-driven). */
-  color: #374151;
+  color: #0a0a0a;
   display: -webkit-box;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
