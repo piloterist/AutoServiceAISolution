@@ -162,27 +162,29 @@ export function WorkshopJobDialog({
           </div>
           <div className="admin-form-field">
             <label htmlFor="wj-start">Начало</label>
-            <input
-              id="wj-start"
-              list="wj-time-options"
-              value={form.startTime}
-              onChange={(e) => setForm({ ...form, startTime: e.target.value })}
-            />
+            {/* A <select>, not <input list=...>+<datalist>: a datalist's
+                suggestions narrow to whatever already matches the typed
+                value, so once the field had a time in it the dropdown
+                only ever showed that one entry back - useless for
+                browsing the other slots. */}
+            <select id="wj-start" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })}>
+              {(times.includes(form.startTime) ? times : [form.startTime, ...times]).map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="admin-form-field">
             <label htmlFor="wj-end">Окончание</label>
-            <input
-              id="wj-end"
-              list="wj-time-options"
-              value={form.endTime}
-              onChange={(e) => setForm({ ...form, endTime: e.target.value })}
-            />
+            <select id="wj-end" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })}>
+              {(times.includes(form.endTime) ? times : [form.endTime, ...times]).map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
           </div>
-          <datalist id="wj-time-options">
-            {times.map((t) => (
-              <option key={t} value={t} />
-            ))}
-          </datalist>
 
           <div className="admin-form-field">
             <label htmlFor="wj-nh">Норма-часы</label>

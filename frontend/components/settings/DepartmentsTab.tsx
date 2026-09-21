@@ -7,22 +7,36 @@ import type { OrgDepartment } from "@/lib/backend-api";
 
 import { AdminModal } from "./AdminModal";
 
+// Rows select on click (radio-style, one at a time) instead of carrying
+// their own "Изменить/Удалить" links - a wide actions column kept getting
+// clipped against the table's own width no matter how that column was
+// sized (three attempts, three different real CSS bugs each time); acting
+// on a selected row via toolbar buttons sidesteps the problem entirely
+// instead of fighting it a fourth time.
 export function DepartmentsTab({ initialDepartments }: { initialDepartments: OrgDepartment[] }) {
   const [departments, setDepartments] = useState(initialDepartments);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<OrgDepartment | "new" | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<OrgDepartment | null>(null);
+
+  const selected = departments.find((d) => d.id === selectedId) ?? null;
+
+  const toggleSelect = (department: OrgDepartment) => {
+    setSelectedId((prev) => (prev === department.id ? null : department.id));
+  };
 
   const openNew = () => {
     setName("");
     setError(null);
     setEditing("new");
   };
-  const openEdit = (department: OrgDepartment) => {
-    setName(department.name);
+  const openEdit = () => {
+    if (!selected) return;
+    setName(selected.name);
     setError(null);
-    setEditing(department);
+    setEditing(selected);
   };
   const close = () => setEditing(null);
 
@@ -48,6 +62,7 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
     if (!pendingDelete) return;
     await departmentsApi.remove(pendingDelete.id);
     setDepartments((prev) => prev.filter((d) => d.id !== pendingDelete.id));
+    setSelectedId(null);
     setPendingDelete(null);
   };
 
@@ -55,41 +70,43 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
     <div className="card">
       <div className="admin-toolbar">
         <h2 className="chart-title">Подразделения</h2>
-        <button type="button" className="admin-btn admin-btn-primary" onClick={openNew}>
-          + Добавить
-        </button>
+        <div className="admin-toolbar-actions">
+          <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
+            Изменить
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-danger"
+            disabled={!selected}
+            onClick={() => selected && setPendingDelete(selected)}
+          >
+            Удалить
+          </button>
+          <button type="button" className="admin-btn admin-btn-primary" onClick={openNew}>
+            + Добавить
+          </button>
+        </div>
       </div>
 
       <table className="data-table admin-data-table">
         <thead>
           <tr>
             <th>Наименование</th>
-            <th className="admin-col-actions"></th>
           </tr>
         </thead>
         <tbody>
           {departments.map((department) => (
-            <tr key={department.id}>
+            <tr
+              key={department.id}
+              className={department.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+              onClick={() => toggleSelect(department)}
+            >
               <td>{department.name}</td>
-              <td className="admin-row-actions">
-                <button type="button" className="admin-btn-link" onClick={() => openEdit(department)}>
-                  Изменить
-                </button>
-                <button
-                  type="button"
-                  className="admin-btn-link admin-btn-link--danger"
-                  onClick={() => setPendingDelete(department)}
-                >
-                  Удалить
-                </button>
-              </td>
             </tr>
           ))}
           {departments.length === 0 && (
             <tr>
-              <td colSpan={2} className="admin-empty-row">
-                Подразделений пока нет
-              </td>
+              <td className="admin-empty-row">Подразделений пока нет</td>
             </tr>
           )}
         </tbody>

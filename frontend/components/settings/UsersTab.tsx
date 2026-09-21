@@ -42,10 +42,16 @@ export function UsersTab({
   workshops: Workshop[];
 }) {
   const [users, setUsers] = useState(initialUsers);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<OrgUser | "new" | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm());
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<OrgUser | null>(null);
+
+  const selected = users.find((u) => u.id === selectedId) ?? null;
+  const toggleSelect = (user: OrgUser) => {
+    setSelectedId((prev) => (prev === user.id ? null : user.id));
+  };
 
   const availableWorkshops = useMemo(
     () => (form.department_id ? workshops.filter((w) => w.department_id === form.department_id) : workshops),
@@ -57,10 +63,11 @@ export function UsersTab({
     setError(null);
     setEditing("new");
   };
-  const openEdit = (user: OrgUser) => {
-    setForm(toForm(user));
+  const openEdit = () => {
+    if (!selected) return;
+    setForm(toForm(selected));
     setError(null);
-    setEditing(user);
+    setEditing(selected);
   };
   const close = () => setEditing(null);
 
@@ -104,6 +111,7 @@ export function UsersTab({
     if (!pendingDelete) return;
     await usersApi.remove(pendingDelete.id);
     setUsers((prev) => prev.filter((u) => u.id !== pendingDelete.id));
+    setSelectedId(null);
     setPendingDelete(null);
   };
 
@@ -111,9 +119,22 @@ export function UsersTab({
     <div className="card">
       <div className="admin-toolbar">
         <h2 className="chart-title">Пользователи</h2>
-        <button type="button" className="admin-btn admin-btn-primary" onClick={openNew}>
-          + Добавить
-        </button>
+        <div className="admin-toolbar-actions">
+          <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
+            Изменить
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-danger"
+            disabled={!selected}
+            onClick={() => selected && setPendingDelete(selected)}
+          >
+            Удалить
+          </button>
+          <button type="button" className="admin-btn admin-btn-primary" onClick={openNew}>
+            + Добавить
+          </button>
+        </div>
       </div>
 
       <table className="data-table admin-data-table">
@@ -123,33 +144,24 @@ export function UsersTab({
             <th>Логин</th>
             <th>Роль</th>
             <th>Подразделение</th>
-            <th className="admin-col-actions"></th>
           </tr>
         </thead>
         <tbody>
           {users.map((user) => (
-            <tr key={user.id}>
+            <tr
+              key={user.id}
+              className={user.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+              onClick={() => toggleSelect(user)}
+            >
               <td>{user.full_name}</td>
               <td>{user.login}</td>
               <td>{user.role}</td>
               <td>{user.department_name ?? "—"}</td>
-              <td className="admin-row-actions">
-                <button type="button" className="admin-btn-link" onClick={() => openEdit(user)}>
-                  Изменить
-                </button>
-                <button
-                  type="button"
-                  className="admin-btn-link admin-btn-link--danger"
-                  onClick={() => setPendingDelete(user)}
-                >
-                  Удалить
-                </button>
-              </td>
             </tr>
           ))}
           {users.length === 0 && (
             <tr>
-              <td colSpan={5} className="admin-empty-row">
+              <td colSpan={4} className="admin-empty-row">
                 Пользователей пока нет
               </td>
             </tr>

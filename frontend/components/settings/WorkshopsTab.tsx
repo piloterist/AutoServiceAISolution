@@ -55,20 +55,27 @@ export function WorkshopsTab({
   departments: OrgDepartment[];
 }) {
   const [workshops, setWorkshops] = useState(initialWorkshops);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Workshop | "new" | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm(departments[0]?.id ?? ""));
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Workshop | null>(null);
+
+  const selected = workshops.find((w) => w.id === selectedId) ?? null;
+  const toggleSelect = (workshop: Workshop) => {
+    setSelectedId((prev) => (prev === workshop.id ? null : workshop.id));
+  };
 
   const openNew = () => {
     setForm(emptyForm(departments[0]?.id ?? ""));
     setError(null);
     setEditing("new");
   };
-  const openEdit = (workshop: Workshop) => {
-    setForm(toForm(workshop));
+  const openEdit = () => {
+    if (!selected) return;
+    setForm(toForm(selected));
     setError(null);
-    setEditing(workshop);
+    setEditing(selected);
   };
   const close = () => setEditing(null);
 
@@ -120,6 +127,7 @@ export function WorkshopsTab({
     if (!pendingDelete) return;
     await workshopsApi.remove(pendingDelete.id);
     setWorkshops((prev) => prev.filter((w) => w.id !== pendingDelete.id));
+    setSelectedId(null);
     setPendingDelete(null);
   };
 
@@ -127,15 +135,28 @@ export function WorkshopsTab({
     <div className="card">
       <div className="admin-toolbar">
         <h2 className="chart-title">Цеха</h2>
-        <button
-          type="button"
-          className="admin-btn admin-btn-primary"
-          onClick={openNew}
-          disabled={departments.length === 0}
-          title={departments.length === 0 ? "Сначала добавьте подразделение" : undefined}
-        >
-          + Добавить
-        </button>
+        <div className="admin-toolbar-actions">
+          <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
+            Изменить
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-danger"
+            disabled={!selected}
+            onClick={() => selected && setPendingDelete(selected)}
+          >
+            Удалить
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-primary"
+            onClick={openNew}
+            disabled={departments.length === 0}
+            title={departments.length === 0 ? "Сначала добавьте подразделение" : undefined}
+          >
+            + Добавить
+          </button>
+        </div>
       </div>
 
       <table className="data-table admin-data-table">
@@ -148,12 +169,15 @@ export function WorkshopsTab({
             <th>Часы работы</th>
             <th>Рабочие дни</th>
             <th>По умолчанию</th>
-            <th className="admin-col-actions"></th>
           </tr>
         </thead>
         <tbody>
           {workshops.map((workshop) => (
-            <tr key={workshop.id}>
+            <tr
+              key={workshop.id}
+              className={workshop.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+              onClick={() => toggleSelect(workshop)}
+            >
               <td>{workshop.department_name}</td>
               <td>{workshop.workshop_type}</td>
               <td className="num">{workshop.area ?? "—"}</td>
@@ -163,23 +187,11 @@ export function WorkshopsTab({
               </td>
               <td>{workshop.working_days.map((d) => WEEKDAY_LABELS[d]).join(", ")}</td>
               <td>{workshop.is_default ? "Да" : "—"}</td>
-              <td className="admin-row-actions">
-                <button type="button" className="admin-btn-link" onClick={() => openEdit(workshop)}>
-                  Изменить
-                </button>
-                <button
-                  type="button"
-                  className="admin-btn-link admin-btn-link--danger"
-                  onClick={() => setPendingDelete(workshop)}
-                >
-                  Удалить
-                </button>
-              </td>
             </tr>
           ))}
           {workshops.length === 0 && (
             <tr>
-              <td colSpan={8} className="admin-empty-row">
+              <td colSpan={7} className="admin-empty-row">
                 Цехов пока нет
               </td>
             </tr>

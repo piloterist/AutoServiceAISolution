@@ -28,11 +28,17 @@ const COLOR_PALETTE = [
 
 export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: SlesarkaStatus[] }) {
   const [statuses, setStatuses] = useState(initialStatuses);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<SlesarkaStatus | "new" | null>(null);
   const [name, setName] = useState("");
   const [color, setColor] = useState(COLOR_PALETTE[0]);
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<SlesarkaStatus | null>(null);
+
+  const selected = statuses.find((s) => s.id === selectedId) ?? null;
+  const toggleSelect = (status: SlesarkaStatus) => {
+    setSelectedId((prev) => (prev === status.id ? null : status.id));
+  };
 
   const usedNames = new Set(statuses.map((s) => s.name));
   const availableNames = STATUS_NAME_OPTIONS.filter(
@@ -45,11 +51,12 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
     setError(null);
     setEditing("new");
   };
-  const openEdit = (status: SlesarkaStatus) => {
-    setName(status.name);
-    setColor(status.color);
+  const openEdit = () => {
+    if (!selected) return;
+    setName(selected.name);
+    setColor(selected.color);
     setError(null);
-    setEditing(status);
+    setEditing(selected);
   };
   const close = () => setEditing(null);
 
@@ -73,6 +80,7 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
     if (!pendingDelete) return;
     await slesarkaStatusesApi.remove(pendingDelete.id);
     setStatuses((prev) => prev.filter((s) => s.id !== pendingDelete.id));
+    setSelectedId(null);
     setPendingDelete(null);
   };
 
@@ -80,14 +88,27 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
     <div className="card">
       <div className="admin-toolbar">
         <h2 className="chart-title">Статусы слесарки</h2>
-        <button
-          type="button"
-          className="admin-btn admin-btn-primary"
-          onClick={openNew}
-          disabled={availableNames.length === 0}
-        >
-          + Добавить
-        </button>
+        <div className="admin-toolbar-actions">
+          <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
+            Изменить
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-danger"
+            disabled={!selected}
+            onClick={() => selected && setPendingDelete(selected)}
+          >
+            Удалить
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-primary"
+            onClick={openNew}
+            disabled={availableNames.length === 0}
+          >
+            + Добавить
+          </button>
+        </div>
       </div>
 
       <table className="data-table admin-data-table">
@@ -95,34 +116,25 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
           <tr>
             <th>Статус</th>
             <th>Цвет</th>
-            <th className="admin-col-actions"></th>
           </tr>
         </thead>
         <tbody>
           {statuses.map((status) => (
-            <tr key={status.id}>
+            <tr
+              key={status.id}
+              className={status.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+              onClick={() => toggleSelect(status)}
+            >
               <td>{status.name}</td>
               <td>
                 <span className="admin-color-dot" style={{ background: status.color }} />
                 {status.color}
               </td>
-              <td className="admin-row-actions">
-                <button type="button" className="admin-btn-link" onClick={() => openEdit(status)}>
-                  Изменить
-                </button>
-                <button
-                  type="button"
-                  className="admin-btn-link admin-btn-link--danger"
-                  onClick={() => setPendingDelete(status)}
-                >
-                  Удалить
-                </button>
-              </td>
             </tr>
           ))}
           {statuses.length === 0 && (
             <tr>
-              <td colSpan={3} className="admin-empty-row">
+              <td colSpan={2} className="admin-empty-row">
                 Статусов пока нет
               </td>
             </tr>

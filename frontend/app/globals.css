@@ -582,13 +582,25 @@ table.admin-data-table td {
   overflow-x: auto;
 }
 
-.admin-col-actions {
-  width: 1%;
-  white-space: nowrap;
+/* Rows select on click instead of carrying their own actions column (see
+   the Settings tab components) - .admin-toolbar-actions holds
+   Изменить/Удалить/+ Добавить together, acting on whichever row is
+   .admin-row--selected. */
+.admin-toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
-.admin-row-actions {
-  white-space: nowrap;
+.admin-row {
+  cursor: pointer;
+}
+
+.admin-row:hover td {
+  background: var(--surface2);
+}
+
+.admin-row--selected td {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
 
 .admin-empty-row {
