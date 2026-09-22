@@ -5,6 +5,7 @@ import { useState } from "react";
 import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
 import type { BodyCar, BodyCarWrite, PlannerWorkOrder } from "@/lib/backend-api";
+import { lookupWorkOrderByPlate } from "@/lib/planner-client";
 import { BODY_STAGE_TYPES } from "@/lib/planner-constants";
 import { addDaysIso, diffDaysIso, formatShortDate, todayIso } from "@/lib/planner-time";
 
@@ -68,6 +69,8 @@ export function BodyCarDialog({
   const [form, setForm] = useState<CarDraft | null>(draft);
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [plateLookupBusy, setPlateLookupBusy] = useState(false);
+  const [plateLookupError, setPlateLookupError] = useState<string | null>(null);
 
   if (!form) return null;
 
@@ -80,6 +83,31 @@ export function BodyCarDialog({
       vin: wo.vin ?? form.vin,
       clientName: wo.customer_name ?? form.clientName,
     });
+  };
+
+  // Fallback for today's own ЗН - the 1C export is now once a day (see
+  // DEPLOYMENT.md), so a car that just arrived genuinely won't be found by
+  // the usual "Заказ-наряд" autocomplete above yet. Uses the Гос.номер
+  // field already on this card (no separate input).
+  const lookupByPlate = async () => {
+    if (!form.plate.trim()) return;
+    setPlateLookupBusy(true);
+    setPlateLookupError(null);
+    try {
+      const wo = await lookupWorkOrderByPlate(form.plate.trim());
+      applyWorkOrder(wo);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "";
+      setPlateLookupError(
+        message.includes("404")
+          ? "Открытый заказ-наряд с таким гос.номером не найден"
+          : message.includes("503")
+            ? "Поиск по 5Systems сейчас отключён"
+            : "Не удалось получить данные — попробуйте ещё раз или введите вручную",
+      );
+    } finally {
+      setPlateLookupBusy(false);
+    }
   };
 
   const updateStage = (index: number, patch: Partial<StageDraft>) => {
@@ -182,6 +210,15 @@ export function BodyCarDialog({
           <div className="admin-form-field">
             <label htmlFor="bc-plate">Гос.номер</label>
             <input id="bc-plate" value={form.plate} onChange={(e) => setForm({ ...form, plate: e.target.value })} />
+            <button
+              type="button"
+              className="admin-btn planner-plate-lookup-btn"
+              disabled={!form.plate.trim() || plateLookupBusy}
+              onClick={lookupByPlate}
+            >
+              {plateLookupBusy ? "Ищем…" : "Получить ЗН"}
+            </button>
+            {plateLookupError && <p className="admin-form-error planner-plate-lookup-error">{plateLookupError}</p>}
           </div>
           <div className="admin-form-field">
             <label htmlFor="bc-client">Клиент</label>

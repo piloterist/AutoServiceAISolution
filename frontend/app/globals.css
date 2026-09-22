@@ -2716,31 +2716,20 @@ table.bt {
   color: var(--text-muted);
 }
 
-/* Fallback plate lookup ("Не нашли? Найти по гос.номеру") - see
-   WorkOrderAutocomplete.tsx for why this exists (today's own ЗН, not yet
-   reached by the once-daily 1C export). */
-.planner-plate-lookup-toggle {
-  margin-top: 6px;
+/* "Получить ЗН" - sits under the Гос.номер field already on the card (see
+   WorkshopJobDialog.tsx/BodyCarDialog.tsx for why this exists: today's own
+   ЗН, not yet reached by the once-daily 1C export). .admin-form-field is
+   already a flex column with its own gap, so this just needs to not
+   stretch full width like the text input above it. */
+.planner-plate-lookup-btn {
+  align-self: flex-start;
   font-size: 0.78rem;
-  padding: 0;
-}
-
-.planner-plate-lookup {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-top: 6px;
-  flex-wrap: wrap;
-}
-
-.planner-plate-lookup input {
-  flex: 1;
-  min-width: 160px;
+  padding: 0.3rem 0.6rem;
 }
 
 .planner-plate-lookup-error {
-  flex-basis: 100%;
-  margin: 4px 0 0;
+  margin: 0;
+  font-size: 0.78rem;
 }
 
 /* ---- Кузовной stage editor (inside BodyCarDialog) ---- */
