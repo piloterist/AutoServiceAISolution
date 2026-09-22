@@ -16,6 +16,12 @@ export const SESSION_COOKIE_NAME = "pm_session";
 // reach /settings (see middleware.ts).
 export const ROLE_ADMIN = "Админ";
 
+// Mirrors backend app/models/user.py's ROLE_SERVICE_ADVISOR - the reverse
+// restriction from ROLE_ADMIN above: this role can reach ONLY /planner
+// (see middleware.ts) - a tabs/pages-level restriction only, nothing
+// inside the Planner itself is further gated by role.
+export const ROLE_SERVICE_ADVISOR = "Мастер приёмщик";
+
 export type SessionUser = {
   id: string;
   fullName: string;

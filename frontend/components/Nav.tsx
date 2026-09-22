@@ -20,6 +20,9 @@ const NAV_ITEMS = [
 ];
 
 const ROLE_ADMIN = "Админ";
+// Locked to only the Planner tab - see middleware.ts, which enforces the
+// same restriction at the page/API level (this alone is only cosmetic).
+const ROLE_SERVICE_ADVISOR = "Мастер приёмщик";
 
 export function Nav({ user }: { user: SessionUser | null }) {
   const pathname = usePathname();
@@ -28,7 +31,12 @@ export function Nav({ user }: { user: SessionUser | null }) {
   // in it just bounces back here via middleware until you're logged in.
   if (pathname === "/login") return null;
 
-  const items = user?.role === ROLE_ADMIN ? [...NAV_ITEMS, { href: "/settings", label: "Settings" }] : NAV_ITEMS;
+  const items =
+    user?.role === ROLE_SERVICE_ADVISOR
+      ? NAV_ITEMS.filter((item) => item.href === "/planner")
+      : user?.role === ROLE_ADMIN
+        ? [...NAV_ITEMS, { href: "/settings", label: "Settings" }]
+        : NAV_ITEMS;
 
   return (
     <nav className="nav">
