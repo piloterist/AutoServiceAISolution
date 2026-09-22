@@ -21,12 +21,16 @@ export function PlannerShell({
   statuses,
   defaultDepartmentId,
   defaultWorkshopId,
+  fivesystemsApiEnabled,
 }: {
   departments: OrgDepartment[];
   workshops: Workshop[];
   statuses: SlesarkaStatus[];
   defaultDepartmentId: string | null;
   defaultWorkshopId: string | null;
+  /** Настройки → Интеграции → "Включить API" - gates the Planner's
+   * "Получить ЗН" button in both dialogs below (see SettingsForm.tsx). */
+  fivesystemsApiEnabled: boolean;
 }) {
   const initialWorkshop = defaultWorkshopId ? workshops.find((w) => w.id === defaultWorkshopId) : undefined;
   const initialDepartmentId =
@@ -120,9 +124,15 @@ export function PlannerShell({
       )}
 
       {selectedWorkshop && selectedWorkshop.workshop_type === "Слесарный" && (
-        <MechanicalView workshop={selectedWorkshop} statuses={statuses} />
+        <MechanicalView
+          workshop={selectedWorkshop}
+          statuses={statuses}
+          fivesystemsApiEnabled={fivesystemsApiEnabled}
+        />
       )}
-      {selectedWorkshop && selectedWorkshop.workshop_type === "Кузовной" && <BodyView workshop={selectedWorkshop} />}
+      {selectedWorkshop && selectedWorkshop.workshop_type === "Кузовной" && (
+        <BodyView workshop={selectedWorkshop} fivesystemsApiEnabled={fivesystemsApiEnabled} />
+      )}
     </div>
   );
 }

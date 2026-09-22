@@ -15,6 +15,7 @@ def test_get_settings_returns_defaults_on_first_access(client, auth_headers) -> 
     assert body["exclude_internal_insurance"] is False
     assert body["exclude_internal_orders"] is False
     assert body["hide_internal_orders"] is False
+    assert body["fivesystems_api_enabled"] is False
 
 
 def test_put_settings_persists_values(client, auth_headers) -> None:
@@ -26,6 +27,7 @@ def test_put_settings_persists_values(client, auth_headers) -> None:
             "exclude_internal_insurance": True,
             "exclude_internal_orders": True,
             "hide_internal_orders": True,
+            "fivesystems_api_enabled": True,
         },
     )
 
@@ -35,6 +37,7 @@ def test_put_settings_persists_values(client, auth_headers) -> None:
     assert body["exclude_internal_insurance"] is True
     assert body["exclude_internal_orders"] is True
     assert body["hide_internal_orders"] is True
+    assert body["fivesystems_api_enabled"] is True
 
     # A later GET reflects the saved values, not fresh defaults.
     follow_up = client.get(SETTINGS_URL, headers=auth_headers)

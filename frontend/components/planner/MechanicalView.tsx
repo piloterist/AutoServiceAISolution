@@ -77,7 +77,11 @@ function jobMatches(job: WorkshopJob, query: string): boolean {
  * reasons neither a caching fix on the fetch nor an audit of the backend
  * turned up), but without a visible page reload or losing the operator's
  * selected department/цех (PlannerShell, the parent, never remounts). */
-export function MechanicalView(props: { workshop: Workshop; statuses: SlesarkaStatus[] }) {
+export function MechanicalView(props: {
+  workshop: Workshop;
+  statuses: SlesarkaStatus[];
+  fivesystemsApiEnabled: boolean;
+}) {
   const [instanceKey, setInstanceKey] = useState(0);
   return <MechanicalViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
 }
@@ -85,10 +89,12 @@ export function MechanicalView(props: { workshop: Workshop; statuses: SlesarkaSt
 function MechanicalViewInner({
   workshop,
   statuses,
+  fivesystemsApiEnabled,
   onWritten,
 }: {
   workshop: Workshop;
   statuses: SlesarkaStatus[];
+  fivesystemsApiEnabled: boolean;
   onWritten: () => void;
 }) {
   const [viewSpan, setViewSpan] = useState<ViewSpan>(3);
@@ -612,6 +618,7 @@ function MechanicalViewInner({
         statuses={statuses}
         workshopStartTime={workshop.start_time}
         workshopEndTime={workshop.end_time}
+        fivesystemsApiEnabled={fivesystemsApiEnabled}
         onClose={closeDialog}
         onSave={save}
         onDelete={remove}

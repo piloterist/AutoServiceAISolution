@@ -30,12 +30,14 @@ def update_app_settings(
     exclude_internal_insurance: bool,
     exclude_internal_orders: bool,
     hide_internal_orders: bool,
+    fivesystems_api_enabled: bool,
 ) -> AppSettings:
     settings = get_app_settings(db)
     settings.insurance_repair_type = insurance_repair_type
     settings.exclude_internal_insurance = exclude_internal_insurance
     settings.exclude_internal_orders = exclude_internal_orders
     settings.hide_internal_orders = hide_internal_orders
+    settings.fivesystems_api_enabled = fivesystems_api_enabled
     db.commit()
     db.refresh(settings)
     return settings

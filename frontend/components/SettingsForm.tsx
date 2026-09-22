@@ -32,6 +32,14 @@ export function SettingsForm({
   const [hideInternalOrders, setHideInternalOrders] = useState(
     initialSettings.hide_internal_orders,
   );
+  // Planner's "Получить ЗН" live 5Systems plate lookup - a runtime switch
+  // staff can flip here without a deploy. Still requires the backend's own
+  // ENABLE_FIVESYSTEMS_LOOKUP env var (credentials configured) - this
+  // checkbox alone can't turn the feature on if that isn't set too, see
+  // backend/app/models/app_settings.py.
+  const [fivesystemsApiEnabled, setFivesystemsApiEnabled] = useState(
+    initialSettings.fivesystems_api_enabled,
+  );
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
   const handleSave = async () => {
@@ -45,6 +53,7 @@ export function SettingsForm({
           exclude_internal_insurance: excludeInternal,
           exclude_internal_orders: excludeInternalOrders,
           hide_internal_orders: hideInternalOrders,
+          fivesystems_api_enabled: fivesystemsApiEnabled,
         } satisfies AppSettings),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -127,6 +136,25 @@ export function SettingsForm({
           Галка «Исключить внутренние» выше влияет только на показатели дашборда (плашки,
           диаграммы) — как будто таких заказ-нарядов не существует; на список заказ-нарядов не
           влияет, там есть отдельный фильтр «Внутренний».
+        </p>
+      </div>
+
+      <div className="card settings-card">
+        <h2 className="chart-title">Интеграции</h2>
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={fivesystemsApiEnabled}
+            onChange={(event) => setFivesystemsApiEnabled(event.target.checked)}
+          />
+          Включить API
+        </label>
+
+        <p className="settings-description">
+          Кнопка «Получить ЗН» в Планировщике — поиск ещё не выгруженного из 1С заказ-наряда
+          напрямую по гос.номеру через API 5Systems. Если выключить — кнопка в Планировщике
+          станет недоступна, независимо от того, введён гос.номер или нет.
         </p>
 
         <button

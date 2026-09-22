@@ -56,12 +56,16 @@ function newStageRow(previous: StageDraft | undefined, fallbackDate: string): St
 export function BodyCarDialog({
   open,
   draft,
+  fivesystemsApiEnabled,
   onClose,
   onSave,
   onDelete,
 }: {
   open: boolean;
   draft: CarDraft | null;
+  /** Настройки → Интеграции → "Включить API" - "Получить ЗН" stays
+   * disabled regardless of the Гос.номер field when this is off. */
+  fivesystemsApiEnabled: boolean;
   onClose: () => void;
   onSave: (write: BodyCarWrite) => Promise<void>;
   onDelete: () => Promise<void>;
@@ -90,7 +94,7 @@ export function BodyCarDialog({
   // the usual "Заказ-наряд" autocomplete above yet. Uses the Гос.номер
   // field already on this card (no separate input).
   const lookupByPlate = async () => {
-    if (!form.plate.trim()) return;
+    if (!fivesystemsApiEnabled || !form.plate.trim()) return;
     setPlateLookupBusy(true);
     setPlateLookupError(null);
     try {
@@ -213,7 +217,7 @@ export function BodyCarDialog({
             <button
               type="button"
               className="admin-btn planner-plate-lookup-btn"
-              disabled={!form.plate.trim() || plateLookupBusy}
+              disabled={!fivesystemsApiEnabled || !form.plate.trim() || plateLookupBusy}
               onClick={lookupByPlate}
             >
               {plateLookupBusy ? "Ищем…" : "Получить ЗН"}

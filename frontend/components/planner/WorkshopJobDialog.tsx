@@ -53,6 +53,7 @@ export function WorkshopJobDialog({
   statuses,
   workshopStartTime,
   workshopEndTime,
+  fivesystemsApiEnabled,
   onClose,
   onSave,
   onDelete,
@@ -63,6 +64,9 @@ export function WorkshopJobDialog({
   statuses: SlesarkaStatus[];
   workshopStartTime: string;
   workshopEndTime: string;
+  /** Настройки → Интеграции → "Включить API" - "Получить ЗН" stays
+   * disabled regardless of the Гос.номер field when this is off. */
+  fivesystemsApiEnabled: boolean;
   onClose: () => void;
   onSave: (write: WorkshopJobWrite) => Promise<void>;
   onDelete: () => Promise<void>;
@@ -95,7 +99,7 @@ export function WorkshopJobDialog({
   // field already on this card (no separate input) - lives here, not in
   // WorkOrderAutocomplete, precisely because it reads that field.
   const lookupByPlate = async () => {
-    if (!form.plate.trim()) return;
+    if (!fivesystemsApiEnabled || !form.plate.trim()) return;
     setPlateLookupBusy(true);
     setPlateLookupError(null);
     try {
@@ -164,7 +168,7 @@ export function WorkshopJobDialog({
             <button
               type="button"
               className="admin-btn planner-plate-lookup-btn"
-              disabled={!form.plate.trim() || plateLookupBusy}
+              disabled={!fivesystemsApiEnabled || !form.plate.trim() || plateLookupBusy}
               onClick={lookupByPlate}
             >
               {plateLookupBusy ? "Ищем…" : "Получить ЗН"}

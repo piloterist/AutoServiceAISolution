@@ -48,6 +48,19 @@ class AppSettings(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # Runtime on/off switch for the Planner's "Получить ЗН" live 5Systems
+    # plate lookup (see services/fivesystems_client.py) - distinct from
+    # ENABLE_FIVESYSTEMS_LOOKUP in core/config.py, which gates whether the
+    # integration is even *configured* on this deployment (credentials,
+    # requires a redeploy to change) and must also be on for this to do
+    # anything. This one lets staff turn the feature off day-to-day (e.g.
+    # 5Systems is flaky, or they just don't want it active) without needing
+    # a deploy - see api/v1/endpoints/planner.py's lookup endpoint, which
+    # checks both.
+    fivesystems_api_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

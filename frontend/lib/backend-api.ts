@@ -102,6 +102,10 @@ export type AppSettings = {
   // Not wired to any filtering logic yet - deliberately inert (see
   // SettingsForm.tsx).
   hide_internal_orders: boolean;
+  // Runtime on/off switch for the Planner's "Получить ЗН" live 5Systems
+  // plate lookup - see backend/app/models/app_settings.py for how this
+  // differs from ENABLE_FIVESYSTEMS_LOOKUP (the env var).
+  fivesystems_api_enabled: boolean;
 };
 
 export type StatusSummaryItem = {

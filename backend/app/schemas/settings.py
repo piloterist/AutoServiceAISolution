@@ -9,6 +9,7 @@ class AppSettingsResponse(BaseModel):
     # "Специфика PanMotors" group - see models/app_settings.py.
     exclude_internal_orders: bool
     hide_internal_orders: bool
+    fivesystems_api_enabled: bool
 
     model_config = {"from_attributes": True}
 
@@ -18,3 +19,4 @@ class AppSettingsUpdate(BaseModel):
     exclude_internal_insurance: bool = False
     exclude_internal_orders: bool = False
     hide_internal_orders: bool = False
+    fivesystems_api_enabled: bool = False

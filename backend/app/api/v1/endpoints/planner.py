@@ -30,6 +30,7 @@ from app.schemas.planner import (
 from app.services import planner_service
 from app.services.fivesystems_client import FiveSystemsError, lookup_work_order_by_plate
 from app.services.planner_service import NotFoundError, SchedulingError
+from app.services.settings_service import get_app_settings
 
 router = APIRouter(prefix="/planner", tags=["planner"], dependencies=[Depends(verify_api_token)])
 
@@ -68,9 +69,15 @@ def lookup_work_order_by_plate_endpoint(
     see services/fivesystems_client.py's module docstring for why this
     exists and what it can/can't find. On a hit, creates (or reuses) a
     minimal WorkOrder row so the Planner's usual "attach to a ЗН" flow
-    works unchanged from here on."""
+    works unchanged from here on.
+
+    Gated behind two independent switches - both must be on: the env var
+    (is this integration even configured on this deployment - credentials,
+    requires a redeploy to change) and AppSettings.fivesystems_api_enabled
+    (a runtime on/off switch staff can flip from the product's own Settings
+    page, no deploy needed - see models/app_settings.py)."""
     settings = get_settings()
-    if not settings.enable_fivesystems_lookup:
+    if not settings.enable_fivesystems_lookup or not get_app_settings(db).fivesystems_api_enabled:
         raise HTTPException(status_code=503, detail="5Systems lookup is not enabled")
     if not plate or not plate.strip():
         raise HTTPException(status_code=422, detail="plate is required")

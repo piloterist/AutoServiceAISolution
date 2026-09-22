@@ -9,6 +9,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
+from app.models.app_settings import AppSettings
 from app.models.work_order import WorkOrder
 from app.services import fivesystems_client, planner_service
 from app.services.fivesystems_client import FiveSystemsError
@@ -127,6 +128,18 @@ def _configure_settings(monkeypatch) -> None:
     monkeypatch.setattr(settings, "enable_fivesystems_lookup", True)
 
 
+def _enable_app_setting(db_session) -> None:
+    """The endpoint also requires AppSettings.fivesystems_api_enabled - the
+    runtime, staff-facing on/off switch (see models/app_settings.py) -
+    separate from the env var _configure_settings above turns on."""
+    row = db_session.get(AppSettings, 1)
+    if row is None:
+        row = AppSettings(id=1)
+        db_session.add(row)
+    row.fivesystems_api_enabled = True
+    db_session.commit()
+
+
 def test_lookup_work_order_by_plate_full_flow(monkeypatch) -> None:
     calls: list[str] = []
     _patch_client(monkeypatch, _make_mock_transport(calls))
@@ -225,9 +238,30 @@ def test_lookup_endpoint_disabled_returns_503(client, auth_headers, monkeypatch)
     assert response.status_code == 503
 
 
-def test_lookup_endpoint_not_found_returns_404(client, auth_headers, monkeypatch) -> None:
+def test_lookup_endpoint_requires_app_setting_even_with_env_var_on(
+    client, auth_headers, monkeypatch, db_session
+) -> None:
+    """Both switches gate this - the env var alone (configured/deployable)
+    is not enough without staff also having turned it on in Settings."""
+    _configure_settings(monkeypatch)
+    # Deliberately not calling _enable_app_setting - AppSettings defaults to
+    # fivesystems_api_enabled=False.
+
+    response = client.get(
+        f"{PLANNER_URL}/work-orders/lookup-by-plate",
+        params={"plate": "Х669МЕ777"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 503
+
+
+def test_lookup_endpoint_not_found_returns_404(
+    client, auth_headers, monkeypatch, db_session
+) -> None:
     _patch_client(monkeypatch, _make_mock_transport([]))
     _configure_settings(monkeypatch)
+    _enable_app_setting(db_session)
 
     response = client.get(
         f"{PLANNER_URL}/work-orders/lookup-by-plate",
@@ -244,6 +278,7 @@ def test_lookup_endpoint_creates_work_order_and_is_idempotent(
     calls: list[str] = []
     _patch_client(monkeypatch, _make_mock_transport(calls))
     _configure_settings(monkeypatch)
+    _enable_app_setting(db_session)
 
     first = client.get(
         f"{PLANNER_URL}/work-orders/lookup-by-plate",

@@ -1,5 +1,5 @@
 import { PlannerShell } from "@/components/planner/PlannerShell";
-import { getOrgDepartments, getSlesarkaStatuses, getWorkshops } from "@/lib/backend-api";
+import { getAppSettings, getOrgDepartments, getSlesarkaStatuses, getWorkshops } from "@/lib/backend-api";
 import { getCurrentUser } from "@/lib/session";
 
 // Must never be statically prerendered - same reasoning as every other
@@ -9,6 +9,11 @@ export const dynamic = "force-dynamic";
 export default async function PlannerPage() {
   let error: string | null = null;
   let departments, workshops, statuses;
+  // Defaults to "off" on a fetch failure - same fail-safe direction as the
+  // rest of this feature (see fivesystems_client.py's module docstring):
+  // if Settings can't be reached, "Получить ЗН" should be unavailable, not
+  // silently assumed on.
+  let fivesystemsApiEnabled = false;
 
   try {
     [departments, workshops, statuses] = await Promise.all([
@@ -18,6 +23,13 @@ export default async function PlannerPage() {
     ]);
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
+  }
+
+  try {
+    fivesystemsApiEnabled = (await getAppSettings()).fivesystems_api_enabled;
+  } catch {
+    // Already defaults to false above - the rest of the Planner still
+    // works fine without this one setting.
   }
 
   const user = await getCurrentUser();
@@ -43,6 +55,7 @@ export default async function PlannerPage() {
           statuses={statuses}
           defaultDepartmentId={user?.departmentId ?? null}
           defaultWorkshopId={user?.workshopId ?? null}
+          fivesystemsApiEnabled={fivesystemsApiEnabled}
         />
       )}
     </div>

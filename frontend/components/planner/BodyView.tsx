@@ -39,12 +39,20 @@ function carMatches(car: BodyCar, query: string): boolean {
 /** Wraps BodyViewInner and forces a full remount of it (fresh state,
  * fresh useEffect, fresh fetch) after every write, by bumping `key` - see
  * the identical wrapper on MechanicalView for the full reasoning. */
-export function BodyView(props: { workshop: Workshop }) {
+export function BodyView(props: { workshop: Workshop; fivesystemsApiEnabled: boolean }) {
   const [instanceKey, setInstanceKey] = useState(0);
   return <BodyViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
 }
 
-function BodyViewInner({ workshop, onWritten }: { workshop: Workshop; onWritten: () => void }) {
+function BodyViewInner({
+  workshop,
+  fivesystemsApiEnabled,
+  onWritten,
+}: {
+  workshop: Workshop;
+  fivesystemsApiEnabled: boolean;
+  onWritten: () => void;
+}) {
   const [currentDate, setCurrentDate] = useState(todayIso());
   const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(21);
   const [search, setSearch] = useState("");
@@ -462,6 +470,7 @@ function BodyViewInner({ workshop, onWritten }: { workshop: Workshop; onWritten:
         key={dialogDraft?.carId ?? `new-${dialogDraft?.stages[0]?.startDate}`}
         open={dialogOpen}
         draft={dialogDraft}
+        fivesystemsApiEnabled={fivesystemsApiEnabled}
         onClose={closeDialog}
         onSave={save}
         onDelete={remove}
