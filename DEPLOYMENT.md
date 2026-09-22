@@ -123,6 +123,11 @@ your own record of what you set.
 | `YANDEX_DISK_OAUTH_TOKEN` | OAuth token, `disk:read`+`disk:write` scopes | same token the 1C module itself uses |
 | `YANDEX_DISK_WATCH_PATH` | `/1c-export` | must match what 1C uploads into |
 | `YANDEX_POLL_INTERVAL_SECONDS` | `300` | |
+| `ENABLE_FIVESYSTEMS_LOOKUP` | `true` | Planner's "Получить ЗН" live plate lookup - Pan Motors/5Systems-specific, see `app/services/fivesystems_client.py`'s module docstring |
+| `FIVESYSTEMS_API_BASE_URL` | `https://api.5systems.ru` | |
+| `FIVESYSTEMS_USERNAME` | 5Systems API account username | |
+| `FIVESYSTEMS_PASSWORD` | 5Systems API account password | |
+| `FIVESYSTEMS_COMPANY_UUID` | this client's `company_uuid` in 5Systems | |
 
 **Frontend:**
 

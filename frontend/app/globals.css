@@ -2716,6 +2716,33 @@ table.bt {
   color: var(--text-muted);
 }
 
+/* Fallback plate lookup ("Не нашли? Найти по гос.номеру") - see
+   WorkOrderAutocomplete.tsx for why this exists (today's own ЗН, not yet
+   reached by the once-daily 1C export). */
+.planner-plate-lookup-toggle {
+  margin-top: 6px;
+  font-size: 0.78rem;
+  padding: 0;
+}
+
+.planner-plate-lookup {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.planner-plate-lookup input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.planner-plate-lookup-error {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+}
+
 /* ---- Кузовной stage editor (inside BodyCarDialog) ---- */
 
 .planner-stage-fieldset {

@@ -29,6 +29,14 @@ export function searchWorkOrders(q: string): Promise<PlannerWorkOrder[]> {
   return proxyFetch<PlannerWorkOrder[]>(`/api/planner/work-orders/search?q=${encodeURIComponent(q)}`);
 }
 
+/** "Получить ЗН" - live 5Systems lookup for a work order the (once-daily)
+ * 1C export hasn't reached yet. Rejects on "not found"/"disabled"/network
+ * error alike - the caller (WorkOrderAutocomplete) tells them apart by the
+ * thrown message. */
+export function lookupWorkOrderByPlate(plate: string): Promise<PlannerWorkOrder> {
+  return proxyFetch<PlannerWorkOrder>(`/api/planner/work-orders/lookup?plate=${encodeURIComponent(plate)}`);
+}
+
 export const workshopJobsApi = {
   // The URL is otherwise identical across reloads (same workshop/date
   // range), and `cache: "no-store"` alone did not stop stale data from

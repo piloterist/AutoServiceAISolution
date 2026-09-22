@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, time
+from decimal import Decimal
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.models.body_car import BodyCar
@@ -28,6 +30,7 @@ from app.models.workshop import Workshop
 from app.models.workshop_job import WorkshopJob
 from app.schemas.planner import BodyCarWrite, WorkshopJobWrite
 from app.services import audit_log_service
+from app.services.fivesystems_client import WorkOrderLookupResult
 
 ENTITY_WORKSHOP_JOB = "workshop_job"
 ENTITY_BODY_CAR = "body_car"
@@ -61,6 +64,54 @@ def search_work_orders(db: Session, q: str, *, limit: int = 20) -> list[WorkOrde
         .limit(limit)
     )
     return list(db.scalars(stmt))
+
+
+def get_or_create_stub_work_order(db: Session, result: WorkOrderLookupResult) -> WorkOrder:
+    """Finds or creates the WorkOrder a live 5Systems plate lookup
+    corresponds to, keyed by the same (source_system, external_number)
+    the real 1C import upserts on - so the next day's real import lands on
+    this exact same row and fills in everything this stub couldn't get
+    (labor/part lines, payment history, internal-order flags, the rest of
+    the fields this module never touches).
+
+    Deliberately INSERT ... ON CONFLICT DO NOTHING, never DO UPDATE: if a
+    row already exists here, it was either populated by a real import
+    (richer than anything this lookup could ever produce - must not be
+    degraded back to a stub) or by an earlier lookup for the same plate
+    (nothing new to add). Either way, the existing row wins as-is.
+    """
+    table = WorkOrder.__table__
+    values = {
+        "external_number": result.external_number,
+        "source_system": "alpha-auto",
+        "document_date": result.document_date,
+        "customer_name": result.customer_name,
+        "vehicle_description": result.vehicle_description,
+        "vin": result.vin,
+        # NOT NULL on the model - 0 here means "not priced yet/unknown",
+        # not a real figure; corrected the same way every other field here
+        # is, by the next real 1C import.
+        "amount": result.amount if result.amount is not None else Decimal("0"),
+    }
+    stmt = (
+        pg_insert(table)
+        .values(**values)
+        .on_conflict_do_nothing(
+            index_elements=[table.c.source_system, table.c.external_number],
+        )
+    )
+    db.execute(stmt)
+    db.commit()
+
+    row = db.scalar(
+        select(WorkOrder).where(
+            WorkOrder.source_system == "alpha-auto",
+            WorkOrder.external_number == result.external_number,
+        )
+    )
+    if row is None:  # pragma: no cover - the insert above guarantees a row exists
+        raise NotFoundError("Failed to create or find the looked-up work order")
+    return row
 
 
 # ---- Слесарный (WorkshopJob) -----------------------------------------------

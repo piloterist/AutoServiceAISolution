@@ -637,6 +637,16 @@ export function searchPlannerWorkOrders(q: string): Promise<PlannerWorkOrder[]> 
   return backendGet<PlannerWorkOrder[]>("/api/v1/planner/work-orders/search", { q });
 }
 
+/** Live 5Systems lookup for a work order not yet reached by the (now
+ * once-daily) 1C export - see backend/app/services/fivesystems_client.py's
+ * module docstring for the full why/how. Throws on any backend error,
+ * including the expected "not found" (404) and "feature disabled" (503)
+ * cases - the caller distinguishes them by the thrown message/status, same
+ * pattern as every other backend-api.ts function here. */
+export function lookupPlannerWorkOrderByPlate(plate: string): Promise<PlannerWorkOrder> {
+  return backendGet<PlannerWorkOrder>("/api/v1/planner/work-orders/lookup-by-plate", { plate });
+}
+
 export type WorkshopJob = {
   id: string;
   workshop_id: string;

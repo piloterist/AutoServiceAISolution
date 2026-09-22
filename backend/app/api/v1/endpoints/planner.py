@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.body_car import BodyCar
 from app.models.workshop_job import WorkshopJob
@@ -27,6 +28,7 @@ from app.schemas.planner import (
     WorkshopJobWrite,
 )
 from app.services import planner_service
+from app.services.fivesystems_client import FiveSystemsError, lookup_work_order_by_plate
 from app.services.planner_service import NotFoundError, SchedulingError
 
 router = APIRouter(prefix="/planner", tags=["planner"], dependencies=[Depends(verify_api_token)])
@@ -56,6 +58,35 @@ def search_work_orders(q: str, db: Session = Depends(get_db)) -> list[WorkOrderS
         WorkOrderSearchResult.model_validate(w)
         for w in planner_service.search_work_orders(db, q.strip())
     ]
+
+
+@router.get("/work-orders/lookup-by-plate", response_model=WorkOrderSearchResult)
+def lookup_work_order_by_plate_endpoint(
+    plate: str, db: Session = Depends(get_db)
+) -> WorkOrderSearchResult:
+    """Live lookup against 5Systems for a work order not yet in our own DB -
+    see services/fivesystems_client.py's module docstring for why this
+    exists and what it can/can't find. On a hit, creates (or reuses) a
+    minimal WorkOrder row so the Planner's usual "attach to a ЗН" flow
+    works unchanged from here on."""
+    settings = get_settings()
+    if not settings.enable_fivesystems_lookup:
+        raise HTTPException(status_code=503, detail="5Systems lookup is not enabled")
+    if not plate or not plate.strip():
+        raise HTTPException(status_code=422, detail="plate is required")
+
+    try:
+        result = lookup_work_order_by_plate(plate.strip())
+    except FiveSystemsError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if result is None:
+        raise HTTPException(
+            status_code=404, detail="Открытый заказ-наряд с таким номером не найден"
+        )
+
+    work_order = planner_service.get_or_create_stub_work_order(db, result)
+    return WorkOrderSearchResult.model_validate(work_order)
 
 
 # ---- Слесарный --------------------------------------------------------------

@@ -50,6 +50,25 @@ class Settings(BaseSettings):
     yandex_disk_watch_path: str = "/1c-export"
     yandex_poll_interval_seconds: int = 300
 
+    # Optional module: live 5Systems (Alpha-Auto) lookup by vehicle plate.
+    #
+    # The nightly 1C export (see 1c/TestExportOrders.bsl, now a once-daily
+    # job rather than every 30 minutes - see DEPLOYMENT.md) only reaches
+    # today's newly-created work orders the following morning. This gives
+    # the Planner a way to look one up immediately when an operator is
+    # scheduling a car whose ЗН was just created in Alpha-Auto: a plate
+    # search against 5Systems' own REST API (api.5systems.ru), which is
+    # unrelated to the 1C export path entirely - see
+    # services/fivesystems_client.py for the full flow and why it only
+    # writes a *stub* WorkOrder row (never overwrites one the real import
+    # already populated). Disabled by default - this is a Pan Motors/
+    # 5Systems-specific integration, not something every client has.
+    enable_fivesystems_lookup: bool = False
+    fivesystems_api_base_url: str = "https://api.5systems.ru"
+    fivesystems_username: str | None = None
+    fivesystems_password: str | None = None
+    fivesystems_company_uuid: str | None = None
+
     # Which work order status value(s) count as "revenue" for the dashboard's
     # reporting endpoints (monthly summary, by-department summary) - comma
     # separated, e.g. "Закрыт". A work order in any other status (open, in
