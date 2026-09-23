@@ -40,6 +40,9 @@ class BodyCar(Base):
     vin: Mapped[str | None] = mapped_column(String(32), nullable=True)
     plate: Mapped[str | None] = mapped_column(String(20), nullable=True)
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Filled from the linked ЗН when picked, or typed by hand - same pattern
+    # as car_description/plate/client_name above, not a live FK read.
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     work_description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     color: Mapped[str] = mapped_column(

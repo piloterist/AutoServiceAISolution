@@ -8,10 +8,14 @@
 // bundle).
 import type {
   AuditLogEntry,
+  Employee,
+  EmployeeWrite,
   OrgDepartment,
   OrgUser,
   OrgUserCreate,
   OrgUserUpdate,
+  RoleTabVisibility,
+  RoleTabVisibilityWrite,
   SlesarkaStatus,
   Workshop,
   WorkshopWrite,
@@ -109,4 +113,39 @@ export const slesarkaStatusesApi = {
 
 export const auditLogApi = {
   list: () => proxyFetch<AuditLogEntry[]>(bust("/api/admin/audit-log"), noStoreFresh),
+};
+
+export const employeesApi = {
+  list: () => proxyFetch<Employee[]>(bust("/api/admin/employees"), noStoreFresh),
+  create: (payload: EmployeeWrite) =>
+    proxyFetch<Employee>("/api/admin/employees", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  update: (id: string, payload: EmployeeWrite) =>
+    proxyFetch<Employee>(`/api/admin/employees/${id}`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  remove: (id: string) => proxyFetch<void>(`/api/admin/employees/${id}`, { method: "DELETE" }),
+};
+
+export const roleTabVisibilityApi = {
+  list: () => proxyFetch<RoleTabVisibility[]>(bust("/api/admin/role-tab-visibility"), noStoreFresh),
+  create: (payload: RoleTabVisibilityWrite) =>
+    proxyFetch<RoleTabVisibility>("/api/admin/role-tab-visibility", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  update: (id: string, payload: RoleTabVisibilityWrite) =>
+    proxyFetch<RoleTabVisibility>(`/api/admin/role-tab-visibility/${id}`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  remove: (id: string) =>
+    proxyFetch<void>(`/api/admin/role-tab-visibility/${id}`, { method: "DELETE" }),
 };

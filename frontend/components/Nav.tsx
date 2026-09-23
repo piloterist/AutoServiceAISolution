@@ -5,24 +5,9 @@ import { usePathname } from "next/navigation";
 
 import { ThemeToggle } from "@/components/ThemeToggle";
 import type { SessionUser } from "@/lib/auth";
-
-// Placeholder top-level navigation. Items map to future core modules; actual
-// enabled modules per client instance will come from configuration/feature
-// flags, not from this hardcoded list once that layer exists. "Settings" is
-// separate - it's role-gated below, not just another module.
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/work-orders", label: "Work Orders" },
-  { href: "/planner", label: "Planner" },
-  { href: "/kanban", label: "Kanban" },
-  { href: "/employees", label: "Employees" },
-  { href: "/analytics", label: "Analytics" },
-];
+import { NAV_TABS } from "@/lib/nav-tabs";
 
 const ROLE_ADMIN = "Админ";
-// Locked to only the Planner tab - see middleware.ts, which enforces the
-// same restriction at the page/API level (this alone is only cosmetic).
-const ROLE_SERVICE_ADVISOR = "Мастер приёмщик";
 
 export function Nav({ user }: { user: SessionUser | null }) {
   const pathname = usePathname();
@@ -31,12 +16,17 @@ export function Nav({ user }: { user: SessionUser | null }) {
   // in it just bounces back here via middleware until you're logged in.
   if (pathname === "/login") return null;
 
+  // Which tabs a role can see comes from the session cookie's allowedTabs
+  // (see lib/auth.ts, Settings → Пользователи → "Права доступа") - this
+  // alone is only cosmetic, middleware.ts enforces the same restriction at
+  // the page/API level. "Settings" is separate - not one of the
+  // configurable NAV_TABS, still hardcoded to ROLE_ADMIN (see
+  // middleware.ts's module comment for why).
+  const visibleTabs = NAV_TABS.filter((tab) => user?.allowedTabs?.includes(tab.key));
   const items =
-    user?.role === ROLE_SERVICE_ADVISOR
-      ? NAV_ITEMS.filter((item) => item.href === "/planner")
-      : user?.role === ROLE_ADMIN
-        ? [...NAV_ITEMS, { href: "/settings", label: "Settings" }]
-        : NAV_ITEMS;
+    user?.role === ROLE_ADMIN
+      ? [...visibleTabs.map((t) => ({ href: t.key, label: t.label })), { href: "/settings", label: "Settings" }]
+      : visibleTabs.map((t) => ({ href: t.key, label: t.label }));
 
   return (
     <nav className="nav">

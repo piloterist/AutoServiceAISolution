@@ -18,6 +18,10 @@ from app.schemas.admin import (
     DepartmentCreate,
     DepartmentOut,
     DepartmentUpdate,
+    EmployeeOut,
+    EmployeeWrite,
+    RoleTabVisibilityOut,
+    RoleTabVisibilityWrite,
     SlesarkaStatusOut,
     SlesarkaStatusWrite,
     UserCreate,
@@ -200,6 +204,137 @@ def update_user(user_id: uuid.UUID, payload: UserUpdate, db: Session = Depends(g
 def delete_user(user_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
     if not admin_service.delete_user(db, user_id):
         raise _not_found("User")
+
+
+# ---- Сотрудники ---------------------------------------------------------
+
+
+def _employee_out(employee, department_name: str | None, workshop_label: str | None) -> EmployeeOut:
+    return EmployeeOut(
+        id=employee.id,
+        full_name=employee.full_name,
+        specialty=employee.specialty,
+        department_id=employee.department_id,
+        department_name=department_name,
+        workshop_id=employee.workshop_id,
+        workshop_label=workshop_label,
+    )
+
+
+@router.get("/employees", response_model=list[EmployeeOut])
+def list_employees(db: Session = Depends(get_db)) -> list[EmployeeOut]:
+    return [_employee_out(e, dep, ws) for e, dep, ws in admin_service.list_employees(db)]
+
+
+@router.post("/employees", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED)
+def create_employee(payload: EmployeeWrite, db: Session = Depends(get_db)) -> EmployeeOut:
+    try:
+        payload.validate_specialty()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    employee, dep, ws = admin_service.create_employee(
+        db,
+        full_name=payload.full_name,
+        specialty=payload.specialty,
+        department_id=payload.department_id,
+        workshop_id=payload.workshop_id,
+    )
+    return _employee_out(employee, dep, ws)
+
+
+@router.put("/employees/{employee_id}", response_model=EmployeeOut)
+def update_employee(
+    employee_id: uuid.UUID, payload: EmployeeWrite, db: Session = Depends(get_db)
+) -> EmployeeOut:
+    try:
+        payload.validate_specialty()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    result = admin_service.update_employee(
+        db,
+        employee_id,
+        full_name=payload.full_name,
+        specialty=payload.specialty,
+        department_id=payload.department_id,
+        workshop_id=payload.workshop_id,
+    )
+    if result is None:
+        raise _not_found("Employee")
+    return _employee_out(*result)
+
+
+@router.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_employee(employee_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
+    if not admin_service.delete_employee(db, employee_id):
+        raise _not_found("Employee")
+
+
+# ---- Права доступа (видимость вкладок по роли) -------------------------
+
+
+@router.get("/role-tab-visibility", response_model=list[RoleTabVisibilityOut])
+def list_role_tab_visibility(db: Session = Depends(get_db)) -> list[RoleTabVisibilityOut]:
+    return [
+        RoleTabVisibilityOut.model_validate(r) for r in admin_service.list_role_tab_visibility(db)
+    ]
+
+
+@router.post(
+    "/role-tab-visibility", response_model=RoleTabVisibilityOut, status_code=status.HTTP_201_CREATED
+)
+def create_role_tab_visibility(
+    payload: RoleTabVisibilityWrite, db: Session = Depends(get_db)
+) -> RoleTabVisibilityOut:
+    try:
+        payload.validate_choices()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    try:
+        row = admin_service.create_role_tab_visibility(
+            db, role=payload.role, visible_tabs=payload.visible_tabs
+        )
+    except Exception as exc:  # unique role violation
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Role already configured"
+        ) from exc
+    return RoleTabVisibilityOut.model_validate(row)
+
+
+@router.put("/role-tab-visibility/{row_id}", response_model=RoleTabVisibilityOut)
+def update_role_tab_visibility(
+    row_id: uuid.UUID, payload: RoleTabVisibilityWrite, db: Session = Depends(get_db)
+) -> RoleTabVisibilityOut:
+    try:
+        payload.validate_choices()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    try:
+        row = admin_service.update_role_tab_visibility(
+            db, row_id, role=payload.role, visible_tabs=payload.visible_tabs
+        )
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Role already configured"
+        ) from exc
+    if row is None:
+        raise _not_found("Role tab visibility")
+    return RoleTabVisibilityOut.model_validate(row)
+
+
+@router.delete("/role-tab-visibility/{row_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_role_tab_visibility(row_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
+    if not admin_service.delete_role_tab_visibility(db, row_id):
+        raise _not_found("Role tab visibility")
 
 
 # ---- Статусы слесарки ------------------------------------------------

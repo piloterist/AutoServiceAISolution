@@ -8,20 +8,33 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  createEmployee,
   createOrgDepartment,
   createOrgUser,
+  createRoleTabVisibility,
   createSlesarkaStatus,
   createWorkshop,
   getAuditLog,
+  getEmployees,
   getOrgDepartments,
   getOrgUsers,
+  getRoleTabVisibility,
   getSlesarkaStatuses,
   getWorkshops,
+  type EmployeeWrite,
   type OrgUserCreate,
+  type RoleTabVisibilityWrite,
   type WorkshopWrite,
 } from "@/lib/backend-api";
 
-type Resource = "departments" | "workshops" | "users" | "slesarka-statuses" | "audit-log";
+type Resource =
+  | "departments"
+  | "workshops"
+  | "users"
+  | "slesarka-statuses"
+  | "audit-log"
+  | "employees"
+  | "role-tab-visibility";
 
 function isResource(value: string): value is Resource {
   return (
@@ -29,7 +42,9 @@ function isResource(value: string): value is Resource {
     value === "workshops" ||
     value === "users" ||
     value === "slesarka-statuses" ||
-    value === "audit-log"
+    value === "audit-log" ||
+    value === "employees" ||
+    value === "role-tab-visibility"
   );
 }
 
@@ -49,6 +64,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json(await getSlesarkaStatuses());
       case "audit-log":
         return NextResponse.json(await getAuditLog());
+      case "employees":
+        return NextResponse.json(await getEmployees());
+      case "role-tab-visibility":
+        return NextResponse.json(await getRoleTabVisibility());
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -74,6 +93,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json(await createOrgUser(body as OrgUserCreate), { status: 201 });
       case "slesarka-statuses":
         return NextResponse.json(await createSlesarkaStatus(body.name, body.color), { status: 201 });
+      case "employees":
+        return NextResponse.json(await createEmployee(body as EmployeeWrite), { status: 201 });
+      case "role-tab-visibility":
+        return NextResponse.json(await createRoleTabVisibility(body as RoleTabVisibilityWrite), {
+          status: 201,
+        });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

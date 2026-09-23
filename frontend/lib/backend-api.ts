@@ -21,6 +21,7 @@ export type WorkOrderListItem = {
   end_date: string | null;
   closed_date: string | null;
   customer_name: string | null;
+  phone: string | null;
   payer_name: string | null;
   vehicle_description: string | null;
   status: string | null;
@@ -463,6 +464,7 @@ export type AuthenticatedUser = {
   department_id: string | null;
   department_name: string | null;
   workshop_id: string | null;
+  allowed_tabs: string[];
 };
 
 /** Throws with a message the login form can show as-is on 401; any other
@@ -612,6 +614,69 @@ export function getAuditLog(): Promise<AuditLogEntry[]> {
   return backendGet<AuditLogEntry[]>("/api/v1/settings/audit-log");
 }
 
+export type Employee = {
+  id: string;
+  full_name: string;
+  specialty: string;
+  department_id: string | null;
+  department_name: string | null;
+  workshop_id: string | null;
+  workshop_label: string | null; // "Каховка / Слесарный"
+};
+
+export type EmployeeWrite = {
+  full_name: string;
+  specialty: string;
+  department_id: string | null;
+  workshop_id: string | null;
+};
+
+export function getEmployees(): Promise<Employee[]> {
+  return backendGet<Employee[]>("/api/v1/settings/employees");
+}
+
+export function createEmployee(payload: EmployeeWrite): Promise<Employee> {
+  return backendPost<Employee>("/api/v1/settings/employees", payload);
+}
+
+export function updateEmployee(id: string, payload: EmployeeWrite): Promise<Employee> {
+  return backendPut<Employee>(`/api/v1/settings/employees/${id}`, payload);
+}
+
+export function deleteEmployee(id: string): Promise<void> {
+  return backendDelete(`/api/v1/settings/employees/${id}`);
+}
+
+export type RoleTabVisibility = {
+  id: string;
+  role: string;
+  visible_tabs: string[];
+};
+
+export type RoleTabVisibilityWrite = {
+  role: string;
+  visible_tabs: string[];
+};
+
+export function getRoleTabVisibility(): Promise<RoleTabVisibility[]> {
+  return backendGet<RoleTabVisibility[]>("/api/v1/settings/role-tab-visibility");
+}
+
+export function createRoleTabVisibility(payload: RoleTabVisibilityWrite): Promise<RoleTabVisibility> {
+  return backendPost<RoleTabVisibility>("/api/v1/settings/role-tab-visibility", payload);
+}
+
+export function updateRoleTabVisibility(
+  id: string,
+  payload: RoleTabVisibilityWrite,
+): Promise<RoleTabVisibility> {
+  return backendPut<RoleTabVisibility>(`/api/v1/settings/role-tab-visibility/${id}`, payload);
+}
+
+export function deleteRoleTabVisibility(id: string): Promise<void> {
+  return backendDelete(`/api/v1/settings/role-tab-visibility/${id}`);
+}
+
 // ============================================================================
 // Planner (Слесарный/Кузовной цех) - see backend app/services/planner_service.py.
 // Writes carry the acting user's identity for audit logging (see
@@ -634,6 +699,7 @@ export type PlannerWorkOrder = {
   vehicle_description: string | null;
   vin: string | null;
   customer_name: string | null;
+  phone: string | null;
   amount: string;
 };
 
@@ -662,6 +728,7 @@ export type WorkshopJob = {
   vin: string | null;
   plate: string | null;
   client_name: string | null;
+  phone: string | null;
   work_description: string | null;
   job_date: string; // "YYYY-MM-DD"
   post_number: number;
@@ -671,6 +738,8 @@ export type WorkshopJob = {
   status_id: string | null;
   status_name: string | null;
   status_color: string | null;
+  employee_id: string | null;
+  employee_name: string | null;
 };
 
 export type WorkshopJobWrite = {
@@ -679,6 +748,8 @@ export type WorkshopJobWrite = {
   vin: string | null;
   plate: string | null;
   client_name: string | null;
+  phone: string | null;
+  employee_id: string | null;
   work_description: string | null;
   job_date: string;
   post_number: number;
@@ -721,6 +792,8 @@ export type BodyCarStage = {
   note: string | null;
   start_date: string;
   end_date: string;
+  employee_id: string | null;
+  employee_name: string | null;
 };
 
 export type BodyCarStageWrite = {
@@ -728,6 +801,7 @@ export type BodyCarStageWrite = {
   note: string | null;
   start_date: string;
   end_date: string;
+  employee_id: string | null;
 };
 
 export type BodyCar = {
@@ -740,10 +814,12 @@ export type BodyCar = {
   vin: string | null;
   plate: string | null;
   client_name: string | null;
+  phone: string | null;
   work_description: string | null;
   color: string;
   status: string;
   stages: BodyCarStage[];
+  created_at: string;
 };
 
 export type BodyCarWrite = {
@@ -752,6 +828,7 @@ export type BodyCarWrite = {
   vin: string | null;
   plate: string | null;
   client_name: string | null;
+  phone: string | null;
   work_description: string | null;
   status: string;
   stages: BodyCarStageWrite[];

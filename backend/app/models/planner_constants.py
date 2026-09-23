@@ -17,11 +17,11 @@ CAR_STATUSES = (CAR_STATUS_ACCEPT, CAR_STATUS_IN_PROGRESS, CAR_STATUS_WAITING, C
 BODY_STAGE_TYPES = (
     "Приёмка",
     "Разбор",
+    "Дефектовка",
     "Жесть",
     "Подготовка",
     "Окраска",
-    "Сборка",
-    "Полировка",
+    "Сборка-Полировка",
     "Выдача",
     "Ответ от СК",
     "Ждём з/ч",

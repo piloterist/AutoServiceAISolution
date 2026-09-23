@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
+from app.models.employee import Employee
 from app.models.planner_constants import BODY_CAR_COLORS
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.work_order import WorkOrder
@@ -161,6 +162,8 @@ _JOB_LOGGED_FIELDS = (
     "vin",
     "plate",
     "client_name",
+    "phone",
+    "employee_id",
     "work_description",
     "job_date",
     "post_number",
@@ -288,6 +291,7 @@ def _stages_snapshot(stages: list[BodyCarStage]) -> list[dict]:
             "note": s.note,
             "start_date": _jsonable(s.start_date),
             "end_date": _jsonable(s.end_date),
+            "employee_id": _jsonable(s.employee_id),
         }
         for s in stages
     ]
@@ -299,6 +303,7 @@ _CAR_LOGGED_FIELDS = (
     "vin",
     "plate",
     "client_name",
+    "phone",
     "work_description",
     "status",
 )
@@ -319,6 +324,7 @@ def create_body_car(
         vin=data.vin,
         plate=data.plate,
         client_name=data.client_name,
+        phone=data.phone,
         work_description=data.work_description,
         status=data.status,
         color=_next_car_color(db, workshop_id),
@@ -331,6 +337,7 @@ def create_body_car(
                 start_date=s.start_date,
                 end_date=s.end_date,
                 sort_order=i,
+                employee_id=s.employee_id,
             )
             for i, s in enumerate(data.stages)
         ],
@@ -382,6 +389,7 @@ def update_body_car(
             start_date=s.start_date,
             end_date=s.end_date,
             sort_order=i,
+            employee_id=s.employee_id,
         )
         for i, s in enumerate(data.stages)
     ]
@@ -448,3 +456,9 @@ def work_order_lookup(db: Session, work_order_ids: set[uuid.UUID]) -> dict[uuid.
     if not work_order_ids:
         return {}
     return {w.id: w for w in db.scalars(select(WorkOrder).where(WorkOrder.id.in_(work_order_ids)))}
+
+
+def employee_lookup(db: Session, employee_ids: set[uuid.UUID]) -> dict[uuid.UUID, Employee]:
+    if not employee_ids:
+        return {}
+    return {e.id: e for e in db.scalars(select(Employee).where(Employee.id.in_(employee_ids)))}

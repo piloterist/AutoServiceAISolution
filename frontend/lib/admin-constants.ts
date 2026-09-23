@@ -12,3 +12,14 @@ export type WorkshopType = (typeof WORKSHOP_TYPES)[number];
 // Mirrors backend app/models/user.py's ROLES.
 export const USER_ROLES = ["Админ", "Управляющий", "Мастер приёмщик", "Бухгалтер", "Сотрудник"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
+
+// Mirrors backend app/models/employee.py's SPECIALTIES.
+export const SPECIALTIES = [
+  "Жестянщик",
+  "Маляр",
+  "Арматурщик",
+  "Механик",
+  "Мастер приёмщик",
+  "Администратор",
+] as const;
+export type Specialty = (typeof SPECIALTIES)[number];

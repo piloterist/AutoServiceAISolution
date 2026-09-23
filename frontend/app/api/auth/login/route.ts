@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
     departmentId: user.department_id,
     departmentName: user.department_name,
     workshopId: user.workshop_id,
+    allowedTabs: user.allowed_tabs,
   });
   const response = NextResponse.redirect(absoluteUrl(next, request), { status: 303 });
   response.cookies.set(SESSION_COOKIE_NAME, token, {

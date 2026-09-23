@@ -6,7 +6,9 @@ from app.models.app_settings import AppSettings
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
 from app.models.department import Department
+from app.models.employee import Employee
 from app.models.import_batch import ImportBatch
+from app.models.role_tab_visibility import RoleTabVisibility
 from app.models.schedule_audit_log import ScheduleAuditLog
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.user import User
@@ -28,10 +30,12 @@ __all__ = [
     "WorkOrderPaymentEvent",
     "AppSettings",
     "Department",
+    "Employee",
     "Workshop",
     "User",
     "SlesarkaStatus",
     "ScheduleAuditLog",
+    "RoleTabVisibility",
     "WorkshopJob",
     "BodyCar",
     "BodyCarStage",

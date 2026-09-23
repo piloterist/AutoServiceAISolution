@@ -2,9 +2,11 @@ import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import {
   getAppSettings,
   getAuditLog,
+  getEmployees,
   getOrgDepartments,
   getOrgUsers,
   getRepairTypes,
+  getRoleTabVisibility,
   getSlesarkaStatuses,
   getWorkshops,
 } from "@/lib/backend-api";
@@ -22,13 +24,25 @@ export default async function SettingsPage() {
   let error: string | null = null;
 
   try {
-    const [appSettings, repairTypesRes, departments, workshops, users, statuses, auditLog] = await Promise.all([
+    const [
+      appSettings,
+      repairTypesRes,
+      departments,
+      workshops,
+      users,
+      statuses,
+      employees,
+      roleTabVisibility,
+      auditLog,
+    ] = await Promise.all([
       getAppSettings(),
       getRepairTypes(),
       getOrgDepartments(),
       getWorkshops(),
       getOrgUsers(),
       getSlesarkaStatuses(),
+      getEmployees(),
+      getRoleTabVisibility(),
       getAuditLog(),
     ]);
     data = {
@@ -38,6 +52,8 @@ export default async function SettingsPage() {
       workshops,
       users,
       statuses,
+      employees,
+      roleTabVisibility,
       auditLog,
     };
   } catch (err) {
@@ -62,6 +78,8 @@ export default async function SettingsPage() {
           workshops={data.workshops}
           users={data.users}
           statuses={data.statuses}
+          employees={data.employees}
+          roleTabVisibility={data.roleTabVisibility}
           auditLog={data.auditLog}
         />
       )}

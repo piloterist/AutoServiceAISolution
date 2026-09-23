@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { OrgDepartment, SlesarkaStatus, Workshop } from "@/lib/backend-api";
+import type { Employee, OrgDepartment, SlesarkaStatus, Workshop } from "@/lib/backend-api";
 
 import { BodyView } from "./BodyView";
 import { MechanicalView } from "./MechanicalView";
@@ -19,6 +19,7 @@ export function PlannerShell({
   departments,
   workshops,
   statuses,
+  employees,
   defaultDepartmentId,
   defaultWorkshopId,
   fivesystemsApiEnabled,
@@ -26,6 +27,8 @@ export function PlannerShell({
   departments: OrgDepartment[];
   workshops: Workshop[];
   statuses: SlesarkaStatus[];
+  /** Кузовной's stage "Сотрудник" field - see BodyView.tsx/BodyCarDialog.tsx. */
+  employees: Employee[];
   defaultDepartmentId: string | null;
   defaultWorkshopId: string | null;
   /** Настройки → Интеграции → "Включить API" - gates the Planner's
@@ -127,11 +130,12 @@ export function PlannerShell({
         <MechanicalView
           workshop={selectedWorkshop}
           statuses={statuses}
+          employees={employees}
           fivesystemsApiEnabled={fivesystemsApiEnabled}
         />
       )}
       {selectedWorkshop && selectedWorkshop.workshop_type === "Кузовной" && (
-        <BodyView workshop={selectedWorkshop} fivesystemsApiEnabled={fivesystemsApiEnabled} />
+        <BodyView workshop={selectedWorkshop} employees={employees} fivesystemsApiEnabled={fivesystemsApiEnabled} />
       )}
     </div>
   );

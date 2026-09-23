@@ -22,6 +22,7 @@ class WorkOrderListItem(BaseModel):
     end_date: datetime | None
     closed_date: datetime | None
     customer_name: str | None
+    phone: str | None
     payer_name: str | None
     vehicle_description: str | None
     status: str | None

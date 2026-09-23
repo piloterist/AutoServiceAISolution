@@ -106,6 +106,9 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
     status_row = planner_service.status_lookup(db, {job.status_id} if job.status_id else set()).get(
         job.status_id
     )
+    employee = planner_service.employee_lookup(
+        db, {job.employee_id} if job.employee_id else set()
+    ).get(job.employee_id)
     return WorkshopJobOut(
         id=job.id,
         workshop_id=job.workshop_id,
@@ -117,6 +120,7 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
         vin=job.vin,
         plate=job.plate,
         client_name=job.client_name,
+        phone=job.phone,
         work_description=job.work_description,
         job_date=job.job_date,
         post_number=job.post_number,
@@ -126,6 +130,8 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
         status_id=job.status_id,
         status_name=status_row.name if status_row else None,
         status_color=status_row.color if status_row else None,
+        employee_id=job.employee_id,
+        employee_name=employee.full_name if employee else None,
     )
 
 
@@ -200,6 +206,9 @@ def _car_out(db: Session, car: BodyCar) -> BodyCarOut:
     work_order = planner_service.work_order_lookup(
         db, {car.work_order_id} if car.work_order_id else set()
     ).get(car.work_order_id)
+    employees = planner_service.employee_lookup(
+        db, {s.employee_id for s in car.stages if s.employee_id}
+    )
     return BodyCarOut(
         id=car.id,
         workshop_id=car.workshop_id,
@@ -210,10 +219,25 @@ def _car_out(db: Session, car: BodyCar) -> BodyCarOut:
         vin=car.vin,
         plate=car.plate,
         client_name=car.client_name,
+        phone=car.phone,
         work_description=car.work_description,
         color=car.color,
         status=car.status,
-        stages=[BodyCarStageOut.model_validate(s) for s in car.stages],
+        stages=[
+            BodyCarStageOut(
+                id=s.id,
+                stage_name=s.stage_name,
+                note=s.note,
+                start_date=s.start_date,
+                end_date=s.end_date,
+                employee_id=s.employee_id,
+                employee_name=employees[s.employee_id].full_name
+                if s.employee_id in employees
+                else None,
+            )
+            for s in car.stages
+        ],
+        created_at=car.created_at,
     )
 
 

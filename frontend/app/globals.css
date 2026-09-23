@@ -722,6 +722,45 @@ table.admin-data-table td {
   background: var(--surface);
 }
 
+/* Settings -> Пользователи -> "Права доступа" - a <details>-based
+   dropdown-with-checkboxes multi-select for a role's visible tabs (see
+   RoleTabVisibilityCard.tsx). <details> gives native open/close + outside-
+   click-to-close-on-blur-of-focus behavior for free, no custom JS needed. */
+.admin-multiselect summary {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 400;
+  color: var(--text);
+  background: var(--surface);
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-multiselect summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-multiselect-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.admin-multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
 .admin-form-error {
   color: var(--down);
   font-size: 0.85rem;
@@ -2414,6 +2453,17 @@ table.admin-data-table td {
   text-overflow: ellipsis;
 }
 
+/* Сотрудник, назначенный на запись - выводится последним. Тот же тёмный
+   цвет, что у .job-work - тот же фон плашки (плотный цвет статуса), тот же
+   риск нечитаемости на нём, что уже решался для .job-sub/.job-work. */
+.job-employee {
+  font-weight: 500;
+  color: #0a0a0a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .planner-job-dim {
   opacity: 0.35;
 }
@@ -2599,19 +2649,36 @@ table.bt {
 .planner-body-segment {
   position: absolute;
   top: 50%;
-  height: 32px;
+  height: 36px;
   transform: translateY(-50%);
   border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 6px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12) inset;
+}
+
+.planner-body-segment-stage {
   font-size: 0.7rem;
   font-weight: 600;
   color: #1f2937;
-  display: flex;
-  align-items: center;
-  padding: 0 6px;
-  overflow: hidden;
   white-space: nowrap;
+  overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12) inset;
+}
+
+/* Сотрудник, назначенный на этап - меньше и заметно светлее/серее
+   названия этапа, чтобы читаться как второстепенная строка, а не
+   конкурировать с ним за внимание. */
+.planner-body-segment-employee {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Draggable tick mark between two этапы - product brief part 5 ("между
@@ -2751,14 +2818,14 @@ table.bt {
 .planner-stage-header,
 .planner-stage-row {
   display: grid;
-  grid-template-columns: 1.2fr 1.2fr 1fr 1fr 24px;
-  gap: 6px;
+  grid-template-columns: 0.9fr 0.9fr 1fr 0.7fr 0.7fr 20px;
+  gap: 5px;
   align-items: center;
   margin-top: 6px;
 }
 
 .planner-stage-header {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--text-muted);
   font-weight: 700;
   margin-top: 0;
@@ -2767,10 +2834,10 @@ table.bt {
 .planner-stage-row input,
 .planner-stage-row select,
 .planner-stage-row .date-input {
-  padding: 0.4rem 0.5rem;
+  padding: 0.3rem 0.35rem;
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   background: var(--surface);
   color: var(--text);
   width: 100%;

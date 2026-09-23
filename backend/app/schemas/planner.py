@@ -5,7 +5,7 @@ services/planner_service.py and models/workshop_job.py, models/body_car.py.
 from __future__ import annotations
 
 import uuid
-from datetime import date, time
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from pydantic import BaseModel, Field, model_validator
@@ -21,6 +21,7 @@ class WorkOrderSearchResult(BaseModel):
     vehicle_description: str | None
     vin: str | None
     customer_name: str | None
+    phone: str | None
     amount: Decimal
 
     model_config = {"from_attributes": True}
@@ -44,6 +45,7 @@ class WorkshopJobOut(BaseModel):
     vin: str | None
     plate: str | None
     client_name: str | None
+    phone: str | None
     work_description: str | None
     job_date: date
     post_number: int
@@ -53,6 +55,9 @@ class WorkshopJobOut(BaseModel):
     status_id: uuid.UUID | None
     status_name: str | None
     status_color: str | None
+    employee_id: uuid.UUID | None
+    # Resolved from employee_id - see services/planner_service.employee_lookup.
+    employee_name: str | None
 
     model_config = {"from_attributes": True}
 
@@ -63,6 +68,8 @@ class WorkshopJobWrite(BaseModel):
     vin: str | None = None
     plate: str | None = None
     client_name: str | None = None
+    phone: str | None = None
+    employee_id: uuid.UUID | None = None
     work_description: str | None = None
     job_date: date
     post_number: int = Field(gt=0)
@@ -86,6 +93,7 @@ class BodyCarStageWrite(BaseModel):
     note: str | None = None
     start_date: date
     end_date: date
+    employee_id: uuid.UUID | None = None
 
     @model_validator(mode="after")
     def _check_dates(self) -> BodyCarStageWrite:
@@ -98,6 +106,8 @@ class BodyCarStageWrite(BaseModel):
 
 class BodyCarStageOut(BodyCarStageWrite):
     id: uuid.UUID
+    # Resolved from employee_id - see services/planner_service.employee_lookup.
+    employee_name: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -112,10 +122,15 @@ class BodyCarOut(BaseModel):
     vin: str | None
     plate: str | None
     client_name: str | None
+    phone: str | None
     work_description: str | None
     color: str
     status: str
     stages: list[BodyCarStageOut]
+    # Sort key for the car list (product ask: earliest-created first among
+    # cars with a stage covering today, latest-created first among the
+    # rest) - see BodyView.tsx.
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -126,6 +141,7 @@ class BodyCarWrite(BaseModel):
     vin: str | None = None
     plate: str | None = None
     client_name: str | None = None
+    phone: str | None = None
     work_description: str | None = None
     status: str
     stages: list[BodyCarStageWrite] = Field(min_length=1)

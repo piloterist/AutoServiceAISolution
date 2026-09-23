@@ -65,6 +65,9 @@ class WorkOrder(Base):
     )  # ДатаЗакрытия
 
     customer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # ЗаказНаряд.НомерТелефона - shown on the work order card and used to
+    # pre-fill the Planner record's own phone field when a ЗН is picked.
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # Payer can differ from the customer (e.g. an insurance company paying
     # for a customer's repair) - a distinct field, not derived from customer.
     payer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

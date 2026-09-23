@@ -16,12 +16,6 @@ export const SESSION_COOKIE_NAME = "pm_session";
 // reach /settings (see middleware.ts).
 export const ROLE_ADMIN = "Админ";
 
-// Mirrors backend app/models/user.py's ROLE_SERVICE_ADVISOR - the reverse
-// restriction from ROLE_ADMIN above: this role can reach ONLY /planner
-// (see middleware.ts) - a tabs/pages-level restriction only, nothing
-// inside the Planner itself is further gated by role.
-export const ROLE_SERVICE_ADVISOR = "Мастер приёмщик";
-
 export type SessionUser = {
   id: string;
   fullName: string;
@@ -30,6 +24,11 @@ export type SessionUser = {
   departmentId: string | null;
   departmentName: string | null;
   workshopId: string | null;
+  // Baked in at login time from the backend's RoleTabVisibility table (see
+  // lib/nav-tabs.ts, middleware.ts) - a snapshot as of login, same
+  // staleness tradeoff `role` itself already has (no revocation short of
+  // re-login or the cookie expiring).
+  allowedTabs: string[];
 };
 
 type SessionPayload = SessionUser & { exp: number };
@@ -116,6 +115,7 @@ export async function readSessionToken(
       departmentId: payload.departmentId,
       departmentName: payload.departmentName,
       workshopId: payload.workshopId,
+      allowedTabs: payload.allowedTabs,
     };
   } catch {
     return null;

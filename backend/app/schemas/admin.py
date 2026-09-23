@@ -10,6 +10,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from app.models.employee import SPECIALTIES
+from app.models.role_tab_visibility import NAV_TAB_KEYS
 from app.models.user import ROLES
 from app.models.workshop import WEEKDAY_CHOICES, WORKSHOP_TYPES
 
@@ -108,6 +110,54 @@ class UserUpdate(BaseModel):
             raise ValueError(f"role must be one of {ROLES}")
 
 
+# ---- Сотрудники ---------------------------------------------------------
+
+
+class EmployeeOut(BaseModel):
+    id: uuid.UUID
+    full_name: str
+    specialty: str
+    department_id: uuid.UUID | None
+    department_name: str | None
+    workshop_id: uuid.UUID | None
+    workshop_label: str | None
+
+    model_config = {"from_attributes": True}
+
+
+class EmployeeWrite(BaseModel):
+    full_name: str = Field(min_length=1, max_length=255)
+    specialty: str
+    department_id: uuid.UUID | None = None
+    workshop_id: uuid.UUID | None = None
+
+    def validate_specialty(self) -> None:
+        if self.specialty not in SPECIALTIES:
+            raise ValueError(f"specialty must be one of {SPECIALTIES}")
+
+
+# ---- Права доступа (видимость вкладок по роли) -------------------------
+
+
+class RoleTabVisibilityOut(BaseModel):
+    id: uuid.UUID
+    role: str
+    visible_tabs: list[str]
+
+    model_config = {"from_attributes": True}
+
+
+class RoleTabVisibilityWrite(BaseModel):
+    role: str
+    visible_tabs: list[str] = Field(min_length=1)
+
+    def validate_choices(self) -> None:
+        if self.role not in ROLES:
+            raise ValueError(f"role must be one of {ROLES}")
+        if any(tab not in NAV_TAB_KEYS for tab in self.visible_tabs):
+            raise ValueError(f"visible_tabs entries must be within {NAV_TAB_KEYS}")
+
+
 # ---- Статусы слесарки ------------------------------------------------
 
 
@@ -155,5 +205,8 @@ class AuthenticatedUser(BaseModel):
     department_id: uuid.UUID | None
     department_name: str | None
     workshop_id: uuid.UUID | None
+    # Baked in at login time from RoleTabVisibility - see
+    # services/admin_service.get_visible_tabs_for_role.
+    allowed_tabs: list[str]
 
     model_config = {"from_attributes": True}

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
-import type { SlesarkaStatus, Workshop, WorkshopJob, WorkshopJobWrite } from "@/lib/backend-api";
+import type { Employee, SlesarkaStatus, Workshop, WorkshopJob, WorkshopJobWrite } from "@/lib/backend-api";
 import { workshopJobsApi } from "@/lib/planner-client";
 import {
   addDaysIso,
@@ -56,11 +56,6 @@ type DragState = {
   previewEndMinutes: number;
 };
 
-function money(amount: string | number | null | undefined): string {
-  const n = typeof amount === "string" ? Number(amount) : (amount ?? 0);
-  return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 }).format(n || 0);
-}
-
 function jobMatches(job: WorkshopJob, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -80,6 +75,7 @@ function jobMatches(job: WorkshopJob, query: string): boolean {
 export function MechanicalView(props: {
   workshop: Workshop;
   statuses: SlesarkaStatus[];
+  employees: Employee[];
   fivesystemsApiEnabled: boolean;
 }) {
   const [instanceKey, setInstanceKey] = useState(0);
@@ -89,19 +85,22 @@ export function MechanicalView(props: {
 function MechanicalViewInner({
   workshop,
   statuses,
+  employees,
   fivesystemsApiEnabled,
   onWritten,
 }: {
   workshop: Workshop;
   statuses: SlesarkaStatus[];
+  employees: Employee[];
   fivesystemsApiEnabled: boolean;
   onWritten: () => void;
 }) {
-  const [viewSpan, setViewSpan] = useState<ViewSpan>(3);
-  const [currentDate, setCurrentDate] = useState(todayIso());
+  const [viewSpan, setViewSpan] = useState<ViewSpan>(7);
+  // По умолчанию неделя открывается со вчерашнего дня (не с понедельника) -
+  // самый ходовой вариант: видно "что было вчера" и весь ближайший план.
+  const [currentDate, setCurrentDate] = useState(() => addDaysIso(todayIso(), -1));
   const [search, setSearch] = useState("");
   const [jobs, setJobs] = useState<WorkshopJob[]>([]);
-  const [loading, setLoading] = useState(false);
   const [dialogDraft, setDialogDraft] = useState<JobDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dragError, setDragError] = useState<string | null>(null);
@@ -169,12 +168,10 @@ function MechanicalViewInner({
   const creationSlots = useMemo(() => slots.slice(0, -1), [slots]);
 
   const reload = () => {
-    setLoading(true);
     workshopJobsApi
       .list(workshop.id, days[0], days[days.length - 1])
       .then(setJobs)
-      .catch(() => setJobs([]))
-      .finally(() => setLoading(false));
+      .catch(() => setJobs([]));
   };
 
   useEffect(reload, [workshop.id, days[0], days[days.length - 1]]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -359,6 +356,8 @@ function MechanicalViewInner({
       vin: dragging.job.vin,
       plate: dragging.job.plate,
       client_name: dragging.job.client_name,
+      phone: dragging.job.phone,
+      employee_id: dragging.job.employee_id,
       work_description: dragging.job.work_description,
       job_date: day,
       post_number: post,
@@ -395,13 +394,19 @@ function MechanicalViewInner({
     <div className="planner-flex-col">
       <div className="planner-toolbar">
         <div className="grp">
-          <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, -viewSpan))}>
+          <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, -1))}>
             ‹
           </button>
-          <button type="button" onClick={() => setCurrentDate(todayStr)}>
+          <button
+            type="button"
+            onClick={() => {
+              setViewSpan(1);
+              setCurrentDate(todayStr);
+            }}
+          >
             Сегодня
           </button>
-          <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, viewSpan))}>
+          <button type="button" onClick={() => setCurrentDate(addDaysIso(currentDate, 1))}>
             ›
           </button>
           <DateInput value={currentDate} onChange={(iso) => iso && setCurrentDate(iso)} />
@@ -439,7 +444,6 @@ function MechanicalViewInner({
         </div>
       </div>
 
-      {loading && <p className="admin-hint">Загрузка…</p>}
       {dragError && <p className="admin-form-error">{dragError}</p>}
 
       <div className="mscroll">
@@ -461,12 +465,8 @@ function MechanicalViewInner({
                   {day === todayStr && <span className="dayh-badge">сегодня</span>}
                 </div>
                 <div className="planner-dayh-stats">
-                  <span>
-                    План <b>{money(stats.plan)} ₽</b>
-                  </span>
-                  <span>
-                    Факт <b style={{ color: "var(--ok)" }}>{money(stats.fact)} ₽</b>
-                  </span>
+                  {/* План/Факт в рублях скрыты по просьбе - расчёт (dayStats
+                      выше) не тронут, просто не выводится здесь. */}
                   <span>
                     Загрузка <b>{stats.load}%</b>
                   </span>
@@ -575,6 +575,7 @@ function MechanicalViewInner({
                       <div className="job-title">{job.work_order_number ?? "Без ЗН"}</div>
                       {job.car_description && <div className="job-sub">{job.car_description}</div>}
                       {job.work_description && <div className="job-work">{job.work_description}</div>}
+                      {job.employee_name && <div className="job-employee">{job.employee_name}</div>}
                       <div
                         className="job-resize-handle job-resize-handle--bottom"
                         onPointerDown={(e) => startDrag(e, job, "resize-end")}
@@ -607,6 +608,7 @@ function MechanicalViewInner({
           <div className="job-title">{dragState.job.work_order_number ?? "Без ЗН"}</div>
           {dragState.job.car_description && <div className="job-sub">{dragState.job.car_description}</div>}
           {dragState.job.work_description && <div className="job-work">{dragState.job.work_description}</div>}
+          {dragState.job.employee_name && <div className="job-employee">{dragState.job.employee_name}</div>}
         </div>
       )}
 
@@ -616,6 +618,8 @@ function MechanicalViewInner({
         draft={dialogDraft}
         postsCount={workshop.posts_count}
         statuses={statuses}
+        employees={employees}
+        workshopId={workshop.id}
         workshopStartTime={workshop.start_time}
         workshopEndTime={workshop.end_time}
         fivesystemsApiEnabled={fivesystemsApiEnabled}

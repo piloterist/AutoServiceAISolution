@@ -4,22 +4,41 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import {
+  deleteEmployee,
   deleteOrgDepartment,
   deleteOrgUser,
+  deleteRoleTabVisibility,
   deleteSlesarkaStatus,
   deleteWorkshop,
+  updateEmployee,
   updateOrgDepartment,
   updateOrgUser,
+  updateRoleTabVisibility,
   updateSlesarkaStatus,
   updateWorkshop,
+  type EmployeeWrite,
   type OrgUserUpdate,
+  type RoleTabVisibilityWrite,
   type WorkshopWrite,
 } from "@/lib/backend-api";
 
-type Resource = "departments" | "workshops" | "users" | "slesarka-statuses";
+type Resource =
+  | "departments"
+  | "workshops"
+  | "users"
+  | "slesarka-statuses"
+  | "employees"
+  | "role-tab-visibility";
 
 function isResource(value: string): value is Resource {
-  return value === "departments" || value === "workshops" || value === "users" || value === "slesarka-statuses";
+  return (
+    value === "departments" ||
+    value === "workshops" ||
+    value === "users" ||
+    value === "slesarka-statuses" ||
+    value === "employees" ||
+    value === "role-tab-visibility"
+  );
 }
 
 export async function PUT(
@@ -41,6 +60,10 @@ export async function PUT(
         return NextResponse.json(await updateOrgUser(id, body as OrgUserUpdate));
       case "slesarka-statuses":
         return NextResponse.json(await updateSlesarkaStatus(id, body.name, body.color));
+      case "employees":
+        return NextResponse.json(await updateEmployee(id, body as EmployeeWrite));
+      case "role-tab-visibility":
+        return NextResponse.json(await updateRoleTabVisibility(id, body as RoleTabVisibilityWrite));
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
@@ -75,6 +98,12 @@ export async function DELETE(
         break;
       case "slesarka-statuses":
         await deleteSlesarkaStatus(id);
+        break;
+      case "employees":
+        await deleteEmployee(id);
+        break;
+      case "role-tab-visibility":
+        await deleteRoleTabVisibility(id);
         break;
     }
     return new NextResponse(null, { status: 204 });

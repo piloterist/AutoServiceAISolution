@@ -15,6 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.department import Department
+from app.models.employee import Employee
+from app.models.role_tab_visibility import NAV_TAB_KEYS, RoleTabVisibility
 from app.models.schedule_audit_log import ScheduleAuditLog
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.user import User
@@ -170,6 +172,132 @@ def delete_user(db: Session, user_id: uuid.UUID) -> bool:
     db.delete(user)
     db.commit()
     return True
+
+
+# ---- Сотрудники ---------------------------------------------------------
+
+
+def _employee_with_names(
+    db: Session, employee: Employee
+) -> tuple[Employee, str | None, str | None]:
+    department_name = None
+    if employee.department_id is not None:
+        department = db.get(Department, employee.department_id)
+        department_name = department.name if department else None
+
+    workshop_label = None
+    if employee.workshop_id is not None:
+        workshop = db.get(Workshop, employee.workshop_id)
+        if workshop is not None:
+            w_department = db.get(Department, workshop.department_id)
+            w_department_name = w_department.name if w_department else ""
+            workshop_label = f"{w_department_name} / {workshop.workshop_type}"
+
+    return employee, department_name, workshop_label
+
+
+def list_employees(db: Session) -> list[tuple[Employee, str | None, str | None]]:
+    employees = db.scalars(select(Employee).order_by(Employee.full_name)).all()
+    return [_employee_with_names(db, e) for e in employees]
+
+
+def create_employee(
+    db: Session,
+    *,
+    full_name: str,
+    specialty: str,
+    department_id: uuid.UUID | None,
+    workshop_id: uuid.UUID | None,
+) -> tuple[Employee, str | None, str | None]:
+    employee = Employee(
+        full_name=full_name.strip(),
+        specialty=specialty,
+        department_id=department_id,
+        workshop_id=workshop_id,
+    )
+    db.add(employee)
+    db.commit()
+    db.refresh(employee)
+    return _employee_with_names(db, employee)
+
+
+def update_employee(
+    db: Session,
+    employee_id: uuid.UUID,
+    *,
+    full_name: str,
+    specialty: str,
+    department_id: uuid.UUID | None,
+    workshop_id: uuid.UUID | None,
+) -> tuple[Employee, str | None, str | None] | None:
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        return None
+    employee.full_name = full_name.strip()
+    employee.specialty = specialty
+    employee.department_id = department_id
+    employee.workshop_id = workshop_id
+    db.commit()
+    db.refresh(employee)
+    return _employee_with_names(db, employee)
+
+
+def delete_employee(db: Session, employee_id: uuid.UUID) -> bool:
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        return False
+    db.delete(employee)
+    db.commit()
+    return True
+
+
+# ---- Права доступа (видимость вкладок по роли) -------------------------
+
+
+def list_role_tab_visibility(db: Session) -> list[RoleTabVisibility]:
+    return list(db.scalars(select(RoleTabVisibility).order_by(RoleTabVisibility.role)))
+
+
+def create_role_tab_visibility(
+    db: Session, *, role: str, visible_tabs: list[str]
+) -> RoleTabVisibility:
+    row = RoleTabVisibility(role=role, visible_tabs=visible_tabs)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def update_role_tab_visibility(
+    db: Session, row_id: uuid.UUID, *, role: str, visible_tabs: list[str]
+) -> RoleTabVisibility | None:
+    row = db.get(RoleTabVisibility, row_id)
+    if row is None:
+        return None
+    row.role = role
+    row.visible_tabs = visible_tabs
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_role_tab_visibility(db: Session, row_id: uuid.UUID) -> bool:
+    row = db.get(RoleTabVisibility, row_id)
+    if row is None:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
+def get_visible_tabs_for_role(db: Session, role: str) -> list[str]:
+    """Baked into the session cookie at login (see endpoints/auth.py) so the
+    Edge middleware can enforce it without a DB round trip - same reasoning
+    as the cookie carrying `role` itself. A role with no configured row here
+    is fail-open (sees every tab), not fail-closed - a missing/not-yet-
+    configured row must never silently lock staff out."""
+    row = db.scalar(select(RoleTabVisibility).where(RoleTabVisibility.role == role))
+    return list(row.visible_tabs) if row is not None else list(NAV_TAB_KEYS)
 
 
 # ---- Статусы слесарки ------------------------------------------------

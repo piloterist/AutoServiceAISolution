@@ -42,6 +42,14 @@ class WorkshopJob(Base):
         String(20), nullable=True
     )  # Гос.номер - manual only, see module docstring
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Клиент
+    # Filled from the linked ЗН when picked, or typed by hand - same pattern
+    # as car_description/plate/client_name above, not a live FK read.
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Who's assigned to this record - picked from the employees directory,
+    # shown last on the job card (see MechanicalView.tsx).
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
     work_description: Mapped[str | None] = mapped_column(Text, nullable=True)  # Работы
 
     job_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)

@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
-import type { PlannerWorkOrder, SlesarkaStatus, WorkshopJob, WorkshopJobWrite } from "@/lib/backend-api";
+import type { Employee, PlannerWorkOrder, SlesarkaStatus, WorkshopJob, WorkshopJobWrite } from "@/lib/backend-api";
 import { lookupWorkOrderByPlate } from "@/lib/planner-client";
 import { minutesToTime, timeToMinutes } from "@/lib/planner-time";
 
@@ -19,6 +19,8 @@ export type JobDraft = {
   vin: string;
   plate: string;
   clientName: string;
+  phone: string;
+  employeeId: string;
   workDescription: string;
   jobDate: string;
   postNumber: number;
@@ -51,6 +53,8 @@ export function WorkshopJobDialog({
   draft,
   postsCount,
   statuses,
+  employees,
+  workshopId,
   workshopStartTime,
   workshopEndTime,
   fivesystemsApiEnabled,
@@ -62,6 +66,10 @@ export function WorkshopJobDialog({
   draft: JobDraft | null;
   postsCount: number;
   statuses: SlesarkaStatus[];
+  /** Filtered below by цех (workshopId), not by specialty - same rule as
+   * Кузовной's own "Сотрудник" field (see BodyCarDialog.tsx). */
+  employees: Employee[];
+  workshopId: string;
   workshopStartTime: string;
   workshopEndTime: string;
   /** Настройки → Интеграции → "Включить API" - "Получить ЗН" stays
@@ -80,6 +88,7 @@ export function WorkshopJobDialog({
   if (!form) return null;
 
   const times = timeOptions(workshopStartTime, workshopEndTime);
+  const workshopEmployees = employees.filter((e) => e.workshop_id === workshopId);
 
   const applyWorkOrder = (wo: PlannerWorkOrder) => {
     setForm({
@@ -90,6 +99,7 @@ export function WorkshopJobDialog({
       carDescription: wo.vehicle_description ?? form.carDescription,
       vin: wo.vin ?? form.vin,
       clientName: wo.customer_name ?? form.clientName,
+      phone: wo.phone ?? form.phone,
     });
   };
 
@@ -131,6 +141,8 @@ export function WorkshopJobDialog({
         vin: form.vin || null,
         plate: form.plate || null,
         client_name: form.clientName || null,
+        phone: form.phone || null,
+        employee_id: form.employeeId || null,
         work_description: form.workDescription || null,
         job_date: form.jobDate,
         post_number: form.postNumber,
@@ -178,6 +190,25 @@ export function WorkshopJobDialog({
           <div className="admin-form-field">
             <label htmlFor="wj-client">Клиент</label>
             <input id="wj-client" value={form.clientName} onChange={(e) => setForm({ ...form, clientName: e.target.value })} />
+          </div>
+          <div className="admin-form-field">
+            <label htmlFor="wj-phone">Телефон</label>
+            <input id="wj-phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          </div>
+          <div className="admin-form-field">
+            <label htmlFor="wj-employee">Сотрудник</label>
+            <select
+              id="wj-employee"
+              value={form.employeeId}
+              onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
+            >
+              <option value="">—</option>
+              {workshopEmployees.map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.full_name}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -331,6 +362,8 @@ export function jobToDraft(job: WorkshopJob): JobDraft {
     vin: job.vin ?? "",
     plate: job.plate ?? "",
     clientName: job.client_name ?? "",
+    phone: job.phone ?? "",
+    employeeId: job.employee_id ?? "",
     workDescription: job.work_description ?? "",
     jobDate: job.job_date,
     postNumber: job.post_number,
@@ -357,6 +390,8 @@ export function emptyJobDraft(
     vin: "",
     plate: "",
     clientName: "",
+    phone: "",
+    employeeId: "",
     workDescription: "",
     jobDate,
     postNumber,

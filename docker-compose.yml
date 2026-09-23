@@ -31,10 +31,20 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      REVENUE_STATUSES: ${REVENUE_STATUSES:-}
+      ENABLE_YANDEX_RELAY: ${ENABLE_YANDEX_RELAY:-false}
+      YANDEX_DISK_OAUTH_TOKEN: ${YANDEX_DISK_OAUTH_TOKEN:-}
+      YANDEX_DISK_WATCH_PATH: ${YANDEX_DISK_WATCH_PATH:-/1c-export}
+      YANDEX_POLL_INTERVAL_SECONDS: ${YANDEX_POLL_INTERVAL_SECONDS:-300}
+      ENABLE_FIVESYSTEMS_LOOKUP: ${ENABLE_FIVESYSTEMS_LOOKUP:-false}
+      FIVESYSTEMS_API_BASE_URL: ${FIVESYSTEMS_API_BASE_URL:-https://api.5systems.ru}
+      FIVESYSTEMS_USERNAME: ${FIVESYSTEMS_USERNAME:-}
+      FIVESYSTEMS_PASSWORD: ${FIVESYSTEMS_PASSWORD:-}
+      FIVESYSTEMS_COMPANY_UUID: ${FIVESYSTEMS_COMPANY_UUID:-}
     volumes:
       - ./backend:/app
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,12 +61,18 @@ services:
       # Signs the per-user login session cookie (see frontend/lib/auth.ts) -
       # login/password now come from the backend's users table, not env vars.
       AUTH_SECRET: ${AUTH_SECRET}
+      # Docker Desktop on Windows doesn't reliably forward native filesystem
+      # change events through a bind mount - without polling, next dev's
+      # watcher silently misses edits and keeps serving a stale compiled
+      # bundle even though the file on disk (and inside the container) is
+      # already up to date.
+      WATCHPACK_POLLING: "true"
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
       - frontend_next_cache:/app/.next
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       - backend
 

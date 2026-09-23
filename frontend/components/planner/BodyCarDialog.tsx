@@ -4,14 +4,14 @@ import { useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
-import type { BodyCar, BodyCarWrite, PlannerWorkOrder } from "@/lib/backend-api";
+import type { BodyCar, BodyCarWrite, Employee, PlannerWorkOrder } from "@/lib/backend-api";
 import { lookupWorkOrderByPlate } from "@/lib/planner-client";
 import { BODY_STAGE_TYPES } from "@/lib/planner-constants";
 import { addDaysIso, diffDaysIso, formatShortDate, todayIso } from "@/lib/planner-time";
 
 import { WorkOrderAutocomplete } from "./WorkOrderAutocomplete";
 
-type StageDraft = { stageName: string; note: string; startDate: string; endDate: string };
+type StageDraft = { stageName: string; note: string; startDate: string; endDate: string; employeeId: string };
 
 export type CarDraft = {
   carId: string | null;
@@ -21,6 +21,7 @@ export type CarDraft = {
   vin: string;
   plate: string;
   clientName: string;
+  phone: string;
   workDescription: string;
   status: string;
   stages: StageDraft[];
@@ -49,13 +50,15 @@ function fixupStageOrder(stages: StageDraft[]): StageDraft[] {
 
 function newStageRow(previous: StageDraft | undefined, fallbackDate: string): StageDraft {
   const start = previous ? addDaysIso(previous.endDate, 1) : fallbackDate;
-  return { stageName: BODY_STAGE_TYPES[0], note: "", startDate: start, endDate: start };
+  return { stageName: BODY_STAGE_TYPES[0], note: "", startDate: start, endDate: start, employeeId: "" };
 }
 
 /** Caller must remount with a fresh `key` per draft - see WorkshopJobDialog. */
 export function BodyCarDialog({
   open,
   draft,
+  employees,
+  workshopId,
   fivesystemsApiEnabled,
   onClose,
   onSave,
@@ -63,6 +66,10 @@ export function BodyCarDialog({
 }: {
   open: boolean;
   draft: CarDraft | null;
+  /** Filtered below by цех (workshopId), not by specialty - see the
+   * "Сотрудник" <select> in each stage row. */
+  employees: Employee[];
+  workshopId: string;
   /** Настройки → Интеграции → "Включить API" - "Получить ЗН" stays
    * disabled regardless of the Гос.номер field when this is off. */
   fivesystemsApiEnabled: boolean;
@@ -78,6 +85,10 @@ export function BodyCarDialog({
 
   if (!form) return null;
 
+  // Filtered by цех only - not by specialty (product ask: any employee
+  // assigned to this цех can be picked for any этап).
+  const workshopEmployees = employees.filter((e) => e.workshop_id === workshopId);
+
   const applyWorkOrder = (wo: PlannerWorkOrder) => {
     setForm({
       ...form,
@@ -86,6 +97,7 @@ export function BodyCarDialog({
       carDescription: wo.vehicle_description ?? form.carDescription,
       vin: wo.vin ?? form.vin,
       clientName: wo.customer_name ?? form.clientName,
+      phone: wo.phone ?? form.phone,
     });
   };
 
@@ -174,6 +186,7 @@ export function BodyCarDialog({
         vin: form.vin || null,
         plate: form.plate || null,
         client_name: form.clientName || null,
+        phone: form.phone || null,
         work_description: form.workDescription || null,
         status: form.status,
         stages: form.stages.map((s) => ({
@@ -181,6 +194,7 @@ export function BodyCarDialog({
           note: s.note || null,
           start_date: s.startDate,
           end_date: s.endDate,
+          employee_id: s.employeeId || null,
         })),
       });
     } catch (err) {
@@ -228,6 +242,10 @@ export function BodyCarDialog({
             <label htmlFor="bc-client">Клиент</label>
             <input id="bc-client" value={form.clientName} onChange={(e) => setForm({ ...form, clientName: e.target.value })} />
           </div>
+          <div className="admin-form-field">
+            <label htmlFor="bc-phone">Телефон</label>
+            <input id="bc-phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          </div>
         </div>
 
         <div className="admin-form-field">
@@ -244,6 +262,7 @@ export function BodyCarDialog({
           <legend>Этапы работ</legend>
           <div className="planner-stage-header">
             <span>Этап</span>
+            <span>Сотрудник</span>
             <span>Заметка</span>
             <span>С</span>
             <span>По</span>
@@ -255,6 +274,14 @@ export function BodyCarDialog({
                 {BODY_STAGE_TYPES.map((type) => (
                   <option key={type} value={type}>
                     {type}
+                  </option>
+                ))}
+              </select>
+              <select value={stage.employeeId} onChange={(e) => updateStage(index, { employeeId: e.target.value })}>
+                <option value="">—</option>
+                {workshopEmployees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.full_name}
                   </option>
                 ))}
               </select>
@@ -341,9 +368,16 @@ export function carToDraft(car: BodyCar): CarDraft {
     vin: car.vin ?? "",
     plate: car.plate ?? "",
     clientName: car.client_name ?? "",
+    phone: car.phone ?? "",
     workDescription: car.work_description ?? "",
     status: car.status,
-    stages: car.stages.map((s) => ({ stageName: s.stage_name, note: s.note ?? "", startDate: s.start_date, endDate: s.end_date })),
+    stages: car.stages.map((s) => ({
+      stageName: s.stage_name,
+      note: s.note ?? "",
+      startDate: s.start_date,
+      endDate: s.end_date,
+      employeeId: s.employee_id ?? "",
+    })),
   };
 }
 
@@ -356,6 +390,7 @@ export function emptyCarDraft(arriveDate: string): CarDraft {
     vin: "",
     plate: "",
     clientName: "",
+    phone: "",
     workDescription: "",
     status: "К приёмке",
     stages: [newStageRow(undefined, arriveDate)],

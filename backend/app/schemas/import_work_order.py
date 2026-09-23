@@ -68,6 +68,8 @@ class ImportWorkOrderRecord(BaseModel):
     number: str = Field(..., description="External work order number (Alpha-Auto document number)")
     date: datetime = Field(..., description="Document date")
     customer: str | None = None
+    # ЗаказНаряд.НомерТелефона - raw passthrough, whatever 1C sends.
+    phone: str | None = None
     # Who actually pays - can differ from `customer` (e.g. an insurance
     # company). Optional since not every source/record will have it.
     payer: str | None = None

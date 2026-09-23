@@ -1,5 +1,11 @@
 import { PlannerShell } from "@/components/planner/PlannerShell";
-import { getAppSettings, getOrgDepartments, getSlesarkaStatuses, getWorkshops } from "@/lib/backend-api";
+import {
+  getAppSettings,
+  getEmployees,
+  getOrgDepartments,
+  getSlesarkaStatuses,
+  getWorkshops,
+} from "@/lib/backend-api";
 import { getCurrentUser } from "@/lib/session";
 
 // Must never be statically prerendered - same reasoning as every other
@@ -14,6 +20,10 @@ export default async function PlannerPage() {
   // if Settings can't be reached, "Получить ЗН" should be unavailable, not
   // silently assumed on.
   let fivesystemsApiEnabled = false;
+  // Кузовной's "Сотрудник" stage field - defaults to empty rather than
+  // failing the whole Planner page if this one fetch has a hiccup (same
+  // isolation as fivesystemsApiEnabled below).
+  let employees: Awaited<ReturnType<typeof getEmployees>> = [];
 
   try {
     [departments, workshops, statuses] = await Promise.all([
@@ -30,6 +40,12 @@ export default async function PlannerPage() {
   } catch {
     // Already defaults to false above - the rest of the Planner still
     // works fine without this one setting.
+  }
+
+  try {
+    employees = await getEmployees();
+  } catch {
+    // Already defaults to [] above.
   }
 
   const user = await getCurrentUser();
@@ -53,6 +69,7 @@ export default async function PlannerPage() {
           departments={departments}
           workshops={workshops}
           statuses={statuses}
+          employees={employees}
           defaultDepartmentId={user?.departmentId ?? null}
           defaultWorkshopId={user?.workshopId ?? null}
           fivesystemsApiEnabled={fivesystemsApiEnabled}

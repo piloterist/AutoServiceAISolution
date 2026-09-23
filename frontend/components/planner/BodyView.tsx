@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
-import type { BodyCar, BodyCarStage, BodyCarWrite, Workshop } from "@/lib/backend-api";
+import type { BodyCar, BodyCarStage, BodyCarWrite, Employee, Workshop } from "@/lib/backend-api";
 import { bodyCarsApi } from "@/lib/planner-client";
 import { CAR_STATUSES } from "@/lib/planner-constants";
 import { addDaysIso, diffDaysIso, formatShortDate, formatShortDay, todayIso } from "@/lib/planner-time";
@@ -30,6 +30,23 @@ function carSpan(car: BodyCar): { start: string; end: string } | null {
   };
 }
 
+function hasStageOn(car: BodyCar, day: string): boolean {
+  return car.stages.some((s) => s.start_date <= day && s.end_date >= day);
+}
+
+/** Список машин в цеху: сначала те, у кого есть этап на сегодня (среди них -
+ * от самой ранней даты создания записи), затем остальные (от самой
+ * поздней даты создания) - product ask, not a date the view can navigate
+ * away from, so this always checks the real today, not `currentDate`. */
+function compareCars(a: BodyCar, b: BodyCar, today: string): number {
+  const aToday = hasStageOn(a, today);
+  const bToday = hasStageOn(b, today);
+  if (aToday !== bToday) return aToday ? -1 : 1;
+  return aToday
+    ? a.created_at.localeCompare(b.created_at) // раньше созданные - выше
+    : b.created_at.localeCompare(a.created_at); // позже созданные - выше
+}
+
 function carMatches(car: BodyCar, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -39,17 +56,19 @@ function carMatches(car: BodyCar, query: string): boolean {
 /** Wraps BodyViewInner and forces a full remount of it (fresh state,
  * fresh useEffect, fresh fetch) after every write, by bumping `key` - see
  * the identical wrapper on MechanicalView for the full reasoning. */
-export function BodyView(props: { workshop: Workshop; fivesystemsApiEnabled: boolean }) {
+export function BodyView(props: { workshop: Workshop; employees: Employee[]; fivesystemsApiEnabled: boolean }) {
   const [instanceKey, setInstanceKey] = useState(0);
   return <BodyViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
 }
 
 function BodyViewInner({
   workshop,
+  employees,
   fivesystemsApiEnabled,
   onWritten,
 }: {
   workshop: Workshop;
+  employees: Employee[];
   fivesystemsApiEnabled: boolean;
   onWritten: () => void;
 }) {
@@ -57,7 +76,6 @@ function BodyViewInner({
   const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(21);
   const [search, setSearch] = useState("");
   const [cars, setCars] = useState<BodyCar[]>([]);
-  const [loading, setLoading] = useState(false);
   const [dialogDraft, setDialogDraft] = useState<CarDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [stageDragError, setStageDragError] = useState<string | null>(null);
@@ -99,21 +117,22 @@ function BodyViewInner({
   const windowEnd = days[days.length - 1];
 
   const reload = () => {
-    setLoading(true);
     bodyCarsApi
       .list(workshop.id)
       .then(setCars)
-      .catch(() => setCars([]))
-      .finally(() => setLoading(false));
+      .catch(() => setCars([]));
   };
 
   useEffect(reload, [workshop.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const visibleCars = cars.filter((car) => {
-    const span = carSpan(car);
-    if (!span) return true;
-    return span.start <= windowEnd && span.end >= windowStart;
-  });
+  const todayStr = todayIso();
+  const visibleCars = cars
+    .filter((car) => {
+      const span = carSpan(car);
+      if (!span) return true;
+      return span.start <= windowEnd && span.end >= windowStart;
+    })
+    .sort((a, b) => compareCars(a, b, todayStr));
 
   const openCreate = (arriveDate: string) => {
     setDialogDraft(emptyCarDraft(arriveDate));
@@ -146,9 +165,16 @@ function BodyViewInner({
       vin: car.vin,
       plate: car.plate,
       client_name: car.client_name,
+      phone: car.phone,
       work_description: car.work_description,
       status,
-      stages: car.stages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
+      stages: car.stages.map((s) => ({
+        stage_name: s.stage_name,
+        note: s.note,
+        start_date: s.start_date,
+        end_date: s.end_date,
+        employee_id: s.employee_id,
+      })),
     });
     onWritten();
   };
@@ -245,9 +271,16 @@ function BodyViewInner({
           vin: car.vin,
           plate: car.plate,
           client_name: car.client_name,
+          phone: car.phone,
           work_description: car.work_description,
           status: car.status,
-          stages: finalStages.map((s) => ({ stage_name: s.stage_name, note: s.note, start_date: s.start_date, end_date: s.end_date })),
+          stages: finalStages.map((s) => ({
+            stage_name: s.stage_name,
+            note: s.note,
+            start_date: s.start_date,
+            end_date: s.end_date,
+            employee_id: s.employee_id,
+          })),
         });
         onWritten();
         return;
@@ -267,7 +300,6 @@ function BodyViewInner({
   const stagesFor = (car: BodyCar): BodyCarStage[] =>
     previewStages && previewStages.carId === car.id ? previewStages.stages : car.stages;
 
-  const todayStr = todayIso();
   const tableWidth = days.length * DAY_WIDTH;
 
   return (
@@ -307,7 +339,6 @@ function BodyViewInner({
         </div>
       </div>
 
-      {loading && <p className="admin-hint">Загрузка…</p>}
       {stageDragError && <p className="admin-form-error">{stageDragError}</p>}
 
       <div className="tw">
@@ -398,9 +429,12 @@ function BodyViewInner({
                               <div
                                 className="planner-body-segment"
                                 style={{ left: clampedLeft, width: clampedWidth, background: car.color }}
-                                title={`${stage.stage_name}${stage.note ? " · " + stage.note : ""}`}
+                                title={`${stage.stage_name}${stage.note ? " · " + stage.note : ""}${stage.employee_name ? " · " + stage.employee_name : ""}`}
                               >
-                                {stage.stage_name}
+                                <span className="planner-body-segment-stage">{stage.stage_name}</span>
+                                {stage.employee_name && (
+                                  <span className="planner-body-segment-employee">{stage.employee_name}</span>
+                                )}
                               </div>
                             )}
                             {/* Торцевые ручки - край самого первого и самого
@@ -470,6 +504,8 @@ function BodyViewInner({
         key={dialogDraft?.carId ?? `new-${dialogDraft?.stages[0]?.startDate}`}
         open={dialogOpen}
         draft={dialogDraft}
+        employees={employees}
+        workshopId={workshop.id}
         fivesystemsApiEnabled={fivesystemsApiEnabled}
         onClose={closeDialog}
         onSave={save}

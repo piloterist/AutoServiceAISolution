@@ -79,6 +79,10 @@ export default async function WorkOrderDetailPage({
               <span>{workOrder.customer_name || "—"}</span>
             </div>
             <div className="detail-field">
+              <span className="detail-label">Телефон</span>
+              <span>{workOrder.phone || "—"}</span>
+            </div>
+            <div className="detail-field">
               <span className="detail-label">Организация</span>
               <span>{workOrder.organization || "—"}</span>
             </div>

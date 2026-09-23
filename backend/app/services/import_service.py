@@ -80,6 +80,7 @@ def _upsert_work_order(
         "end_date": record.end_date,
         "closed_date": record.closed_date,
         "customer_name": record.customer,
+        "phone": record.phone,
         "payer_name": record.payer,
         "vehicle_description": record.car,
         "status": record.status,

@@ -33,6 +33,12 @@ class BodyCarStage(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Who's assigned to this этап - filtered by цех in the dialog (see
+    # BodyCarDialog.tsx), not by specialty; shown on the chart under the
+    # stage name (see BodyView.tsx).
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True
+    )
 
     car = relationship("BodyCar", back_populates="stages")
 
