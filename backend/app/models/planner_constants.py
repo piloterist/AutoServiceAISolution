@@ -11,7 +11,21 @@ CAR_STATUS_ACCEPT = "К приёмке"
 CAR_STATUS_IN_PROGRESS = "В работе"
 CAR_STATUS_WAITING = "Ожидание"
 CAR_STATUS_DONE = "Выдан"
-CAR_STATUSES = (CAR_STATUS_ACCEPT, CAR_STATUS_IN_PROGRESS, CAR_STATUS_WAITING, CAR_STATUS_DONE)
+# These two are display-only overrides on the Planner (see BodyView.tsx):
+# regardless of the car's actual этапы/dates, it's shown as a single pale
+# bar spanning ±3 months from created_at, and always sorted to the very
+# end of the car list - a car "waiting on a decision" or "ready, just
+# sitting there" isn't meaningfully placed on a day-by-day этап timeline.
+CAR_STATUS_APPROVAL = "Согласование"
+CAR_STATUS_READY_FOR_PICKUP = "Готова к выдаче"
+CAR_STATUSES = (
+    CAR_STATUS_ACCEPT,
+    CAR_STATUS_IN_PROGRESS,
+    CAR_STATUS_WAITING,
+    CAR_STATUS_DONE,
+    CAR_STATUS_APPROVAL,
+    CAR_STATUS_READY_FOR_PICKUP,
+)
 
 # Кузовной этап - each BodyCarStage row picks one of these.
 BODY_STAGE_TYPES = (

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
@@ -158,7 +159,18 @@ export function WorkshopJobDialog({
 
   return (
     <>
-      <AdminModal open={open} title={form.jobId ? "Запись на пост" : "Новая запись"} onClose={onClose}>
+      <AdminModal
+        open={open}
+        title={form.jobId ? "Запись на пост" : "Новая запись"}
+        onClose={onClose}
+        headerActions={
+          form.workOrderId && (
+            <Link href={`/work-orders/${form.workOrderId}`} className="admin-btn" onClick={(e) => e.stopPropagation()}>
+              Перейти к ЗН
+            </Link>
+          )
+        }
+      >
         <WorkOrderAutocomplete
           value={form.workOrderNumber}
           onChange={(text) => setForm({ ...form, workOrderNumber: text, workOrderId: null, amount: null })}

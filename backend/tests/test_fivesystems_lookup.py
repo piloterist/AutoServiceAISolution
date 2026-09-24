@@ -10,7 +10,10 @@ import pytest
 from sqlalchemy import select
 
 from app.models.app_settings import AppSettings
+from app.models.department import Department
 from app.models.work_order import WorkOrder
+from app.models.workshop import Workshop
+from app.models.workshop_job import WorkshopJob
 from app.services import fivesystems_client, planner_service
 from app.services.fivesystems_client import FiveSystemsError
 
@@ -38,7 +41,9 @@ def _reset_token_cache():
     fivesystems_client._cached_token_expires_at = 0.0
 
 
-def _make_mock_transport(calls: list[str], *, agent_found: bool = True) -> httpx.MockTransport:
+def _make_mock_transport(
+    calls: list[str], *, agent_found: bool = True, user_id: str | None = None
+) -> httpx.MockTransport:
     def handler(request: httpx.Request) -> httpx.Response:
         calls.append(f"{request.method} {request.url.path}")
 
@@ -52,24 +57,25 @@ def _make_mock_transport(calls: list[str], *, agent_found: bool = True) -> httpx
             code = request.url.params.get("code")
             if code != "Х669МЕ777":
                 return httpx.Response(200, json={"data": [], "pagination": {"total_count": 0}})
+            document = {
+                "uuid": "35578c1d-b5d7-11f1-bd4b-e20fc4e9405c",
+                "general_params": {
+                    "number": "ПС00010256",
+                    "date": "2026-09-21T19:11:35+03:00",
+                },
+                "type": "ЗАКАЗ_НАРЯД",
+                "agent_uuid": AGENT_UUID,
+                "car_uuid": CAR_UUID,
+            }
+            if user_id:
+                document["user_id"] = user_id
             return httpx.Response(
                 200,
-                json={
-                    "data": [
-                        {
-                            "uuid": "35578c1d-b5d7-11f1-bd4b-e20fc4e9405c",
-                            "general_params": {
-                                "number": "ПС00010256",
-                                "date": "2026-09-21T19:11:35+03:00",
-                            },
-                            "type": "ЗАКАЗ_НАРЯД",
-                            "agent_uuid": AGENT_UUID,
-                            "car_uuid": CAR_UUID,
-                        }
-                    ],
-                    "pagination": {"total_count": 1},
-                },
+                json={"data": [document], "pagination": {"total_count": 1}},
             )
+
+        if user_id and request.url.path == f"/exr/{user_id}":
+            return httpx.Response(200, json={"phone": ["79775911275"]})
 
         if request.url.path == "/dataset/v1/car":
             return httpx.Response(
@@ -154,11 +160,110 @@ def test_lookup_work_order_by_plate_full_flow(monkeypatch) -> None:
     assert result.plate == "Х669МЕ777"
     assert result.customer_name == "Богданович Борис Юрьевич"
     assert result.amount == Decimal("6000")
+    # This mock document has no user_id - confirms the phone lookup is
+    # skipped entirely (not attempted and silently failed) when absent.
+    assert result.phone is None
     # One auth call reused across every subsequent request, not one per call.
     assert calls.count("POST /auth/v1/oidc/login") == 1
     assert "GET /dataset/v1/production/document" in calls
     assert "POST /dataset/v1/car" in calls
     assert "POST /dataset/v1/agent" in calls
+    assert "GET /exr/" not in "".join(calls)
+
+
+def test_lookup_work_order_by_plate_fetches_phone_when_user_id_present(monkeypatch) -> None:
+    user_id = "ea35e909-57c1-11ef-bd37-d7363aa7cb14"
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(f"{request.method} {request.url.path}")
+        if request.url.path == "/auth/v1/oidc/login":
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.url.path == "/dataset/v1/production/document":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "general_params": {
+                                "number": "ПС00010256",
+                                "date": "2026-09-21T19:11:35+03:00",
+                            },
+                            "agent_uuid": AGENT_UUID,
+                            "car_uuid": CAR_UUID,
+                            "user_id": user_id,
+                        }
+                    ]
+                },
+            )
+        if request.url.path == "/dataset/v1/car":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [{"name": "BMW X6", "vin": "X4XFG211700G85936", "reg_num": "Х669МЕ777"}]
+                },
+            )
+        if request.url.path == "/dataset/v1/agent":
+            return httpx.Response(200, json={"data": [{"full_name": "Тест Тестов"}]})
+        if request.url.path == f"/exr/{user_id}":
+            assert request.url.params.get("company_uuid") == COMPANY_UUID
+            return httpx.Response(200, json={"phone": ["79775911275"]})
+        if request.url.path == "/export/v1/order/search":
+            return httpx.Response(200, json=[])
+        return httpx.Response(404)
+
+    _patch_client(monkeypatch, httpx.MockTransport(handler))
+    _configure_settings(monkeypatch)
+
+    result = fivesystems_client.lookup_work_order_by_plate("Х669МЕ777")
+
+    assert result is not None
+    assert result.phone == "+79775911275"
+    assert f"GET /exr/{user_id}" in calls
+
+
+def test_lookup_survives_user_phone_lookup_failure(monkeypatch) -> None:
+    """Same tolerance as the amount lookup - a broken/missing /exr/{user_id}
+    response must not fail the whole plate lookup."""
+    user_id = "ea35e909-57c1-11ef-bd37-d7363aa7cb14"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/auth/v1/oidc/login":
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if request.url.path == "/dataset/v1/production/document":
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "general_params": {
+                                "number": "ПС00010256",
+                                "date": "2026-09-21T19:11:35+03:00",
+                            },
+                            "agent_uuid": AGENT_UUID,
+                            "car_uuid": CAR_UUID,
+                            "user_id": user_id,
+                        }
+                    ]
+                },
+            )
+        if request.url.path == "/dataset/v1/car":
+            return httpx.Response(200, json={"data": [{"name": "BMW X6"}]})
+        if request.url.path == "/dataset/v1/agent":
+            return httpx.Response(200, json={"data": [{"full_name": "Тест Тестов"}]})
+        if request.url.path == f"/exr/{user_id}":
+            return httpx.Response(500, text="internal error")
+        if request.url.path == "/export/v1/order/search":
+            return httpx.Response(200, json=[])
+        return httpx.Response(404)
+
+    _patch_client(monkeypatch, httpx.MockTransport(handler))
+    _configure_settings(monkeypatch)
+
+    result = fivesystems_client.lookup_work_order_by_plate("Х669МЕ777")
+
+    assert result is not None
+    assert result.phone is None
 
 
 def test_lookup_work_order_by_plate_not_found_returns_none(monkeypatch) -> None:
@@ -321,6 +426,110 @@ def test_lookup_endpoint_creates_work_order_and_is_idempotent(
     assert len(rows_after) == 1
 
 
+def test_lookup_endpoint_returns_fresh_phone_without_persisting_to_work_order(
+    client, auth_headers, monkeypatch, db_session
+) -> None:
+    """The freshly looked-up phone (via /exr/{user_id}) reaches the
+    response - so the Planner dialog auto-fills it - but must never be
+    written to WorkOrder.phone itself (see get_or_create_stub_work_order's
+    docstring: only the next real 1C import may set that)."""
+    user_id = "ea35e909-57c1-11ef-bd37-d7363aa7cb14"
+    _patch_client(monkeypatch, _make_mock_transport([], user_id=user_id))
+    _configure_settings(monkeypatch)
+    _enable_app_setting(db_session)
+
+    response = client.get(
+        f"{PLANNER_URL}/work-orders/lookup-by-plate",
+        params={"plate": "x669me777"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["phone"] == "+79775911275"
+
+    work_order = (
+        db_session.execute(select(WorkOrder).where(WorkOrder.external_number == "ПС00010256"))
+        .scalars()
+        .one()
+    )
+    assert work_order.phone is None
+
+
+def test_lookup_endpoint_syncs_existing_planner_record(
+    client, auth_headers, monkeypatch, db_session
+) -> None:
+    """When the ЗН already exists (second lookup, not a fresh stub - see
+    get_or_create_stub_work_order's `inserted` flag), any Planner record
+    already linked to it gets refreshed from the ЗН's own data - simulates
+    a real 1C import having since enriched the stub (phone, corrected
+    vehicle/customer) between the first and second live lookup."""
+    calls: list[str] = []
+    _patch_client(monkeypatch, _make_mock_transport(calls))
+    _configure_settings(monkeypatch)
+    _enable_app_setting(db_session)
+
+    first = client.get(
+        f"{PLANNER_URL}/work-orders/lookup-by-plate",
+        params={"plate": "x669me777"},
+        headers=auth_headers,
+    )
+    assert first.status_code == 200
+    work_order_id = first.json()["id"]
+
+    # Simulate a real 1C import having since enriched this stub row -
+    # phone in particular the live lookup itself can never provide (see
+    # fivesystems_client.WorkOrderLookupResult - no phone field).
+    work_order = db_session.get(WorkOrder, work_order_id)
+    work_order.vehicle_description = "BMW X6 (обновлено из 1С)"
+    work_order.vin = "X4XFG211700G85936"
+    work_order.customer_name = "Реальный клиент из 1С"
+    work_order.phone = "+7 (903) 1311606"
+    db_session.commit()
+
+    department = Department(name="Каховка")
+    db_session.add(department)
+    db_session.flush()
+    workshop = Workshop(
+        department_id=department.id,
+        workshop_type="Слесарный",
+        posts_count=3,
+        start_time="07:00:00",
+        end_time="22:00:00",
+        working_days=[0, 1, 2, 3, 4, 5],
+    )
+    db_session.add(workshop)
+    db_session.flush()
+    job = WorkshopJob(
+        workshop_id=workshop.id,
+        work_order_id=work_order.id,
+        car_description="устаревшее описание",
+        vin="УСТАРЕВШИЙVIN0001",
+        plate=None,
+        client_name="Устаревшее имя",
+        phone=None,
+        job_date=work_order.document_date.date(),
+        post_number=1,
+        start_time="09:00:00",
+        end_time="10:00:00",
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    second = client.get(
+        f"{PLANNER_URL}/work-orders/lookup-by-plate",
+        params={"plate": "x669me777"},
+        headers=auth_headers,
+    )
+    assert second.status_code == 200
+
+    db_session.refresh(job)
+    assert job.car_description == "BMW X6 (обновлено из 1С)"
+    assert job.vin == "X4XFG211700G85936"
+    assert job.plate == "Х669МЕ777"  # from the live lookup itself, not the ЗН
+    assert job.client_name == "Реальный клиент из 1С"
+    assert job.phone == "+7 (903) 1311606"
+
+
 def test_get_or_create_stub_work_order_defaults_amount_to_zero(db_session) -> None:
     from datetime import UTC, datetime
 
@@ -334,7 +543,8 @@ def test_get_or_create_stub_work_order_defaults_amount_to_zero(db_session) -> No
         amount=None,
     )
 
-    work_order = planner_service.get_or_create_stub_work_order(db_session, result)
+    work_order, inserted = planner_service.get_or_create_stub_work_order(db_session, result)
 
+    assert inserted is True
     assert work_order.amount == Decimal("0")
     assert work_order.source_system == "alpha-auto"

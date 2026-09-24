@@ -126,6 +126,7 @@ class BodyCarOut(BaseModel):
     work_description: str | None
     color: str
     status: str
+    on_site: bool
     stages: list[BodyCarStageOut]
     # Sort key for the car list (product ask: earliest-created first among
     # cars with a stage covering today, latest-created first among the
@@ -144,6 +145,7 @@ class BodyCarWrite(BaseModel):
     phone: str | None = None
     work_description: str | None = None
     status: str
+    on_site: bool = False
     stages: list[BodyCarStageWrite] = Field(min_length=1)
 
     @model_validator(mode="after")

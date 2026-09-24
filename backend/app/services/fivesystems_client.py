@@ -75,6 +75,13 @@ class WorkOrderLookupResult:
     plate: str | None
     customer_name: str | None
     amount: Decimal | None
+    # Best-effort, from the separate /exr/{user_id} lookup below - only
+    # available when production/document included a user_id (not always
+    # present). Deliberately never written to WorkOrder.phone itself (see
+    # planner_service.get_or_create_stub_work_order) - only ever used to
+    # prefill a Planner record, same as vehicle/VIN/client here; the real
+    # WorkOrder.phone still comes only from the next real 1C import.
+    phone: str | None = None
 
 
 # Module-level, not per-request - the token is reused across calls/requests
@@ -263,6 +270,29 @@ def _search_amount(settings: Settings, plate: str) -> Decimal | None:
         return None
 
 
+def _get_user_phone(settings: Settings, user_id: str) -> str | None:
+    """Best-effort only, same tolerance as _search_amount above - a
+    production/document response doesn't always include a user_id at all,
+    and even when it does, this lookup failing (404, empty phone list,
+    network error) must not fail the whole plate lookup. Returns the first
+    phone number in the response with "+" prepended (e.g. "79775911275" ->
+    "+79775911275"), or None."""
+    try:
+        response = _authed_request(
+            settings,
+            "GET",
+            f"/exr/{user_id}",
+            params={"company_uuid": settings.fivesystems_company_uuid or ""},
+        )
+        phones = response.json().get("phone") or []
+        if not phones or not phones[0]:
+            return None
+        return f"+{phones[0]}"
+    except (FiveSystemsError, TypeError, KeyError, AttributeError, IndexError) as exc:
+        logger.warning("fivesystems_user_phone_lookup_failed", user_id=user_id, error=str(exc))
+        return None
+
+
 def lookup_work_order_by_plate(plate: str) -> WorkOrderLookupResult | None:
     """Returns None when no *open* document matches this plate (a normal,
     expected outcome - it just means there's nothing for the Planner to
@@ -287,8 +317,11 @@ def lookup_work_order_by_plate(plate: str) -> WorkOrderLookupResult | None:
 
     car_uuid = document.get("car_uuid")
     agent_uuid = document.get("agent_uuid")
+    user_id = document.get("user_id")
     car = _get_car(settings, car_uuid) if car_uuid else None
     agent = _get_agent(settings, agent_uuid) if agent_uuid else None
+    # Not every document includes a user_id - only attempt this when it does.
+    phone = _get_user_phone(settings, user_id) if user_id else None
 
     return WorkOrderLookupResult(
         external_number=number,
@@ -298,4 +331,5 @@ def lookup_work_order_by_plate(plate: str) -> WorkOrderLookupResult | None:
         plate=(car or {}).get("reg_num") or normalized_plate,
         customer_name=(agent or {}).get("full_name") or None,
         amount=_search_amount(settings, normalized_plate),
+        phone=phone,
     )

@@ -11,6 +11,7 @@ export function AdminModal({
   onClose,
   children,
   wide,
+  headerActions,
 }: {
   open: boolean;
   title: string;
@@ -20,6 +21,9 @@ export function AdminModal({
    * (BodyCarDialog's этапы rows, four columns wide) - opt into roughly
    * double via .admin-modal--wide instead of widening every modal. */
   wide?: boolean;
+  /** Rendered top-right, next to the title (e.g. Planner's "Перейти к ЗН") -
+   * optional so every other AdminModal caller is unaffected. */
+  headerActions?: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -32,7 +36,10 @@ export function AdminModal({
 
   return (
     <dialog ref={ref} className={wide ? "admin-modal admin-modal--wide" : "admin-modal"} onClose={onClose}>
-      <h3 className="admin-modal-title">{title}</h3>
+      <div className="admin-modal-header">
+        <h3 className="admin-modal-title">{title}</h3>
+        {headerActions}
+      </div>
       {children}
     </dialog>
   );

@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +49,11 @@ class BodyCar(Base):
         String(7), nullable=False
     )  # "#rrggbb", round-robin at creation
     status: Mapped[str] = mapped_column(String(20), nullable=False, default=CAR_STATUS_ACCEPT)
+    # "На территории" checkbox - shown as a label in the car-info column
+    # (see BodyView.tsx) when true, otherwise not shown at all.
+    on_site: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True

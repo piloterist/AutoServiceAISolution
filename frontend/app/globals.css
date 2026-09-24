@@ -689,8 +689,16 @@ table.admin-data-table td {
   background: rgba(10, 15, 25, 0.45);
 }
 
-.admin-modal-title {
+.admin-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin: 0 0 1rem;
+}
+
+.admin-modal-title {
+  margin: 0;
   font-size: 1.05rem;
 }
 
@@ -796,6 +804,11 @@ table.admin-data-table td {
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text);
+  /* No-op on a <button>, needed when this class is used on an <a> (see
+     Planner dialogs' "Перейти к ЗН") - without it, a link renders inline
+     with underlined text instead of looking like the other buttons. */
+  text-decoration: none;
+  display: inline-block;
 }
 
 .admin-btn.admin-btn-primary {
@@ -2604,6 +2617,13 @@ table.bt {
   font-variant-numeric: tabular-nums;
 }
 
+.carc .stwrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
 .carc .stsel {
   font-size: 0.72rem;
   padding: 1px 4px;
@@ -2631,6 +2651,12 @@ table.bt {
 
 .carc .dates b {
   color: var(--text);
+  font-weight: 600;
+}
+
+.planner-body-onsite {
+  font-size: 1.06rem;
+  color: var(--ok);
   font-weight: 600;
 }
 

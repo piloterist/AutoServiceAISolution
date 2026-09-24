@@ -63,13 +63,21 @@ def search_work_orders(q: str, db: Session = Depends(get_db)) -> list[WorkOrderS
 
 @router.get("/work-orders/lookup-by-plate", response_model=WorkOrderSearchResult)
 def lookup_work_order_by_plate_endpoint(
-    plate: str, db: Session = Depends(get_db)
+    plate: str,
+    db: Session = Depends(get_db),
+    who: tuple[uuid.UUID | None, str] = Depends(actor),
 ) -> WorkOrderSearchResult:
     """Live lookup against 5Systems for a work order not yet in our own DB -
     see services/fivesystems_client.py's module docstring for why this
     exists and what it can/can't find. On a hit, creates (or reuses) a
     minimal WorkOrder row so the Planner's usual "attach to a ЗН" flow
     works unchanged from here on.
+
+    When the ЗН already existed (not a fresh stub - see
+    get_or_create_stub_work_order's `inserted` flag), any Planner record
+    already linked to it gets its car/VIN/client/phone (+ this lookup's
+    plate) refreshed from the ЗН's own data - see
+    planner_service.sync_planner_records_from_work_order.
 
     Gated behind two independent switches - both must be on: the env var
     (is this integration even configured on this deployment - credentials,
@@ -92,8 +100,21 @@ def lookup_work_order_by_plate_endpoint(
             status_code=404, detail="Открытый заказ-наряд с таким номером не найден"
         )
 
-    work_order = planner_service.get_or_create_stub_work_order(db, result)
-    return WorkOrderSearchResult.model_validate(work_order)
+    work_order, inserted = planner_service.get_or_create_stub_work_order(db, result)
+    # The freshly looked-up phone (see fivesystems_client's /exr/{user_id}
+    # call) takes priority over whatever's already on the ЗН row - falls
+    # back to it only when this lookup didn't find a user_id/phone at all.
+    phone = result.phone or work_order.phone
+    if not inserted:
+        planner_service.sync_planner_records_from_work_order(
+            db, work_order, result.plate, phone, actor_user_id=who[0], actor_name=who[1]
+        )
+    response = WorkOrderSearchResult.model_validate(work_order)
+    # Never written to WorkOrder.phone itself (see
+    # get_or_create_stub_work_order) - only the response the Planner
+    # dialog auto-fills from carries it, same reasoning as the sync above.
+    response.phone = phone
+    return response
 
 
 # ---- Слесарный --------------------------------------------------------------
@@ -223,6 +244,7 @@ def _car_out(db: Session, car: BodyCar) -> BodyCarOut:
         work_description=car.work_description,
         color=car.color,
         status=car.status,
+        on_site=car.on_site,
         stages=[
             BodyCarStageOut(
                 id=s.id,

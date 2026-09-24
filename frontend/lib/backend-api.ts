@@ -818,6 +818,7 @@ export type BodyCar = {
   work_description: string | null;
   color: string;
   status: string;
+  on_site: boolean;
   stages: BodyCarStage[];
   created_at: string;
 };
@@ -831,6 +832,7 @@ export type BodyCarWrite = {
   phone: string | null;
   work_description: string | null;
   status: string;
+  on_site: boolean;
   stages: BodyCarStageWrite[];
 };
 

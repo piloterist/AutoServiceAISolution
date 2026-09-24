@@ -67,7 +67,9 @@ def search_work_orders(db: Session, q: str, *, limit: int = 20) -> list[WorkOrde
     return list(db.scalars(stmt))
 
 
-def get_or_create_stub_work_order(db: Session, result: WorkOrderLookupResult) -> WorkOrder:
+def get_or_create_stub_work_order(
+    db: Session, result: WorkOrderLookupResult
+) -> tuple[WorkOrder, bool]:
     """Finds or creates the WorkOrder a live 5Systems plate lookup
     corresponds to, keyed by the same (source_system, external_number)
     the real 1C import upserts on - so the next day's real import lands on
@@ -80,6 +82,13 @@ def get_or_create_stub_work_order(db: Session, result: WorkOrderLookupResult) ->
     (richer than anything this lookup could ever produce - must not be
     degraded back to a stub) or by an earlier lookup for the same plate
     (nothing new to add). Either way, the existing row wins as-is.
+
+    Returns (work_order, inserted) - inserted is False when the row already
+    existed (the ON CONFLICT DO NOTHING branch fired, so this INSERT
+    affected zero rows) - the caller uses this to decide whether to sync
+    that ЗН's own data into any Planner record already linked to it (see
+    sync_planner_records_from_work_order) - only meaningful when this
+    wasn't a brand new stub, which by definition has nothing yet to sync.
     """
     table = WorkOrder.__table__
     values = {
@@ -100,8 +109,14 @@ def get_or_create_stub_work_order(db: Session, result: WorkOrderLookupResult) ->
         .on_conflict_do_nothing(
             index_elements=[table.c.source_system, table.c.external_number],
         )
+        .returning(table.c.id)
     )
-    db.execute(stmt)
+    # RETURNING - not rowcount, which psycopg reports unreliably for a
+    # DO NOTHING statement (same reasoning as the xmax RETURNING trick in
+    # import_service.py's _upsert_work_order, just simpler here since
+    # DO NOTHING never touches an existing row - no row back means the
+    # conflict branch fired and nothing was inserted).
+    inserted = db.execute(stmt).scalar() is not None
     db.commit()
 
     row = db.scalar(
@@ -112,7 +127,90 @@ def get_or_create_stub_work_order(db: Session, result: WorkOrderLookupResult) ->
     )
     if row is None:  # pragma: no cover - the insert above guarantees a row exists
         raise NotFoundError("Failed to create or find the looked-up work order")
-    return row
+    return row, inserted
+
+
+def sync_planner_records_from_work_order(
+    db: Session,
+    work_order: WorkOrder,
+    plate: str | None,
+    phone: str | None,
+    *,
+    actor_user_id: uuid.UUID | None,
+    actor_name: str,
+) -> None:
+    """Called after a live 5Systems lookup turns out to be for a ЗН that
+    ALREADY existed (see get_or_create_stub_work_order's `inserted` flag) -
+    an operator re-confirming a car whose ЗН is already known to us. Any
+    WorkshopJob/BodyCar record already linked to this work_order_id gets
+    its car_description/vin/client_name/phone refreshed from the ЗН's own
+    (possibly since-enriched-by-a-real-1C-import) data - `plate` and `phone`
+    come from the lookup result itself, not from work_order: WorkOrder has
+    no plate column at all (1C's own export contract doesn't carry one),
+    and WorkOrder.phone is deliberately never written by this integration
+    (see get_or_create_stub_work_order) - the caller passes whichever
+    phone it has (the fresh 5Systems lookup's own, falling back to
+    work_order.phone if that lookup didn't find one).
+
+    Never overwrites a field with an empty one - the ЗН/lookup not having a
+    value yet must not blank out something already typed by hand.
+    """
+    new_values = {
+        "car_description": work_order.vehicle_description,
+        "vin": work_order.vin,
+        "plate": plate,
+        "client_name": work_order.customer_name,
+        "phone": phone,
+    }
+
+    jobs = list(db.scalars(select(WorkshopJob).where(WorkshopJob.work_order_id == work_order.id)))
+    cars = list(db.scalars(select(BodyCar).where(BodyCar.work_order_id == work_order.id)))
+    if not jobs and not cars:
+        return
+
+    for job in jobs:
+        changes = {}
+        for field, new in new_values.items():
+            if not new:
+                continue
+            old = getattr(job, field)
+            if old != new:
+                changes[field] = {"old": old, "new": new}
+                setattr(job, field, new)
+        if changes:
+            job.updated_by_id = actor_user_id
+            audit_log_service.record_change(
+                db,
+                entity_type=ENTITY_WORKSHOP_JOB,
+                entity_id=job.id,
+                action="update",
+                changes=changes,
+                actor_user_id=actor_user_id,
+                actor_name=actor_name,
+            )
+
+    for car in cars:
+        changes = {}
+        for field, new in new_values.items():
+            if not new:
+                continue
+            old = getattr(car, field)
+            if old != new:
+                changes[field] = {"old": old, "new": new}
+                setattr(car, field, new)
+        if changes:
+            car.updated_by_id = actor_user_id
+            audit_log_service.record_change(
+                db,
+                entity_type=ENTITY_BODY_CAR,
+                entity_id=car.id,
+                action="update",
+                changes=changes,
+                actor_user_id=actor_user_id,
+                actor_name=actor_name,
+            )
+
+    db.commit()
 
 
 # ---- Слесарный (WorkshopJob) -----------------------------------------------
@@ -306,6 +404,7 @@ _CAR_LOGGED_FIELDS = (
     "phone",
     "work_description",
     "status",
+    "on_site",
 )
 
 
@@ -327,6 +426,7 @@ def create_body_car(
         phone=data.phone,
         work_description=data.work_description,
         status=data.status,
+        on_site=data.on_site,
         color=_next_car_color(db, workshop_id),
         created_by_id=actor_user_id,
         updated_by_id=actor_user_id,

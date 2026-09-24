@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
 import type { BodyCar, BodyCarWrite, Employee, PlannerWorkOrder } from "@/lib/backend-api";
 import { lookupWorkOrderByPlate } from "@/lib/planner-client";
-import { BODY_STAGE_TYPES } from "@/lib/planner-constants";
+import { BODY_STAGE_TYPES, CAR_STATUSES } from "@/lib/planner-constants";
 import { addDaysIso, diffDaysIso, formatShortDate, todayIso } from "@/lib/planner-time";
 
 import { WorkOrderAutocomplete } from "./WorkOrderAutocomplete";
@@ -24,20 +25,23 @@ export type CarDraft = {
   phone: string;
   workDescription: string;
   status: string;
+  onSite: boolean;
   stages: StageDraft[];
 };
 
-/** Restores "each stage must start no earlier than the previous one ends"
- * (product brief: "При удалении строки... даты строк позже
- * пересчитываются") by shifting a violating stage - and, by the same
- * delta, every stage after it - forward just enough to close the overlap.
- * Preserves each stage's own duration rather than clamping/shrinking it.
- * Used after row removal and after editing a stage's own end date (editing
- * a start goes through updateStageStart below, which cascades directly). */
+/** Restores "each stage must start no earlier than the previous one starts"
+ * (product brief: даты этапов могут совпадать/пересекаться, но не быть
+ * раньше даты начала предыдущего этапа - see BodyView.tsx's merged-segment
+ * rendering for coinciding/overlapping stages) by shifting a violating
+ * stage - and, by the same delta, every stage after it - forward just
+ * enough to close the gap. Preserves each stage's own duration rather than
+ * clamping/shrinking it. Used after row removal and after editing a
+ * stage's own end date (editing a start goes through updateStageStart
+ * below, which cascades directly). */
 function fixupStageOrder(stages: StageDraft[]): StageDraft[] {
   const fixed = [...stages];
   for (let i = 1; i < fixed.length; i++) {
-    const minStart = addDaysIso(fixed[i - 1].endDate, 1);
+    const minStart = fixed[i - 1].startDate;
     if (fixed[i].startDate < minStart) {
       const delta = diffDaysIso(fixed[i].startDate, minStart);
       for (let j = i; j < fixed.length; j++) {
@@ -137,10 +141,12 @@ export function BodyCarDialog({
    * just overlapping the next stage - for the first stage this is "when
    * does the car arrive"; for a middle one it's the same idea starting
    * from that point on (see the same "start" semantics in BodyView's
-   * cap-drag). Clamped so it can't back into the previous stage. */
+   * cap-drag). Clamped so it can't move earlier than the PREVIOUS stage's
+   * own start (product ask: coinciding/overlapping dates are fine, going
+   * backwards past where the previous stage itself starts is not). */
   const updateStageStart = (index: number, rawStart: string) => {
     if (!rawStart) return;
-    const minStart = index > 0 ? addDaysIso(form.stages[index - 1].endDate, 1) : rawStart;
+    const minStart = index > 0 ? form.stages[index - 1].startDate : rawStart;
     const startDate = rawStart < minStart ? minStart : rawStart;
     const delta = diffDaysIso(form.stages[index].startDate, startDate);
     if (delta === 0) return;
@@ -189,6 +195,7 @@ export function BodyCarDialog({
         phone: form.phone || null,
         work_description: form.workDescription || null,
         status: form.status,
+        on_site: form.onSite,
         stages: form.stages.map((s) => ({
           stage_name: s.stageName,
           note: s.note || null,
@@ -209,6 +216,13 @@ export function BodyCarDialog({
         title={form.carId ? "Карточка автомобиля" : "Новая машина в кузовном цехе"}
         onClose={onClose}
         wide
+        headerActions={
+          form.workOrderId && (
+            <Link href={`/work-orders/${form.workOrderId}`} className="admin-btn" onClick={(e) => e.stopPropagation()}>
+              Перейти к ЗН
+            </Link>
+          )
+        }
       >
         <WorkOrderAutocomplete
           value={form.workOrderNumber}
@@ -246,6 +260,16 @@ export function BodyCarDialog({
             <label htmlFor="bc-phone">Телефон</label>
             <input id="bc-phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
           </div>
+          <div className="admin-form-field">
+            <label htmlFor="bc-status">Статус</label>
+            <select id="bc-status" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+              {CAR_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="admin-form-field">
@@ -257,6 +281,15 @@ export function BodyCarDialog({
             onChange={(e) => setForm({ ...form, workDescription: e.target.value })}
           />
         </div>
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={form.onSite}
+            onChange={(e) => setForm({ ...form, onSite: e.target.checked })}
+          />
+          На территории
+        </label>
 
         <fieldset className="planner-stage-fieldset">
           <legend>Этапы работ</legend>
@@ -371,6 +404,7 @@ export function carToDraft(car: BodyCar): CarDraft {
     phone: car.phone ?? "",
     workDescription: car.work_description ?? "",
     status: car.status,
+    onSite: car.on_site,
     stages: car.stages.map((s) => ({
       stageName: s.stage_name,
       note: s.note ?? "",
@@ -393,6 +427,7 @@ export function emptyCarDraft(arriveDate: string): CarDraft {
     phone: "",
     workDescription: "",
     status: "К приёмке",
+    onSite: false,
     stages: [newStageRow(undefined, arriveDate)],
   };
 }

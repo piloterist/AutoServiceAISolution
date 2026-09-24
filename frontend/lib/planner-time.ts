@@ -95,3 +95,13 @@ export function roundToSlot(minutes: number, slot = 30): number {
 export function diffDaysIso(a: string, b: string): number {
   return Math.round((parseIso(b).getTime() - parseIso(a).getTime()) / 86_400_000);
 }
+
+/** Кузовной "Согласование"/"Готова к выдаче" - their display span is ±3
+ * months from created_at, not their actual этапы (see BodyView.tsx). Uses
+ * Date's own month-overflow rollover (e.g. 31 Jan - 1mo -> 31 Dec skips to
+ * 3 Jan) - close enough for a coarse ±3-month display window. */
+export function addMonthsIso(iso: string, months: number): string {
+  const d = parseIso(iso);
+  d.setMonth(d.getMonth() + months);
+  return toIso(d);
+}
