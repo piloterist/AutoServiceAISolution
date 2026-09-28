@@ -21,6 +21,11 @@ export type SessionUser = {
   fullName: string;
   login: string;
   role: string;
+  // "light" | "dark" - the account's default theme (see backend
+  // app/models/user.py THEMES), applied on first load by the anti-FOUC
+  // inline script in app/layout.tsx. A manual pick via ThemeToggle (stored
+  // in the browser's own localStorage) always wins over this once made.
+  theme: string;
   departmentId: string | null;
   departmentName: string | null;
   workshopId: string | null;
@@ -112,6 +117,7 @@ export async function readSessionToken(
       fullName: payload.fullName,
       login: payload.login,
       role: payload.role,
+      theme: payload.theme,
       departmentId: payload.departmentId,
       departmentName: payload.departmentName,
       workshopId: payload.workshopId,
@@ -132,7 +138,7 @@ export async function isValidSessionToken(token: string | undefined | null): Pro
  * external site (open redirect). */
 export function safeNextPath(next: string | null | undefined): string {
   if (next && next.startsWith("/") && !next.startsWith("//")) return next;
-  return "/dashboard";
+  return "/cockpit";
 }
 
 /** Builds an absolute URL for a redirect Response, preferring the

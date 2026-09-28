@@ -1,11 +1,8 @@
-import { HealthIndicator } from "@/components/HealthIndicator";
+import { redirect } from "next/navigation";
 
+// Cockpit is the app's landing page - see components/cockpit/CockpitView.tsx.
+// middleware.ts still gates this same as any other page, so a role without
+// the /cockpit tab lands on its own first allowed tab instead, not here.
 export default function HomePage() {
-  return (
-    <div className="card">
-      <h1>AutoService Platform</h1>
-      <p>Application shell is up. This instance is configured per deployment via environment variables.</p>
-      <HealthIndicator />
-    </div>
-  );
+  redirect("/cockpit");
 }

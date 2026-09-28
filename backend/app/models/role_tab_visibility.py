@@ -25,7 +25,16 @@ from app.db.base import Base
 # (not a hardcoded enum-like closed set at the DB layer) since it's product
 # navigation, not client data, but validated against this exact list at the
 # schema layer (see schemas/admin.py) the same way User.role is.
-NAV_TAB_KEYS = ("/dashboard", "/work-orders", "/planner", "/kanban", "/employees", "/analytics")
+NAV_TAB_KEYS = (
+    "/cockpit",
+    "/dashboard",
+    "/work-orders",
+    "/planner",
+    "/kanban",
+    "/employees",
+    "/analytics",
+    "/telephony",
+)
 
 
 class RoleTabVisibility(Base):

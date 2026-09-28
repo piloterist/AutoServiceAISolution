@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.models.employee import SPECIALTIES
 from app.models.role_tab_visibility import NAV_TAB_KEYS
-from app.models.user import ROLES
+from app.models.user import ROLES, THEMES
 from app.models.workshop import WEEKDAY_CHOICES, WORKSHOP_TYPES
 
 # ---- Подразделения ----------------------------------------------------
@@ -47,6 +47,10 @@ class WorkshopOut(BaseModel):
     start_time: time
     end_time: time
     working_days: list[int]
+    # Планирование - см. models/workshop.py.
+    zero_revenue: Decimal | None
+    target_revenue: Decimal | None
+    target_norm_hours: Decimal | None
 
     model_config = {"from_attributes": True}
 
@@ -60,12 +64,34 @@ class WorkshopWrite(BaseModel):
     start_time: time
     end_time: time
     working_days: list[int] = Field(min_length=1)
+    zero_revenue: Decimal | None = None
+    target_revenue: Decimal | None = None
+    target_norm_hours: Decimal | None = None
 
     def validate_choices(self) -> None:
         if self.workshop_type not in WORKSHOP_TYPES:
             raise ValueError(f"workshop_type must be one of {WORKSHOP_TYPES}")
         if any(d not in WEEKDAY_CHOICES for d in self.working_days):
             raise ValueError("working_days must be within 0..6 (Monday..Sunday)")
+
+
+# ---- Соответствие "строка 1С" -> цех (см. models/workshop_source_department.py) ----
+
+
+class WorkshopSourceDepartmentOut(BaseModel):
+    id: uuid.UUID
+    workshop_id: uuid.UUID
+    workshop_label: str  # "<Подразделение> — <Тип цеха>", e.g. "Каховка — Кузовной"
+    source_department: str
+
+
+class WorkshopSourceDepartmentWrite(BaseModel):
+    workshop_id: uuid.UUID
+    source_department: str = Field(min_length=1, max_length=150)
+
+
+class UnmappedSourceDepartmentsOut(BaseModel):
+    values: list[str]
 
 
 # ---- Пользователи ---------------------------------------------------------
@@ -76,6 +102,7 @@ class UserOut(BaseModel):
     full_name: str
     login: str
     role: str
+    theme: str
     department_id: uuid.UUID | None
     department_name: str | None
     workshop_id: uuid.UUID | None
@@ -88,12 +115,15 @@ class UserCreate(BaseModel):
     login: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=4)
     role: str
+    theme: str
     department_id: uuid.UUID | None = None
     workshop_id: uuid.UUID | None = None
 
     def validate_role(self) -> None:
         if self.role not in ROLES:
             raise ValueError(f"role must be one of {ROLES}")
+        if self.theme not in THEMES:
+            raise ValueError(f"theme must be one of {THEMES}")
 
 
 class UserUpdate(BaseModel):
@@ -102,12 +132,15 @@ class UserUpdate(BaseModel):
     # Empty/omitted = keep the existing password.
     password: str | None = Field(default=None, min_length=4)
     role: str
+    theme: str
     department_id: uuid.UUID | None = None
     workshop_id: uuid.UUID | None = None
 
     def validate_role(self) -> None:
         if self.role not in ROLES:
             raise ValueError(f"role must be one of {ROLES}")
+        if self.theme not in THEMES:
+            raise ValueError(f"theme must be one of {THEMES}")
 
 
 # ---- Сотрудники ---------------------------------------------------------
@@ -185,6 +218,12 @@ class AuditLogEntryOut(BaseModel):
     changes: dict
     actor_name: str
     created_at: datetime
+    # The entity's ЗН/car at the time of the change - see
+    # models/schedule_audit_log.py. work_order_number is resolved from
+    # work_order_id by the endpoint (not stored), null if the entry has no
+    # linked ЗН or that ЗН was since deleted.
+    work_order_number: str | None
+    car_description: str | None
 
     model_config = {"from_attributes": True}
 
@@ -202,6 +241,7 @@ class AuthenticatedUser(BaseModel):
     full_name: str
     login: str
     role: str
+    theme: str
     department_id: uuid.UUID | None
     department_name: str | None
     workshop_id: uuid.UUID | None

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { usersApi } from "@/lib/admin-client";
-import { USER_ROLES } from "@/lib/admin-constants";
+import { USER_ROLES, USER_THEMES } from "@/lib/admin-constants";
 import type { OrgDepartment, OrgUser, Workshop } from "@/lib/backend-api";
 
 import { AdminModal } from "./AdminModal";
@@ -13,12 +13,21 @@ type FormState = {
   login: string;
   password: string;
   role: string;
+  theme: string;
   department_id: string; // "" = не выбрано
   workshop_id: string;
 };
 
 function emptyForm(): FormState {
-  return { full_name: "", login: "", password: "", role: USER_ROLES[USER_ROLES.length - 1], department_id: "", workshop_id: "" };
+  return {
+    full_name: "",
+    login: "",
+    password: "",
+    role: USER_ROLES[USER_ROLES.length - 1],
+    theme: USER_THEMES[0].value,
+    department_id: "",
+    workshop_id: "",
+  };
 }
 
 function toForm(user: OrgUser): FormState {
@@ -27,6 +36,7 @@ function toForm(user: OrgUser): FormState {
     login: user.login,
     password: "",
     role: user.role,
+    theme: user.theme,
     department_id: user.department_id ?? "",
     workshop_id: user.workshop_id ?? "",
   };
@@ -85,6 +95,7 @@ export function UsersTab({
           login: form.login.trim(),
           password: form.password,
           role: form.role,
+          theme: form.theme,
           department_id: form.department_id || null,
           workshop_id: form.workshop_id || null,
         });
@@ -95,6 +106,7 @@ export function UsersTab({
           login: form.login.trim(),
           password: form.password || null,
           role: form.role,
+          theme: form.theme,
           department_id: form.department_id || null,
           workshop_id: form.workshop_id || null,
         });
@@ -151,6 +163,7 @@ export function UsersTab({
             <th>ФИО</th>
             <th>Логин</th>
             <th>Роль</th>
+            <th>Тема</th>
             <th>Подразделение</th>
           </tr>
         </thead>
@@ -164,12 +177,13 @@ export function UsersTab({
               <td>{user.full_name}</td>
               <td>{user.login}</td>
               <td>{user.role}</td>
+              <td>{USER_THEMES.find((t) => t.value === user.theme)?.label ?? user.theme}</td>
               <td>{user.department_name ?? "—"}</td>
             </tr>
           ))}
           {users.length === 0 && (
             <tr>
-              <td colSpan={4} className="admin-empty-row">
+              <td colSpan={5} className="admin-empty-row">
                 Пользователей пока нет
               </td>
             </tr>
@@ -225,6 +239,21 @@ export function UsersTab({
               {USER_ROLES.map((role) => (
                 <option key={role} value={role}>
                   {role}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="admin-form-field">
+            <label htmlFor="user-theme">Тема</label>
+            <select
+              id="user-theme"
+              value={form.theme}
+              onChange={(e) => setForm((prev) => ({ ...prev, theme: e.target.value }))}
+            >
+              {USER_THEMES.map((theme) => (
+                <option key={theme.value} value={theme.value}>
+                  {theme.label}
                 </option>
               ))}
             </select>

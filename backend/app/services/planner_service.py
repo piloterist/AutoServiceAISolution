@@ -187,6 +187,8 @@ def sync_planner_records_from_work_order(
                 changes=changes,
                 actor_user_id=actor_user_id,
                 actor_name=actor_name,
+                work_order_id=job.work_order_id,
+                car_description=job.car_description,
             )
 
     for car in cars:
@@ -208,6 +210,8 @@ def sync_planner_records_from_work_order(
                 changes=changes,
                 actor_user_id=actor_user_id,
                 actor_name=actor_name,
+                work_order_id=car.work_order_id,
+                car_description=car.car_description,
             )
 
     db.commit()
@@ -299,6 +303,8 @@ def create_workshop_job(
         },
         actor_user_id=actor_user_id,
         actor_name=actor_name,
+        work_order_id=job.work_order_id,
+        car_description=job.car_description,
     )
     db.commit()
     db.refresh(job)
@@ -336,6 +342,8 @@ def update_workshop_job(
             changes=changes,
             actor_user_id=actor_user_id,
             actor_name=actor_name,
+            work_order_id=job.work_order_id,
+            car_description=job.car_description,
         )
     db.commit()
     db.refresh(job)
@@ -359,6 +367,8 @@ def delete_workshop_job(
         },
         actor_user_id=actor_user_id,
         actor_name=actor_name,
+        work_order_id=job.work_order_id,
+        car_description=job.car_description,
     )
     db.delete(job)
     db.commit()
@@ -455,6 +465,8 @@ def create_body_car(
         changes=changes,
         actor_user_id=actor_user_id,
         actor_name=actor_name,
+        work_order_id=car.work_order_id,
+        car_description=car.car_description,
     )
     db.commit()
     db.refresh(car)
@@ -509,6 +521,8 @@ def update_body_car(
             changes=changes,
             actor_user_id=actor_user_id,
             actor_name=actor_name,
+            work_order_id=car.work_order_id,
+            car_description=car.car_description,
         )
     db.commit()
     db.refresh(car)
@@ -531,6 +545,8 @@ def delete_body_car(
         changes=changes,
         actor_user_id=actor_user_id,
         actor_name=actor_name,
+        work_order_id=car.work_order_id,
+        car_description=car.car_description,
     )
     db.delete(car)
     db.commit()

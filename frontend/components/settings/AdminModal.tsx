@@ -12,6 +12,7 @@ export function AdminModal({
   children,
   wide,
   headerActions,
+  closeOnBackdropClick,
 }: {
   open: boolean;
   title: string;
@@ -24,6 +25,12 @@ export function AdminModal({
   /** Rendered top-right, next to the title (e.g. Planner's "Перейти к ЗН") -
    * optional so every other AdminModal caller is unaffected. */
   headerActions?: React.ReactNode;
+  /** Closes on a click landing directly on the dialog's own backdrop/
+   * padding area (not on any of its content) - opt-in, off by default,
+   * since a form with unsaved input generally shouldn't lose it to a
+   * stray click; a read-only panel (e.g. Planner's missed-calls list)
+   * wants this. */
+  closeOnBackdropClick?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
 
@@ -35,7 +42,22 @@ export function AdminModal({
   }, [open]);
 
   return (
-    <dialog ref={ref} className={wide ? "admin-modal admin-modal--wide" : "admin-modal"} onClose={onClose}>
+    <dialog
+      ref={ref}
+      className={wide ? "admin-modal admin-modal--wide" : "admin-modal"}
+      onClose={onClose}
+      onClick={
+        closeOnBackdropClick
+          ? (e) => {
+              // A click that bubbles up all the way to the <dialog> itself
+              // (not stopped by any child content) landed on its own
+              // backdrop/padding area - e.target is only the dialog element
+              // in that case, never a descendant.
+              if (e.target === ref.current) onClose();
+            }
+          : undefined
+      }
+    >
       <div className="admin-modal-header">
         <h3 className="admin-modal-title">{title}</h3>
         {headerActions}

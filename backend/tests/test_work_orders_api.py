@@ -469,6 +469,64 @@ def test_get_work_order_detail_includes_payment_history(client, db_session, auth
     assert body["payment_history"][0]["payment_percent"] == "21.58"
 
 
+def test_get_work_order_detail_includes_invoices(client, db_session, auth_headers) -> None:
+    import_payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "detail-invoice-1",
+        "records": [
+            {
+                "number": "WO-DETAIL-INVOICE",
+                "date": "2026-09-16T09:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 585355.00,
+                "invoices": [
+                    {
+                        "source_document_id": "c1d2e3f4-0000-0000-0000-000000000001",
+                        "number": "КХ00000040",
+                        "date": "2026-09-02T00:00:00",
+                        "amount": 103090.00,
+                        "paid_amount": 103090.00,
+                        "debt_amount": 0,
+                        "posted": True,
+                    },
+                    {
+                        "source_document_id": "c1d2e3f4-0000-0000-0000-000000000002",
+                        "number": "КХ00000041",
+                        "date": "2026-09-03T00:00:00",
+                        "amount": 485265.00,
+                        "paid_amount": 0,
+                        "debt_amount": 485265.00,
+                        "posted": True,
+                    },
+                ],
+            }
+        ],
+    }
+    assert (
+        client.post(
+            "/api/v1/import/work-orders", json=import_payload, headers=auth_headers
+        ).status_code
+        == 200
+    )
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "WO-DETAIL-INVOICE")
+    ).scalar_one()
+
+    response = client.get(f"{LIST_URL}/{work_order.id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    invoices = response.json()["invoices"]
+    assert len(invoices) == 2
+    by_number = {inv["external_number"]: inv for inv in invoices}
+    assert by_number["КХ00000040"]["status"] == "Оплачен"
+    assert by_number["КХ00000041"]["status"] == "Не оплачен"
+
+
 def test_get_work_order_detail_missing_returns_404(client, auth_headers) -> None:
     response = client.get(f"{LIST_URL}/00000000-0000-0000-0000-000000000000", headers=auth_headers)
 

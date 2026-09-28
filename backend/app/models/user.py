@@ -25,6 +25,18 @@ ROLE_ACCOUNTANT = "Бухгалтер"
 ROLE_EMPLOYEE = "Сотрудник"
 ROLES = (ROLE_ADMIN, ROLE_MANAGER, ROLE_SERVICE_ADVISOR, ROLE_ACCOUNTANT, ROLE_EMPLOYEE)
 
+# Matches the `data-theme` attribute value the frontend's CSS/ThemeToggle
+# already use (see frontend/components/ThemeToggle.tsx, app/globals.css) -
+# deliberately English/technical, not translated like ROLES above, so it
+# plugs straight into that attribute with no mapping layer. Baked into the
+# session cookie at login (see frontend/lib/auth.ts's SessionUser.theme)
+# and applied as the default theme on first load - a manual pick via
+# ThemeToggle (stored in the browser's own localStorage) always wins over
+# this account-level default once made.
+THEME_LIGHT = "light"
+THEME_DARK = "dark"
+THEMES = (THEME_LIGHT, THEME_DARK)
+
 
 class User(Base):
     __tablename__ = "users"
@@ -38,6 +50,9 @@ class User(Base):
     # of internal accounts - hashlib.pbkdf2_hmac from the stdlib is enough.
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(30), nullable=False)
+    theme: Mapped[str] = mapped_column(
+        String(10), nullable=False, default=THEME_LIGHT, server_default=THEME_LIGHT
+    )
 
     # A user's own default Planner scope (see product brief part 3: "эта
     # страница должна открываться с теми значениями который выбраны для

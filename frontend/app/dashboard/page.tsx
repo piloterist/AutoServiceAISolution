@@ -42,6 +42,35 @@ function toArray(value: string | string[] | undefined): string[] {
   return Array.isArray(value) ? value : [value];
 }
 
+// Fixed presentation order for the status chips - this business's own
+// status vocabulary from 1C (see ARCHITECTURE.md: status is arbitrary
+// client data, never a hardcoded core concept) always renders in this
+// order regardless of count or the active filter, instead of sorting by
+// count descending (which reshuffled the tiles every time a filter
+// changed the counts - see product feedback). A status value not in this
+// list (a new one, a typo) falls back to the end, in whatever order the
+// backend returned it - never dropped.
+const STATUS_DISPLAY_ORDER = [
+  "Ожидание оплаты",
+  "Закрыт",
+  "Выполнен",
+  "В работе",
+  "Детали в наличии",
+  "Ожидание деталей",
+  "Согласование",
+  "Заявка",
+  "Отказ",
+];
+
+function sortByStatusDisplayOrder<T extends { status: string }>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const aRank = STATUS_DISPLAY_ORDER.indexOf(a.status);
+    const bRank = STATUS_DISPLAY_ORDER.indexOf(b.status);
+    return (aRank === -1 ? STATUS_DISPLAY_ORDER.length : aRank) -
+      (bRank === -1 ? STATUS_DISPLAY_ORDER.length : bRank);
+  });
+}
+
 function pluralWorkOrders(count: number): string {
   const mod10 = count % 10;
   const mod100 = count % 100;
@@ -271,7 +300,8 @@ export default async function DashboardPage({
     }),
   );
 
-  const statusItems = statusSummary?.items ?? [];
+
+  const statusItems = sortByStatusDisplayOrder(statusSummary?.items ?? []);
   const totalStatusCount = statusItems.reduce((sum, item) => sum + item.work_order_count, 0);
   const statusChips: StatusChipItem[] = statusItems.map((item) => ({
     label: item.status,
@@ -384,7 +414,12 @@ export default async function DashboardPage({
 
           <div className="card">
             <h2 className="chart-title">Заказ-наряды по статусам за период</h2>
-            <StatusChipGrid data={statusChips} dateFrom={dateFrom} dateTo={dateTo} />
+            <StatusChipGrid
+              data={statusChips}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              selectedDepartments={selectedDepartments}
+            />
           </div>
 
           {/* 4 direct grid children (not two nested flex columns) so the

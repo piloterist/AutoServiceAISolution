@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models.department import Department
+from app.models.employee import Employee
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.work_order import WorkOrder
 from app.models.workshop import Workshop
@@ -61,6 +62,15 @@ def slesarka_status(db_session: Session) -> SlesarkaStatus:
     db_session.commit()
     db_session.refresh(status)
     return status
+
+
+@pytest.fixture()
+def sample_employee(db_session: Session) -> Employee:
+    employee = Employee(full_name="Пан Оксана Игоревна", specialty="Механик")
+    db_session.add(employee)
+    db_session.commit()
+    db_session.refresh(employee)
+    return employee
 
 
 @pytest.fixture()
@@ -236,30 +246,52 @@ def test_update_and_delete_workshop_job(
 
 
 def test_workshop_job_audit_log_records_create_update_delete(
-    client, auth_headers, mechanical_workshop, db_session: Session
+    client, auth_headers, mechanical_workshop, sample_work_order, db_session: Session
 ) -> None:
     created = client.post(
         f"{PLANNER_URL}/workshops/{mechanical_workshop.id}/jobs",
         headers={**auth_headers, **_actor_header("Мастер Иванов")},
-        json=_job_payload(),
+        json=_job_payload(work_order_id=str(sample_work_order.id)),
     )
     job_id = created.json()["id"]
 
     client.put(
         f"{PLANNER_URL}/jobs/{job_id}",
         headers={**auth_headers, **_actor_header("Мастер Иванов")},
-        json=_job_payload(post_number=3),
+        json=_job_payload(work_order_id=str(sample_work_order.id), post_number=3),
     )
     client.delete(
         f"{PLANNER_URL}/jobs/{job_id}", headers={**auth_headers, **_actor_header("Мастер Иванов")}
     )
 
     log = client.get("/api/v1/settings/audit-log", headers=auth_headers).json()
-    actions = [entry["action"] for entry in log if entry["entity_id"] == job_id]
+    entries = [entry for entry in log if entry["entity_id"] == job_id]
+    actions = [entry["action"] for entry in entries]
     assert actions == ["delete", "update", "create"]  # newest first
-    assert all(
-        entry["actor_name"] == "Мастер Иванов" for entry in log if entry["entity_id"] == job_id
+    assert all(entry["actor_name"] == "Мастер Иванов" for entry in entries)
+    # ЗН/Автомобиль columns reflect the job's CURRENT linkage at write time,
+    # not just whatever happened to be in that particular diff.
+    assert all(entry["work_order_number"] == "СЛ00000371" for entry in entries)
+    assert all(entry["car_description"] == "Toyota Camry" for entry in entries)
+
+
+def test_workshop_job_audit_log_humanizes_employee_and_status_ids(
+    client, auth_headers, mechanical_workshop, sample_employee, slesarka_status
+) -> None:
+    created = client.post(
+        f"{PLANNER_URL}/workshops/{mechanical_workshop.id}/jobs",
+        headers=auth_headers,
+        json=_job_payload(employee_id=str(sample_employee.id), status_id=str(slesarka_status.id)),
     )
+    job_id = created.json()["id"]
+
+    log = client.get("/api/v1/settings/audit-log", headers=auth_headers).json()
+    entry = next(e for e in log if e["entity_id"] == job_id and e["action"] == "create")
+    # Raw foreign-key UUIDs must never reach the log - only the name/status
+    # a person actually recognizes (see the "employee_id: — → <uuid>" bug
+    # report this guards against).
+    assert entry["changes"]["employee_id"]["new"] == "Пан Оксана Игоревна"
+    assert entry["changes"]["status_id"]["new"] == "Запись"
 
 
 # ---- Кузовной -----------------------------------------------------------
@@ -371,6 +403,34 @@ def test_update_body_car_replaces_stages(client, auth_headers, body_workshop) ->
     assert updated.json()["status"] == "В работе"
     assert len(updated.json()["stages"]) == 2
     assert updated.json()["stages"][1]["stage_name"] == "Жесть"
+
+
+def test_body_car_audit_log_humanizes_stage_employee_id(
+    client, auth_headers, body_workshop, sample_employee
+) -> None:
+    created = client.post(
+        f"{PLANNER_URL}/workshops/{body_workshop.id}/cars",
+        headers=auth_headers,
+        json=_car_payload(
+            stages=[
+                {
+                    "stage_name": "Приёмка",
+                    "note": None,
+                    "start_date": "2026-09-21",
+                    "end_date": "2026-09-21",
+                    "employee_id": str(sample_employee.id),
+                },
+            ],
+        ),
+    )
+    car_id = created.json()["id"]
+
+    log = client.get("/api/v1/settings/audit-log", headers=auth_headers).json()
+    entry = next(e for e in log if e["entity_id"] == car_id and e["action"] == "create")
+    # The stages diff is a JSON array, not a flat field - employee_id inside
+    # each stage snapshot must be humanized too, not just the top-level
+    # employee_id used by Слесарка.
+    assert entry["changes"]["stages"]["new"][0]["employee_id"] == "Пан Оксана Игоревна"
 
 
 def test_delete_body_car(client, auth_headers, body_workshop) -> None:

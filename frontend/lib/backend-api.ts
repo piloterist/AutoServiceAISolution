@@ -461,6 +461,7 @@ export type AuthenticatedUser = {
   full_name: string;
   login: string;
   role: string;
+  theme: string;
   department_id: string | null;
   department_name: string | null;
   workshop_id: string | null;
@@ -505,6 +506,10 @@ export type Workshop = {
   start_time: string; // "HH:MM:SS"
   end_time: string;
   working_days: number[]; // 0=Monday..6=Sunday
+  // Планирование - см. backend app/models/workshop.py.
+  zero_revenue: string | null;
+  target_revenue: string | null;
+  target_norm_hours: string | null;
 };
 
 export type WorkshopWrite = {
@@ -516,6 +521,9 @@ export type WorkshopWrite = {
   start_time: string;
   end_time: string;
   working_days: number[];
+  zero_revenue?: string | null;
+  target_revenue?: string | null;
+  target_norm_hours?: string | null;
 };
 
 export function getWorkshops(): Promise<Workshop[]> {
@@ -534,11 +542,64 @@ export function deleteWorkshop(id: string): Promise<void> {
   return backendDelete(`/api/v1/settings/workshops/${id}`);
 }
 
+// Раздел 1С -> цех: maps a raw WorkOrder.department string (as sent by 1C)
+// to a Workshop - see app/models/workshop_source_department.py for why this
+// mapping table exists (many raw strings can map to one Workshop; company-
+// wide totals include unmapped revenue too, but a specific-workshop filter
+// only sees revenue whose department string is mapped here).
+export type WorkshopSourceDepartment = {
+  id: string;
+  workshop_id: string;
+  workshop_label: string; // "<Подразделение> — <Тип цеха>"
+  source_department: string;
+};
+
+export type WorkshopSourceDepartmentWrite = {
+  workshop_id: string;
+  source_department: string;
+};
+
+export function getWorkshopSourceDepartments(): Promise<WorkshopSourceDepartment[]> {
+  return backendGet<WorkshopSourceDepartment[]>("/api/v1/settings/workshop-source-departments");
+}
+
+/** Raw WorkOrder.department strings with real closed work orders but no
+ * mapping row yet - surfaced in the tab as one-click "add" suggestions. */
+export function getUnmappedSourceDepartments(): Promise<string[]> {
+  return backendGet<{ values: string[] }>(
+    "/api/v1/settings/workshop-source-departments/unmapped",
+  ).then((r) => r.values);
+}
+
+export function createWorkshopSourceDepartment(
+  payload: WorkshopSourceDepartmentWrite,
+): Promise<WorkshopSourceDepartment> {
+  return backendPost<WorkshopSourceDepartment>(
+    "/api/v1/settings/workshop-source-departments",
+    payload,
+  );
+}
+
+export function updateWorkshopSourceDepartment(
+  id: string,
+  payload: WorkshopSourceDepartmentWrite,
+): Promise<WorkshopSourceDepartment> {
+  return backendPut<WorkshopSourceDepartment>(
+    `/api/v1/settings/workshop-source-departments/${id}`,
+    payload,
+  );
+}
+
+export function deleteWorkshopSourceDepartment(id: string): Promise<void> {
+  return backendDelete(`/api/v1/settings/workshop-source-departments/${id}`);
+}
+
 export type OrgUser = {
   id: string;
   full_name: string;
   login: string;
   role: string;
+  theme: string;
   department_id: string | null;
   department_name: string | null;
   workshop_id: string | null;
@@ -549,6 +610,7 @@ export type OrgUserCreate = {
   login: string;
   password: string;
   role: string;
+  theme: string;
   department_id: string | null;
   workshop_id: string | null;
 };
@@ -558,6 +620,7 @@ export type OrgUserUpdate = {
   login: string;
   password?: string | null; // empty/omitted keeps the existing password
   role: string;
+  theme: string;
   department_id: string | null;
   workshop_id: string | null;
 };
@@ -608,6 +671,8 @@ export type AuditLogEntry = {
   changes: Record<string, { old: unknown; new: unknown }>;
   actor_name: string;
   created_at: string;
+  work_order_number: string | null;
+  car_description: string | null;
 };
 
 export function getAuditLog(): Promise<AuditLogEntry[]> {
@@ -858,4 +923,277 @@ export function updateBodyCar(
 
 export function deleteBodyCar(id: string, actor: { id: string; fullName: string }): Promise<void> {
   return backendDelete(`/api/v1/planner/cars/${id}`, actorHeaders(actor));
+}
+
+// ============================================================================
+// IP-телефония (Settings -> IP-телефония + /telephony stats page) - see
+// backend app/api/v1/endpoints/telephony.py.
+// ============================================================================
+
+export type TelephonySettings = {
+  provider: string;
+  enabled: boolean;
+  zeon_api_url: string | null;
+  zeon_api_key: string | null;
+  zeon_auth: "bearer" | "hash";
+  yandex_disk_token: string | null;
+  yandex_disk_base_path: string | null;
+  operator_names: string | null;
+  poll_interval_minutes: number | null;
+  zeon_audio_method: "get-mp3" | "get-file";
+  yc_api_key: string | null;
+  yc_folder_id: string | null;
+  speechkit_model: string;
+  speechkit_language: string;
+  speechkit_timeout_min: number;
+};
+
+export type TelephonySettingsWrite = {
+  enabled: boolean;
+  zeon_api_url: string | null;
+  zeon_api_key: string | null;
+  zeon_auth: "bearer" | "hash";
+  yandex_disk_token: string | null;
+  yandex_disk_base_path: string | null;
+  operator_names: string | null;
+  poll_interval_minutes: number | null;
+  zeon_audio_method: "get-mp3" | "get-file";
+  yc_api_key: string | null;
+  yc_folder_id: string | null;
+  speechkit_model: string;
+  speechkit_language: string;
+  speechkit_timeout_min: number;
+};
+
+export function getTelephonySettings(): Promise<TelephonySettings> {
+  return backendGet<TelephonySettings>("/api/v1/telephony/settings");
+}
+
+export function updateTelephonySettings(payload: TelephonySettingsWrite): Promise<TelephonySettings> {
+  return backendPut<TelephonySettings>("/api/v1/telephony/settings", payload);
+}
+
+export type TelephonyPingResult = { ok: boolean; error: string | null };
+
+export function pingTelephony(): Promise<TelephonyPingResult> {
+  return backendPost<TelephonyPingResult>("/api/v1/telephony/ping", {});
+}
+
+export type TelephonyImportResult = { fetched: number; upserted: number };
+
+export function triggerTelephonyImport(
+  range?: { startDate: string; endDate: string },
+): Promise<TelephonyImportResult> {
+  return backendPost<TelephonyImportResult>("/api/v1/telephony/import", {
+    start_date: range?.startDate ?? null,
+    end_date: range?.endDate ?? null,
+  });
+}
+
+export type CallRecordingExportResult = { status: string; start_date: string; end_date: string };
+
+/** "Выгрузить и расшифровать" button - fetches call recordings from Zeon,
+ * archives them to Yandex.Disk, and transcribes them via Yandex SpeechKit.
+ * Runs in the background on the backend (see endpoints/telephony.py) - this
+ * call returns as soon as the run is accepted, not once it's finished. */
+export function triggerCallRecordingExport(range: {
+  startDate: string;
+  endDate: string;
+}): Promise<CallRecordingExportResult> {
+  return backendPost<CallRecordingExportResult>("/api/v1/telephony/recordings/export", {
+    start_date: range.startDate,
+    end_date: range.endDate,
+  });
+}
+
+export type PhoneSource = {
+  id: string;
+  line_code: string;
+  name: string;
+  caption: string | null;
+  group_name: string;
+  sort_order: number;
+};
+
+export type PhoneSourceWrite = {
+  line_code: string;
+  name: string;
+  caption: string | null;
+  group_name: string;
+  sort_order: number;
+};
+
+export function getPhoneSources(): Promise<PhoneSource[]> {
+  return backendGet<PhoneSource[]>("/api/v1/telephony/sources");
+}
+
+export function createPhoneSource(payload: PhoneSourceWrite): Promise<PhoneSource> {
+  return backendPost<PhoneSource>("/api/v1/telephony/sources", payload);
+}
+
+export function updatePhoneSource(id: string, payload: PhoneSourceWrite): Promise<PhoneSource> {
+  return backendPut<PhoneSource>(`/api/v1/telephony/sources/${id}`, payload);
+}
+
+export function deletePhoneSource(id: string): Promise<void> {
+  return backendDelete(`/api/v1/telephony/sources/${id}`);
+}
+
+export type SourceSummaryRow = {
+  line_code: string;
+  name: string;
+  caption: string | null;
+  group_name: string;
+  inbound_total: number;
+  answered: number;
+  missed: number;
+  missed_pct: number | null;
+  unique_callers: number;
+  unique_missed_callers: number;
+  outcome_called_back_reached: number;
+  outcome_called_back_not_reached: number;
+  outcome_client_called_back: number;
+  outcome_no_reaction: number;
+  reached_pct: number | null;
+};
+
+export type SourceSummaryResponse = {
+  start_date: string;
+  end_date: string;
+  rows: SourceSummaryRow[];
+};
+
+export function getSourceSummary(params?: { startDate?: string; endDate?: string }): Promise<SourceSummaryResponse> {
+  return backendGet<SourceSummaryResponse>("/api/v1/telephony/source-summary", {
+    start_date: params?.startDate ?? "",
+    end_date: params?.endDate ?? "",
+  });
+}
+
+export type LineCallEvent = {
+  time: string; // "YYYY-MM-DD HH:MM:SS", Moscow-local
+  direction: "in" | "out";
+  role: "incoming" | "callback" | "client_recall";
+  client: string | null;
+  operator: string | null;
+  // Extensions that also rang but didn't pick up (Zeon's "lost", minus
+  // whichever extension ended up as `operator`) - together with `operator`
+  // (when answered), every extension the call rang on. Both empty means
+  // the call never got routed to any extension (e.g. abandoned in an IVR).
+  rang_not_answered: string[];
+  answered: boolean;
+  wait_sec: number;
+  talk_sec: number;
+};
+
+export type LineCallsResponse = {
+  line_code: string;
+  start_date: string;
+  end_date: string;
+  events: LineCallEvent[];
+};
+
+export function getLineCalls(params: {
+  lineCode: string;
+  startDate?: string;
+  endDate?: string;
+}): Promise<LineCallsResponse> {
+  return backendGet<LineCallsResponse>("/api/v1/telephony/source-summary/calls", {
+    line_code: params.lineCode,
+    start_date: params.startDate ?? "",
+    end_date: params.endDate ?? "",
+  });
+}
+
+// Planner's phone-icon badge (see backend telephony_stats_service.
+// get_open_missed_calls for the resolution rules - a rolling 2-Moscow-day
+// window, >=5s real talk time to count as reached, one real contact clears
+// every earlier open miss from that number). Company-wide, not scoped by
+// цех - phone lines have no цех of their own in this data model.
+export type OpenMissedCall = {
+  id: string;
+  client: string;
+  line: string | null;
+  source_label: string | null;
+  direction: "in" | "callback";
+  time: string; // "YYYY-MM-DD HH:MM:SS", Moscow-local
+  operator: string | null;
+  // Extensions that rang for an inbound miss (always [] for an outbound
+  // callback attempt - `operator` already says which of our own
+  // extensions placed that one).
+  rang_not_answered: string[];
+};
+
+export type OpenMissedCallsResponse = {
+  count: number;
+  calls: OpenMissedCall[];
+};
+
+export function getOpenMissedCalls(): Promise<OpenMissedCallsResponse> {
+  return backendGet<OpenMissedCallsResponse>("/api/v1/telephony/missed-calls/open");
+}
+
+// ============================================================================
+// Cockpit - see backend app/api/v1/endpoints/cockpit.py,
+// app/services/cockpit_service.py.
+// ============================================================================
+
+export type GaugeScale = {
+  step_millions: number;
+  max_millions: number;
+  labels_millions: number[];
+  marker_fraction: number;
+};
+
+export type GaugeReading = {
+  scale: GaugeScale;
+  needle_fraction: number;
+  overflow: boolean;
+  underflow: boolean;
+};
+
+export type CockpitPlan = {
+  total_rub: string;
+  complete: boolean;
+  usable: boolean;
+  workshop_count: number;
+};
+
+export type CockpitSnapshot = {
+  period_start: string;
+  period_end: string;
+  timezone: string;
+  workshop_id: string | null;
+  workshop_label: string | null;
+  revenue_rub: string;
+  nzp_rub: string | null;
+  effective_revenue_rub: string;
+  payments_rub: string;
+  plan: CockpitPlan;
+  revenue_gauge: GaugeReading;
+  payments_gauge: GaugeReading;
+  has_unattributed_revenue: boolean;
+};
+
+export function getCockpitSnapshot(params?: {
+  workshopId?: string;
+  includeNzp?: boolean;
+}): Promise<CockpitSnapshot> {
+  return backendGet<CockpitSnapshot>("/api/v1/cockpit", {
+    workshop_id: params?.workshopId ?? "",
+    include_nzp: params?.includeNzp ? "true" : "",
+  });
+}
+
+export type WorkshopOption = {
+  id: string;
+  department_name: string;
+  workshop_type: string;
+};
+
+/** Cockpit's own "цех" filter dropdown - reuses the existing Settings ->
+ * Цеха list rather than a separate endpoint (see getWorkshops for the
+ * fuller admin shape; this is the same data, just typed for the filter). */
+export function getWorkshopOptions(): Promise<WorkshopOption[]> {
+  return backendGet<WorkshopOption[]>("/api/v1/settings/workshops");
 }

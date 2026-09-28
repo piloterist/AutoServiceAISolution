@@ -14,12 +14,36 @@ function fmt(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+// Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
+// convention used throughout the backend (see backend cockpit_service.py's
+// MSK, work_order_query_service.py's _naive_msk_to_utc/_msk_date_trunc).
+// Computing "today"/"this month" from plain UTC was a real, live bug: a
+// work order closed just after midnight Moscow time is still "yesterday"
+// in UTC, so the default month-to-date view silently excluded it for up to
+// 3 hours every month (confirmed: two orders closed 00:04/00:45 MSK on the
+// 1st were missing from "this month" until this fix). Shifting the epoch
+// by +3h and reading its *UTC* fields back off is a safe way to get
+// Moscow's own calendar date without a full IANA timezone lookup - valid
+// only because Moscow's offset never varies (no DST); this trick would NOT
+// be safe for a timezone that observes DST.
+function mskNow(): Date {
+  return new Date(Date.now() + 3 * 60 * 60 * 1000);
+}
+
+/** "Today" as a Moscow calendar date - for any other date input that
+ * should default to today (e.g. a period picker) but, being client-side,
+ * can't rely on the browser's own local zone matching Moscow's. */
+export function mskToday(): string {
+  return fmt(mskNow());
+}
+
 /** The dashboard's default view when no period filter is set - month to
  * date (1st of the current month through today), not the full calendar
  * month - showing days that haven't happened yet as a flat empty tail on
- * the trend chart reads as broken, not "on track". */
+ * the trend chart reads as broken, not "on track". Both endpoints are
+ * Moscow-calendar dates (see mskNow). */
 export function monthToDateRange(): { dateFrom: string; dateTo: string } {
-  const now = new Date();
+  const now = mskNow();
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth();
   return {
@@ -34,7 +58,7 @@ export function monthToDateRange(): { dateFrom: string; dateTo: string } {
  * shows the one selected month (or a handful of custom-range months) reads
  * as broken; this one is deliberately independent of the period filter. */
 export function currentYearToDateRange(): { dateFrom: string; dateTo: string } {
-  const now = new Date();
+  const now = mskNow();
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth();
   return {

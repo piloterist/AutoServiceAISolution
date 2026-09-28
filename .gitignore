@@ -17,6 +17,7 @@ node_modules/
 .next/
 out/
 next-env.d.ts.bak
+tsconfig.tsbuildinfo
 
 # Build artifacts
 dist/

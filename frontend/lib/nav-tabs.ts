@@ -11,12 +11,14 @@
 // visible-tabs list can never be edited into a state that locks every admin
 // out of the page that edits it.
 export const NAV_TABS = [
+  { key: "/cockpit", label: "Cockpit" },
   { key: "/dashboard", label: "Dashboard" },
   { key: "/work-orders", label: "Work Orders" },
   { key: "/planner", label: "Planner" },
   { key: "/kanban", label: "Kanban" },
   { key: "/employees", label: "Employees" },
   { key: "/analytics", label: "Analytics" },
+  { key: "/telephony", label: "Телефония" },
 ] as const;
 
 export type NavTabKey = (typeof NAV_TABS)[number]["key"];

@@ -23,7 +23,7 @@ from app.core.errors import (
     validation_exception_handler,
 )
 from app.core.logging import configure_logging
-from app.services import yandex_relay
+from app.services import telephony_relay, yandex_relay
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -38,10 +38,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.enable_yandex_relay:
         background_task = asyncio.create_task(yandex_relay.run_relay_loop())
 
+    # Always started, unlike the Yandex relay above - whether it does
+    # anything is controlled by the operator-editable TelephonySettings row
+    # (Settings -> IP-телефония), not a redeploy. See services/telephony_relay.py.
+    telephony_task = asyncio.create_task(telephony_relay.run_relay_loop())
+
     yield
 
     if background_task is not None:
         background_task.cancel()
+    telephony_task.cancel()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)

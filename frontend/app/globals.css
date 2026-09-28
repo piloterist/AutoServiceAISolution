@@ -8,6 +8,7 @@
   --text-muted: #6b7280;
   --accent: #2563eb;
   --ok: #16a34a;
+  --warn: #d97706;
   --down: #dc2626;
   --today: #fff6cf;
 
@@ -41,6 +42,7 @@
     --text-muted: #9aa1ae;
     --accent: #5b8def;
     --ok: #3ecf8e;
+    --warn: #f0a84e;
     --down: #ff6b5e;
     --today: #3b3517;
 
@@ -66,6 +68,7 @@
   --text-muted: #9aa1ae;
   --accent: #5b8def;
   --ok: #3ecf8e;
+  --warn: #f0a84e;
   --down: #ff6b5e;
   --today: #3b3517;
 
@@ -471,13 +474,23 @@ main:has(.full-width-page) {
   color: var(--text);
 }
 
-.settings-field select {
+.settings-field input,
+.settings-field select,
+.settings-field textarea,
+.settings-field .date-input {
   padding: 0.6rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 0.9rem;
+  font-family: inherit;
   color: var(--text);
   background: var(--surface);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-field textarea {
+  resize: vertical;
 }
 
 .settings-checkbox {
@@ -658,6 +671,17 @@ table.admin-data-table td {
   white-space: nowrap;
 }
 
+.admin-source-department-intro {
+  margin: 0.75rem 0;
+}
+
+.admin-unmapped-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
 .admin-color-dot {
   display: inline-block;
   width: 12px;
@@ -706,6 +730,19 @@ table.admin-data-table td {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem 1rem;
+}
+
+/* Labeled sub-group inside an admin form (e.g. Цеха's "Планирование") -
+   a plain heading, not another .card, since it's still one form. */
+.admin-form-section-title {
+  margin: 0.25rem 0 0.6rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
 }
 
 .admin-form-field {
@@ -2045,6 +2082,79 @@ table.admin-data-table td {
   }
 }
 
+/* --- Dashboard load gauge (GaugeChart) --- the outer card follows the
+   site theme (--surface/--border/--text), but the gauge FACE itself
+   (bezel/dial/center disc) is a fixed light "instrument" material on
+   purpose - like a real gauge's chrome and glass, it doesn't repaint for
+   dark mode - so the in-SVG text below uses fixed dark literals to stay
+   readable on that always-light face, not the (theme-flipping) --text
+   token. */
+
+.gauge-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gauge-card-title {
+  align-self: flex-start;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
+  color: var(--text);
+}
+
+.gauge-svg {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  display: block;
+}
+
+.gauge-number {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  fill: #4a5468;
+}
+
+.gauge-number-end {
+  font-size: 14px;
+  font-weight: 800;
+  fill: #1b2333;
+}
+
+.gauge-readout-value {
+  font-size: 27px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  fill: #1b2333;
+}
+
+.gauge-readout-pct {
+  font-size: 11px;
+  font-weight: 700;
+  fill: #6b7280;
+}
+
+.gauge-unit-label {
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  fill: #9aa3b2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gauge-svg g[style] {
+    transition: none !important;
+  }
+}
+
 /* --- Login page --- */
 
 .login-page {
@@ -2166,6 +2276,108 @@ table.admin-data-table td {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+}
+
+/* Phone-icon badge, top-right corner of .planner-header - see
+   components/planner/MissedCallsBadge.tsx. margin-left:auto pushes it to
+   the end of the flex row regardless of how many department buttons sit
+   before it (and, if .planner-header wraps on a narrow screen, to the end
+   of whichever line it lands on). */
+.missed-calls-badge-btn {
+  all: unset;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  margin-left: auto;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.missed-calls-badge-btn svg {
+  width: 40px;
+  height: 40px;
+}
+
+.missed-calls-badge-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.missed-calls-badge-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.missed-calls-badge-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--down);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 36px;
+  text-align: center;
+  box-shadow: 0 0 0 4px var(--bg);
+}
+
+.missed-calls-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.missed-calls-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: var(--surface2);
+  border-left: 3px solid var(--down);
+}
+
+.missed-calls-row-client {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.missed-calls-row-count {
+  font-weight: 600;
+  color: var(--down);
+}
+
+.missed-calls-row-called-to {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.missed-calls-row-label {
+  color: var(--down);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.missed-calls-row-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Deliberately its own class, not a reuse of .toolbar (the Work Orders
@@ -2877,4 +3089,722 @@ table.bt {
   background: var(--surface2);
   border-radius: 8px;
   padding: 6px 10px;
+}
+
+/* "Итог по каждому источнику" (see app/telephony/page.tsx) - thresholds
+   mirror the source's own %-пропуска banding (<=10 ok, <=25 warn-light,
+   <=40 warn, >40 critical), collapsed to the three semantic status colors
+   this app already has (--ok/--warn/--down) rather than a fourth hue.
+   Sized up from .data-table's own 0.9rem default - this page is read at a
+   glance across a wide table, room to breathe matters more here than
+   density. Sources aren't grouped visually (no header rows) - only the
+   numbers themselves (not column headers, not the source name) are sized
+   up further, and centered under their column rather than right-aligned. */
+.telephony-summary-table {
+  font-size: 1.05rem;
+}
+
+.telephony-summary-table th,
+.telephony-summary-table td {
+  padding: 0.85rem 1rem;
+}
+
+.telephony-summary-table th {
+  font-size: 0.85rem;
+}
+
+.telephony-source-row {
+  cursor: pointer;
+}
+
+.telephony-source-row:hover {
+  background: var(--surface2);
+}
+
+.telephony-source-row--open {
+  background: var(--surface2);
+}
+
+.telephony-expand-icon {
+  display: inline-block;
+  width: 1rem;
+  color: var(--text-muted);
+}
+
+.telephony-source-name {
+  font-weight: 600;
+  font-size: 1.08rem;
+}
+
+.telephony-source-caption {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.telephony-num {
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.telephony-summary-table td.telephony-num {
+  font-size: 1.3rem;
+}
+
+.telephony-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.1rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 1.15rem;
+}
+
+.telephony-badge--ok {
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  color: var(--ok);
+}
+
+.telephony-badge--warn {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
+
+.telephony-badge--down {
+  background: color-mix(in srgb, var(--down) 16%, transparent);
+  color: var(--down);
+}
+
+.telephony-totals-row td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}
+
+.telephony-totals-row td.telephony-num {
+  font-size: 1.4rem;
+}
+
+.telephony-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+.telephony-filter-label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.telephony-date-input {
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1.05rem;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.telephony-filter-btn {
+  font-size: 1rem;
+  padding: 0.65rem 1.3rem;
+}
+
+/* Settings -> IP-телефония connection block (see
+   components/settings/TelephonyTab.tsx) - one wide card, three columns
+   side by side (Zeon / Yandex SpeechKit / Импорт) instead of three
+   separate narrow cards stacked on top of each other. */
+.telephony-connect-card {
+  max-width: none;
+}
+
+.telephony-connect-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .telephony-connect-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.telephony-connect-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.telephony-connect-col + .telephony-connect-col {
+  padding-left: 2rem;
+  border-left: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  .telephony-connect-col + .telephony-connect-col {
+    padding-left: 0;
+    border-left: none;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+}
+
+.telephony-connect-card > .settings-save {
+  margin-top: 1.5rem;
+}
+
+/* Row-expand drill-down (see components/telephony/TelephonyStatsView.tsx) */
+.telephony-events-row td {
+  padding: 0;
+  background: var(--bg);
+}
+
+.telephony-events-status {
+  padding: 1rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.telephony-events-table {
+  font-size: 0.95rem;
+  margin: 0.5rem 1rem 0.85rem;
+  width: calc(100% - 2rem);
+}
+
+.telephony-events-table th,
+.telephony-events-table td {
+  padding: 0.5rem 0.8rem;
+}
+
+.telephony-event-row--missed td:nth-child(2) {
+  color: var(--down);
+  font-weight: 600;
+}
+
+.telephony-event-row--callback td:nth-child(2) {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.telephony-sort-btn {
+  all: unset;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.telephony-sort-btn:hover {
+  color: var(--accent);
+}
+
+/* ============================================================================
+   Cockpit - see components/cockpit/*, app/cockpit/page.tsx. Deliberately
+   NOT theme-aware (--bg/--text etc.) - the canvas stays black regardless of
+   the app's light/dark setting, per the product spec ("основное полотно
+   Cockpit чёрное"). Local fonts only (no external CDN, per spec) - system
+   condensed/mono stacks stand in for a dedicated tachometer/digital face.
+   ============================================================================ */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.cockpit-page {
+  background: #020303;
+  min-height: calc(100vh - 60px);
+  padding: 1.5rem 10mm 3rem;
+  color: #f4fafa;
+}
+
+main:has(.cockpit-page) {
+  max-width: none;
+  padding: 0;
+}
+
+.cockpit-topbar {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.1rem;
+  padding: 0 0.25rem;
+}
+
+.cockpit-topbar h1 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #eafcff;
+  margin: 0;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cockpit-topbar-field {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  color: #8a999e;
+}
+
+.cockpit-topbar select {
+  background: #101516;
+  border: 1px solid #24292b;
+  color: #eafcff;
+  border-radius: 6px;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.82rem;
+}
+
+.cockpit-period {
+  font-size: 0.78rem;
+  color: #8a999e;
+  font-variant-numeric: tabular-nums;
+}
+
+.cockpit-refresh {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  color: #3ebecc;
+  background: transparent;
+  border: 1px solid #24292b;
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  position: relative;
+}
+
+.cockpit-refresh:hover {
+  border-color: #3ebecc;
+}
+
+.cockpit-refresh:focus-visible {
+  outline: 2px solid #3ebecc;
+  outline-offset: 2px;
+}
+
+.cockpit-refresh[data-loading="true"] svg {
+  animation: cockpit-spin 900ms linear infinite;
+}
+
+@keyframes cockpit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.cockpit-refresh-tooltip {
+  position: absolute;
+  top: 120%;
+  right: 0;
+  white-space: nowrap;
+  background: #101516;
+  border: 1px solid #24292b;
+  color: #8a999e;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.cockpit-refresh:hover .cockpit-refresh-tooltip,
+.cockpit-refresh:focus-visible .cockpit-refresh-tooltip {
+  opacity: 1;
+}
+
+.cockpit-cluster {
+  position: relative;
+  width: 100%;
+}
+
+.cockpit-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.cockpit-gauge-number {
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-style: italic;
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.cockpit-unit-label {
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+}
+
+/* Same family as .cockpit-gauge-number, scaled down for the smaller
+   payments gauge's own numbered ticks. */
+.cockpit-gauge-number-sm {
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-style: italic;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Deliberately small/secondary - the needle's position against the dial's
+   own ticks is the primary reading (per product feedback: a real
+   instrument shows its value through the needle, not a large printed
+   sum dominating the face) - now sits dead-center under the hub instead,
+   so it reads as this gauge's one digital readout rather than a floating
+   label; sized to be legible there without competing with the needle. */
+.cockpit-money-main {
+  font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.cockpit-money-secondary {
+  font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cockpit-money-flag,
+.cockpit-money-flag-sm {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.cockpit-gauge-neutral {
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-size: 19px;
+}
+
+.cockpit-letter-p {
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-size: 128px;
+  font-weight: 800;
+  opacity: 0.92;
+}
+
+.cockpit-row-line {
+  font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
+  font-size: 21px;
+  fill: #eafcff;
+  font-variant-numeric: tabular-nums;
+}
+
+.cockpit-row-sub {
+  font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
+  font-size: 16px;
+  fill: #8a999e;
+  font-variant-numeric: tabular-nums;
+}
+
+/* No transform-origin here on purpose: the needle rotates via its own SVG
+   attribute transform="rotate(angle cx cy)" (see Needle in
+   InstrumentCluster.tsx), which already bakes in its exact pivot point.
+   Adding a CSS transform-origin (even "center") wraps a SECOND, different
+   pivot (the needle group's own bounding-box center, which isn't cx,cy -
+   the shape is much longer above the hub than below it) around that
+   already-centered rotation, throwing the needle off to the side - for the
+   long main-gauge needle, far enough to swing outside the SVG's viewBox
+   and get clipped entirely (looked like the needle "appearing then
+   vanishing" on the reveal transition). Leaving transform-origin at the
+   browser default (equivalent to no extra offset here) keeps the
+   attribute's own pivot the only one in effect. */
+.cockpit-needle {
+  transition: transform 550ms cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+.cockpit-plan-marker {
+  filter: drop-shadow(0 0 3px #3ebecc);
+}
+
+/* Overlay HTML panels, positioned canvas-relative to the 1648x650 viewBox
+   (see product spec's own coordinate table). */
+
+.cockpit-left-panel {
+  position: absolute;
+  left: 3.03%;
+  top: 36.9%;
+  width: 14.56%;
+  height: 29.2%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: #8a999e;
+}
+
+.cockpit-left-row {
+  border-left: 2px solid #3ebecc;
+  padding-left: 0.5rem;
+}
+
+.cockpit-left-big {
+  margin-top: auto;
+  font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #f4fafa;
+  font-variant-numeric: tabular-nums;
+}
+
+.cockpit-demo-tag {
+  align-self: flex-start;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: #e7c663;
+  border: 1px solid #e7c663;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.cockpit-warning-grid {
+  position: absolute;
+  left: 71%;
+  top: 20%;
+  width: 14.56%;
+  height: 11.5%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.cockpit-warning-icon {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 6px;
+  color: #ff5b63;
+  transition:
+    background 150ms ease,
+    transform 100ms ease;
+}
+
+.cockpit-warning-icon--warn {
+  color: #e7c663;
+}
+
+.cockpit-warning-icon--ok {
+  color: #f4fafa;
+}
+
+.cockpit-warning-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cockpit-warning-icon:focus-visible {
+  outline: 2px solid #3ebecc;
+  outline-offset: 2px;
+}
+
+.cockpit-warning-icon:active {
+  transform: scale(0.88);
+}
+
+.cockpit-strips {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.cockpit-strip {
+  position: absolute;
+}
+
+.cockpit-strip--receivables {
+  left: 27.6%;
+  top: 87.7%;
+  width: 14.87%;
+}
+
+.cockpit-strip--payables {
+  left: 73.4%;
+  top: 78.5%;
+  width: 13.35%;
+}
+
+.cockpit-strip-segments {
+  display: flex;
+  gap: 3px;
+  transform: skewX(-18deg);
+}
+
+.cockpit-seg {
+  flex: 1;
+  height: 14px;
+  background: rgba(138, 153, 158, 0.22);
+}
+
+.cockpit-seg--on {
+  background: #3ebecc;
+  box-shadow: 0 0 6px #3ebecc;
+}
+
+.cockpit-capsule {
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(138, 153, 158, 0.18);
+  overflow: hidden;
+  border: 1px solid #24292b;
+}
+
+.cockpit-capsule-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3ebecc, #eafcff);
+  box-shadow: 0 0 8px #3ebecc;
+}
+
+.cockpit-strip-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-size: 0.62rem;
+  color: #8a999e;
+  margin-top: 3px;
+}
+
+.cockpit-strip-value {
+  font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  color: #eafcff;
+}
+
+/* Minimal edge marks instead of automotive E/F or C/H letters (see
+   product spec section 8) - just a small notch at each end of the scale. */
+.cockpit-strip-edge {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: #596063;
+  flex-shrink: 0;
+}
+
+.cockpit-strip-edge--end {
+  background: #3ebecc;
+}
+
+/* Each strip gets its own corner tag rather than one shared tag placed
+   "between" them - the two strips sit far apart horizontally (receivables
+   ~28%, payables ~73%), so a single midpoint coordinate reads as floating
+   over the main gauge instead of belonging to either strip. */
+.cockpit-demo-tag--corner {
+  position: absolute;
+  top: -16px;
+  right: 0;
+}
+
+/* ---- НЗП toggle - a compact trapezoid "mode" switch, not a web toggle --- */
+
+.cockpit-nzp-btn {
+  all: unset;
+  position: relative;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 30px;
+  background: #0a0d0e;
+  border: 1px solid #24292b;
+  clip-path: polygon(10% 0, 90% 0, 100% 100%, 0 100%);
+  color: #8a999e;
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.cockpit-nzp-btn::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  left: 22%;
+  width: 56%;
+  height: 2px;
+  background: transparent;
+  border-radius: 2px;
+}
+
+.cockpit-nzp-btn[aria-pressed="true"] {
+  color: #8be9ee;
+  border-color: #3ebecc;
+}
+
+.cockpit-nzp-btn[aria-pressed="true"]::after {
+  background: #3ebecc;
+  box-shadow: 0 0 6px 1px #3ebecc;
+}
+
+.cockpit-nzp-btn:focus-visible {
+  outline: 2px solid #3ebecc;
+  outline-offset: 3px;
+}
+
+/* ---- Startup reveal - one-shot, respects prefers-reduced-motion ---- */
+
+/* The whole cluster (gauges + side panels together, as one unit) fades in
+   as a single block from fully transparent to fully opaque - a plain CSS
+   transition, not a keyframe animation, and not staged piece-by-piece:
+   every element inside (ticks, text, needles, side panels) is already at
+   its real, correct final state underneath the fade, so there is nothing
+   for the needle to "jump" to partway through - it was already pointing
+   at the right angle before the fade even started, only invisible. */
+.cockpit-cluster {
+  opacity: 0;
+  transition: opacity 5.7s ease-out;
+}
+
+.cockpit-cluster[data-revealed="true"] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-cluster {
+    opacity: 1;
+    transition: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .cockpit-left-panel,
+  .cockpit-warning-grid,
+  .cockpit-strips {
+    display: none;
+  }
+
+  .cockpit-page {
+    margin: -1rem -0.75rem;
+    padding: 1rem 0.75rem 2rem;
+  }
 }

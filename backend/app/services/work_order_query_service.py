@@ -7,7 +7,7 @@ calls; import_service is used by the 1C ingestion paths).
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -15,10 +15,43 @@ from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.work_order import WorkOrder
+from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
+
+# Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
+# convention already used throughout this codebase (see
+# import_service._naive_msk_to_utc, cockpit_service.MSK, the telephony
+# services), duplicated rather than shared per this codebase's own
+# established pattern for this helper.
+_MSK = timezone(timedelta(hours=3))
+_MSK_ZONE_NAME = "Europe/Moscow"
+
+
+def _naive_msk_to_utc(value: datetime | None) -> datetime | None:
+    """`date_from`/`date_to` arrive here as a bare "YYYY-MM-DD" (or
+    "...T00:00:00") string from the frontend (see frontend/lib/period.ts,
+    backend-api.ts's dateToParam) - FastAPI/Pydantic parses that with no
+    timezone at all, i.e. naive. Comparing a naive value against the
+    tz-aware closed_date/paid_at/document_date columns makes Postgres
+    assume the session's own timezone (UTC here), silently treating
+    "2026-09-01" as UTC midnight - three hours before actual Moscow
+    midnight for this Russia-only business. That's not cosmetic: it was
+    caught live shifting the "start of month" boundary 3h too late and
+    dropping two real orders closed at 00:04/00:45 MSK on the 1st from
+    "this month"'s revenue. Treat a naive value as already being Moscow
+    local time (matching every other 1C-sourced timestamp in this
+    codebase) and convert it to the correct UTC instant before it's used
+    as a query boundary; an already-aware value (not something today's
+    callers send, but a safe no-op either way) passes through unchanged.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        return value.astimezone(UTC)
+    return value.replace(tzinfo=_MSK).astimezone(UTC)
 
 
 def _date_range_filters(
@@ -26,10 +59,27 @@ def _date_range_filters(
 ) -> list:
     filters = []
     if date_from is not None:
-        filters.append(column >= date_from)
+        filters.append(column >= _naive_msk_to_utc(date_from))
     if date_to is not None:
-        filters.append(column < date_to)
+        filters.append(column < _naive_msk_to_utc(date_to))
     return filters
+
+
+def _msk_date_trunc(granularity: str, column: ColumnElement):
+    """`date_trunc(field, timestamptz)` buckets in Postgres's session
+    timezone (UTC here) unless given an explicit zone - the 3-argument
+    form buckets in Moscow-local calendar days/weeks/months instead, so a
+    work order closed at 00:30 MSK lands in *today*'s bucket, not the
+    previous UTC day's. The value Postgres returns is still a UTC-instant
+    timestamptz either way (truncation happens in MSK terms, storage
+    doesn't) - callers must convert back with `_utc_to_msk_date` before
+    reading off a calendar date/month string, or they'll read the wrong
+    one right back off it."""
+    return func.date_trunc(granularity, column, _MSK_ZONE_NAME)
+
+
+def _utc_to_msk_date(value: datetime) -> date:
+    return value.astimezone(_MSK).date()
 
 
 def list_work_orders(
@@ -115,7 +165,7 @@ def monthly_summary(
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
 
-    month = func.date_trunc("month", WorkOrder.closed_date).label("month")
+    month = _msk_date_trunc("month", WorkOrder.closed_date).label("month")
 
     rows = db.execute(
         select(
@@ -130,7 +180,7 @@ def monthly_summary(
 
     return [
         {
-            "month": row.month.strftime("%Y-%m"),
+            "month": _utc_to_msk_date(row.month).strftime("%Y-%m"),
             "work_order_count": row.work_order_count,
             "total_amount": row.total_amount,
         }
@@ -254,7 +304,7 @@ def trend_summary(
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
 
-    period = func.date_trunc(granularity, WorkOrder.closed_date).label("period")
+    period = _msk_date_trunc(granularity, WorkOrder.closed_date).label("period")
 
     rows = db.execute(
         select(
@@ -268,8 +318,8 @@ def trend_summary(
     ).all()
 
     by_period = {
-        row.period.date().isoformat(): {
-            "period": row.period.date().isoformat(),
+        _utc_to_msk_date(row.period).isoformat(): {
+            "period": _utc_to_msk_date(row.period).isoformat(),
             "work_order_count": row.work_order_count,
             "total_amount": row.total_amount,
         }
@@ -321,7 +371,7 @@ def payment_trend_summary(
             query = query.where(WorkOrder.is_internal.is_(False))
     query = query.where(*filters).subquery()
 
-    period = func.date_trunc(granularity, query.c.paid_at).label("period")
+    period = _msk_date_trunc(granularity, query.c.paid_at).label("period")
 
     rows = db.execute(
         select(period, func.sum(query.c.amount).label("total_amount"))
@@ -330,8 +380,8 @@ def payment_trend_summary(
     ).all()
 
     by_period = {
-        row.period.date().isoformat(): {
-            "period": row.period.date().isoformat(),
+        _utc_to_msk_date(row.period).isoformat(): {
+            "period": _utc_to_msk_date(row.period).isoformat(),
             "total_amount": row.total_amount,
         }
         for row in rows
@@ -580,6 +630,18 @@ def list_payment_events(db: Session, work_order_id: UUID) -> list[WorkOrderPayme
         select(WorkOrderPaymentEvent)
         .where(WorkOrderPaymentEvent.work_order_id == work_order_id)
         .order_by(WorkOrderPaymentEvent.paid_at)
+    ).scalars()
+    return list(rows)
+
+
+def list_invoices(db: Session, work_order_id: UUID) -> list[WorkOrderInvoice]:
+    """A work order's Счета на оплату, newest first - see
+    models/work_order_invoice.py.
+    """
+    rows = db.execute(
+        select(WorkOrderInvoice)
+        .where(WorkOrderInvoice.work_order_id == work_order_id)
+        .order_by(WorkOrderInvoice.document_date.desc())
     ).scalars()
     return list(rows)
 

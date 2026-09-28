@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
+from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
@@ -501,6 +502,129 @@ def test_import_payment_events_reimport_corrects_a_previously_wrong_value(
     assert len(events) == 1
     assert events[0].amount == Decimal("450000.00")
     assert events[0].paid_at == datetime(2026, 5, 20, 6, 0, 0, tzinfo=UTC)
+
+
+def _invoices(db_session, work_order_id) -> list[WorkOrderInvoice]:
+    return list(
+        db_session.execute(
+            select(WorkOrderInvoice)
+            .where(WorkOrderInvoice.work_order_id == work_order_id)
+            .order_by(WorkOrderInvoice.document_date)
+        ).scalars()
+    )
+
+
+def test_import_stores_invoices(client, db_session, auth_headers) -> None:
+    """invoices - Счета на оплату linked via Счет.ДокументОснование = ЗН.Ссылка
+    (see 1c/TestExportOrders.bsl's step 2b), distinct from the payment
+    ledger and from the work order's own deal/debt/paid snapshot."""
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "invoices-test-1",
+        "records": [
+            {
+                "number": "INVOICE-0001",
+                "date": "2026-09-16T09:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 103090,
+                "invoices": [
+                    {
+                        "source_document_id": "b1c2d3e4-0000-0000-0000-000000000001",
+                        "number": "КХ00000040",
+                        "date": "2026-09-02T00:00:00",
+                        "amount": 103090.00,
+                        "paid_amount": 103090.00,
+                        "debt_amount": 0,
+                        "posted": True,
+                    }
+                ],
+            }
+        ],
+    }
+
+    response = client.post(IMPORT_URL, json=payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "INVOICE-0001")
+    ).scalar_one()
+    invoices = _invoices(db_session, work_order.id)
+    assert len(invoices) == 1
+    assert invoices[0].external_number == "КХ00000040"
+    assert invoices[0].amount == Decimal("103090.00")
+    assert invoices[0].paid_amount == Decimal("103090.00")
+    assert invoices[0].debt_amount == Decimal("0")
+    assert invoices[0].posted is True
+    # 1C sends the invoice date as naive MSK, same as payment_events.
+    assert invoices[0].document_date == datetime(2026, 9, 1, 21, 0, 0, tzinfo=UTC)
+
+
+def test_import_accepts_missing_invoices_as_empty(
+    client, db_session, auth_headers, sample_import_payload
+) -> None:
+    """Backward compatibility - an older export with no invoices at all
+    must keep importing exactly as before, with no rows created."""
+    response = client.post(IMPORT_URL, json=sample_import_payload, headers=auth_headers)
+    assert response.status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "PS00010196")
+    ).scalar_one()
+    assert _invoices(db_session, work_order.id) == []
+
+
+def test_import_invoices_is_idempotent_and_corrects_values_on_reimport(
+    client, db_session, auth_headers
+) -> None:
+    """A full historical re-export resends every invoice every time -
+    re-importing the same source_document_id must not duplicate the row,
+    and must update it in place when the underlying figures changed (a
+    partial payment that later became a full payment)."""
+    record = {
+        "number": "INVOICE-DUP",
+        "date": "2026-09-16T09:00:00",
+        "customer": "Test Customer",
+        "car": "VW TIGUAN",
+        "amount": 485265,
+        "invoices": [
+            {
+                "source_document_id": "b1c2d3e4-0000-0000-0000-000000000002",
+                "number": "ПО00000002",
+                "date": "2026-09-02T00:00:00",
+                "amount": 485265.00,
+                "paid_amount": 460524.88,
+                "debt_amount": 24740.12,
+                "posted": True,
+            }
+        ],
+    }
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-09-16T10:00:00",
+        "batch_id": "invoices-dup-1",
+        "records": [record],
+    }
+    assert client.post(IMPORT_URL, json=payload, headers=auth_headers).status_code == 200
+
+    # Re-export after the remaining balance got paid.
+    record["invoices"][0]["paid_amount"] = 485265.00
+    record["invoices"][0]["debt_amount"] = 0
+    payload["batch_id"] = "invoices-dup-2"
+    assert client.post(IMPORT_URL, json=payload, headers=auth_headers).status_code == 200
+
+    work_order = db_session.execute(
+        select(WorkOrder).where(WorkOrder.external_number == "INVOICE-DUP")
+    ).scalar_one()
+    invoices = _invoices(db_session, work_order.id)
+    assert len(invoices) == 1
+    assert invoices[0].paid_amount == Decimal("485265.00")
+    assert invoices[0].debt_amount == Decimal("0")
 
 
 def test_naive_msk_to_utc_converts_assuming_moscow_time() -> None:

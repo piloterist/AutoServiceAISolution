@@ -50,15 +50,27 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Доступ к этому разделу ограничен" }, { status: 403 });
     }
-    return NextResponse.redirect(absoluteUrl(allowedTabs[0] ?? "/dashboard", request));
+    return NextResponse.redirect(absoluteUrl(allowedTabs[0] ?? "/cockpit", request));
   }
 
-  const isAdminApi = pathname.startsWith("/api/admin");
+  // /api/telephony/settings, /sources and the ping/import actions are only
+  // ever called from the Settings -> "IP-телефония" tab (connection
+  // credentials, phone-source directory) - same Admin-only gate as
+  // /api/admin/*. /api/telephony/source-summary is deliberately excluded:
+  // it feeds the /telephony stats page itself, which any role with that
+  // tab allowed (via allowedTabs, checked above) should be able to read.
+  const isTelephonyAdminApi =
+    pathname.startsWith("/api/telephony/settings") ||
+    pathname.startsWith("/api/telephony/sources") ||
+    pathname.startsWith("/api/telephony/ping") ||
+    pathname.startsWith("/api/telephony/import") ||
+    pathname.startsWith("/api/telephony/recordings");
+  const isAdminApi = pathname.startsWith("/api/admin") || isTelephonyAdminApi;
   const isAdminArea = pathname.startsWith("/settings") || isAdminApi;
 
   if (isAdminArea && user.role !== ROLE_ADMIN) {
     if (isAdminApi) return NextResponse.json({ error: "Admin role required" }, { status: 403 });
-    return NextResponse.redirect(absoluteUrl("/dashboard", request));
+    return NextResponse.redirect(absoluteUrl("/cockpit", request));
   }
 
   return NextResponse.next();

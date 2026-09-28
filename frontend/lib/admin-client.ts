@@ -18,6 +18,8 @@ import type {
   RoleTabVisibilityWrite,
   SlesarkaStatus,
   Workshop,
+  WorkshopSourceDepartment,
+  WorkshopSourceDepartmentWrite,
   WorkshopWrite,
 } from "@/lib/backend-api";
 
@@ -75,6 +77,28 @@ export const workshopsApi = {
       body: JSON.stringify(payload),
     }),
   remove: (id: string) => proxyFetch<void>(`/api/admin/workshops/${id}`, { method: "DELETE" }),
+};
+
+export const workshopSourceDepartmentsApi = {
+  list: () =>
+    proxyFetch<WorkshopSourceDepartment[]>(
+      bust("/api/admin/workshop-source-departments"),
+      noStoreFresh,
+    ),
+  create: (payload: WorkshopSourceDepartmentWrite) =>
+    proxyFetch<WorkshopSourceDepartment>("/api/admin/workshop-source-departments", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  update: (id: string, payload: WorkshopSourceDepartmentWrite) =>
+    proxyFetch<WorkshopSourceDepartment>(`/api/admin/workshop-source-departments/${id}`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  remove: (id: string) =>
+    proxyFetch<void>(`/api/admin/workshop-source-departments/${id}`, { method: "DELETE" }),
 };
 
 export const usersApi = {

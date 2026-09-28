@@ -24,13 +24,16 @@ from app.schemas.admin import (
     RoleTabVisibilityWrite,
     SlesarkaStatusOut,
     SlesarkaStatusWrite,
+    UnmappedSourceDepartmentsOut,
     UserCreate,
     UserOut,
     UserUpdate,
     WorkshopOut,
+    WorkshopSourceDepartmentOut,
+    WorkshopSourceDepartmentWrite,
     WorkshopWrite,
 )
-from app.services import admin_service
+from app.services import admin_service, planner_service
 
 router = APIRouter(prefix="/settings", tags=["admin"], dependencies=[Depends(verify_api_token)])
 
@@ -83,6 +86,9 @@ def _workshop_out(workshop, department_name: str) -> WorkshopOut:
         start_time=workshop.start_time,
         end_time=workshop.end_time,
         working_days=workshop.working_days,
+        zero_revenue=workshop.zero_revenue,
+        target_revenue=workshop.target_revenue,
+        target_norm_hours=workshop.target_norm_hours,
     )
 
 
@@ -125,6 +131,81 @@ def delete_workshop(workshop_id: uuid.UUID, db: Session = Depends(get_db)) -> No
         raise _not_found("Workshop")
 
 
+# ---- Соответствие "строка 1С" -> цех (см. services/cockpit_service.py) -----
+
+
+def _source_department_out(row, label: str) -> WorkshopSourceDepartmentOut:
+    return WorkshopSourceDepartmentOut(
+        id=row.id,
+        workshop_id=row.workshop_id,
+        workshop_label=label,
+        source_department=row.source_department,
+    )
+
+
+@router.get("/workshop-source-departments", response_model=list[WorkshopSourceDepartmentOut])
+def list_workshop_source_departments(
+    db: Session = Depends(get_db),
+) -> list[WorkshopSourceDepartmentOut]:
+    return [
+        _source_department_out(row, label)
+        for row, label in admin_service.list_workshop_source_departments(db)
+    ]
+
+
+@router.get("/workshop-source-departments/unmapped", response_model=UnmappedSourceDepartmentsOut)
+def list_unmapped_source_departments(db: Session = Depends(get_db)) -> UnmappedSourceDepartmentsOut:
+    """1C `department` values seen on real work orders with no Workshop
+    mapping yet - what still needs assigning below."""
+    return UnmappedSourceDepartmentsOut(values=admin_service.list_unmapped_source_departments(db))
+
+
+@router.post(
+    "/workshop-source-departments",
+    response_model=WorkshopSourceDepartmentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_workshop_source_department(
+    payload: WorkshopSourceDepartmentWrite, db: Session = Depends(get_db)
+) -> WorkshopSourceDepartmentOut:
+    try:
+        row, label = admin_service.create_workshop_source_department(
+            db, workshop_id=payload.workshop_id, source_department=payload.source_department
+        )
+    except Exception as exc:  # unique source_department violation
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="source_department already mapped to a workshop",
+        ) from exc
+    return _source_department_out(row, label)
+
+
+@router.put("/workshop-source-departments/{row_id}", response_model=WorkshopSourceDepartmentOut)
+def update_workshop_source_department(
+    row_id: uuid.UUID, payload: WorkshopSourceDepartmentWrite, db: Session = Depends(get_db)
+) -> WorkshopSourceDepartmentOut:
+    try:
+        result = admin_service.update_workshop_source_department(
+            db, row_id, workshop_id=payload.workshop_id, source_department=payload.source_department
+        )
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="source_department already mapped to a workshop",
+        ) from exc
+    if result is None:
+        raise _not_found("Mapping")
+    return _source_department_out(*result)
+
+
+@router.delete("/workshop-source-departments/{row_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workshop_source_department(row_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
+    if not admin_service.delete_workshop_source_department(db, row_id):
+        raise _not_found("Mapping")
+
+
 # ---- Пользователи ---------------------------------------------------------
 
 
@@ -134,6 +215,7 @@ def _user_out(user, department_name: str | None) -> UserOut:
         full_name=user.full_name,
         login=user.login,
         role=user.role,
+        theme=user.theme,
         department_id=user.department_id,
         department_name=department_name,
         workshop_id=user.workshop_id,
@@ -160,6 +242,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
             login=payload.login,
             password=payload.password,
             role=payload.role,
+            theme=payload.theme,
             department_id=payload.department_id,
             workshop_id=payload.workshop_id,
         )
@@ -187,6 +270,7 @@ def update_user(user_id: uuid.UUID, payload: UserUpdate, db: Session = Depends(g
             login=payload.login,
             password=payload.password,
             role=payload.role,
+            theme=payload.theme,
             department_id=payload.department_id,
             workshop_id=payload.workshop_id,
         )
@@ -376,7 +460,115 @@ def delete_slesarka_status(status_id: uuid.UUID, db: Session = Depends(get_db)) 
 
 # ---- Аудит-лог (read-only) ---------------------------------------------
 
+# changes fields that store a foreign-key UUID rather than a value a person
+# would recognize - see _humanize_changes below on why these get resolved
+# to a display name before the log ever reaches the frontend, the same way
+# work_order_id/car_description are resolved into the columns above.
+_ID_FIELDS = ("employee_id", "status_id", "work_order_id")
+
+
+def _parse_uuid(value: object) -> uuid.UUID | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        return None
+
+
+def _collect_referenced_ids(entries: list) -> dict[str, set[uuid.UUID]]:
+    ids: dict[str, set[uuid.UUID]] = {field: set() for field in _ID_FIELDS}
+    for entry in entries:
+        for field, diff in entry.changes.items():
+            if field in _ID_FIELDS:
+                for raw in (diff.get("old"), diff.get("new")):
+                    parsed = _parse_uuid(raw)
+                    if parsed is not None:
+                        ids[field].add(parsed)
+            elif field == "stages":
+                for snapshot in (diff.get("old") or []) + (diff.get("new") or []):
+                    parsed = _parse_uuid((snapshot or {}).get("employee_id"))
+                    if parsed is not None:
+                        ids["employee_id"].add(parsed)
+    return ids
+
+
+def _humanize_changes(changes: dict, *, employees: dict, statuses: dict, work_orders: dict) -> dict:
+    """Replaces raw employee_id/status_id/work_order_id UUIDs (both on their
+    own and inside a BodyCar's `stages` snapshot) with the name a person
+    actually recognizes - see models/schedule_audit_log.py's module
+    docstring: this table exists to be read on the Settings page, not to be
+    a byte-exact mirror of the underlying columns."""
+
+    def resolve(field: str, raw: object) -> object:
+        parsed = _parse_uuid(raw)
+        if parsed is None:
+            return raw
+        if field == "employee_id":
+            employee = employees.get(parsed)
+            return employee.full_name if employee else None
+        if field == "status_id":
+            status_row = statuses.get(parsed)
+            return status_row.name if status_row else None
+        if field == "work_order_id":
+            work_order = work_orders.get(parsed)
+            return work_order.external_number if work_order else None
+        return raw
+
+    def resolve_stage_snapshot(snapshot: list[dict] | None) -> list[dict] | None:
+        if snapshot is None:
+            return None
+        return [
+            {**stage, "employee_id": resolve("employee_id", stage.get("employee_id"))}
+            for stage in snapshot
+        ]
+
+    result = {}
+    for field, diff in changes.items():
+        if field in _ID_FIELDS:
+            result[field] = {
+                "old": resolve(field, diff.get("old")),
+                "new": resolve(field, diff.get("new")),
+            }
+        elif field == "stages":
+            result[field] = {
+                "old": resolve_stage_snapshot(diff.get("old")),
+                "new": resolve_stage_snapshot(diff.get("new")),
+            }
+        else:
+            result[field] = diff
+    return result
+
 
 @router.get("/audit-log", response_model=list[AuditLogEntryOut])
 def list_audit_log(db: Session = Depends(get_db)) -> list[AuditLogEntryOut]:
-    return [AuditLogEntryOut.model_validate(e) for e in admin_service.list_audit_log(db)]
+    entries = admin_service.list_audit_log(db)
+
+    referenced_ids = _collect_referenced_ids(entries)
+    work_order_ids = referenced_ids["work_order_id"] | {
+        e.work_order_id for e in entries if e.work_order_id is not None
+    }
+    work_orders = planner_service.work_order_lookup(db, work_order_ids)
+    employees = planner_service.employee_lookup(db, referenced_ids["employee_id"])
+    statuses = planner_service.status_lookup(db, referenced_ids["status_id"])
+
+    return [
+        AuditLogEntryOut(
+            id=e.id,
+            entity_type=e.entity_type,
+            entity_id=e.entity_id,
+            action=e.action,
+            changes=_humanize_changes(
+                e.changes, employees=employees, statuses=statuses, work_orders=work_orders
+            ),
+            actor_name=e.actor_name,
+            created_at=e.created_at,
+            work_order_number=(
+                work_orders[e.work_order_id].external_number
+                if e.work_order_id in work_orders
+                else None
+            ),
+            car_description=e.car_description,
+        )
+        for e in entries
+    ]

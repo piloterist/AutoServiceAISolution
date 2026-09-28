@@ -19,6 +19,9 @@ type FormState = {
   start_time: string;
   end_time: string;
   working_days: number[];
+  zero_revenue: string;
+  target_revenue: string;
+  target_norm_hours: string;
 };
 
 function emptyForm(defaultDepartmentId: string): FormState {
@@ -31,6 +34,9 @@ function emptyForm(defaultDepartmentId: string): FormState {
     start_time: "07:00",
     end_time: "22:00",
     working_days: [0, 1, 2, 3, 4, 5],
+    zero_revenue: "",
+    target_revenue: "",
+    target_norm_hours: "",
   };
 }
 
@@ -44,6 +50,9 @@ function toForm(workshop: Workshop): FormState {
     start_time: workshop.start_time.slice(0, 5),
     end_time: workshop.end_time.slice(0, 5),
     working_days: workshop.working_days,
+    zero_revenue: workshop.zero_revenue ?? "",
+    target_revenue: workshop.target_revenue ?? "",
+    target_norm_hours: workshop.target_norm_hours ?? "",
   };
 }
 
@@ -108,6 +117,9 @@ export function WorkshopsTab({
       start_time: `${form.start_time}:00`,
       end_time: `${form.end_time}:00`,
       working_days: form.working_days,
+      zero_revenue: form.zero_revenue.trim() ? form.zero_revenue.trim() : null,
+      target_revenue: form.target_revenue.trim() ? form.target_revenue.trim() : null,
+      target_norm_hours: form.target_norm_hours.trim() ? form.target_norm_hours.trim() : null,
     };
 
     try {
@@ -177,6 +189,9 @@ export function WorkshopsTab({
             <th>Часы работы</th>
             <th>Рабочие дни</th>
             <th>По умолчанию</th>
+            <th className="num">Выручка в ноль</th>
+            <th className="num">Выручка цель</th>
+            <th className="num">Нормочасы</th>
           </tr>
         </thead>
         <tbody>
@@ -195,11 +210,14 @@ export function WorkshopsTab({
               </td>
               <td>{workshop.working_days.map((d) => WEEKDAY_LABELS[d]).join(", ")}</td>
               <td>{workshop.is_default ? "Да" : "—"}</td>
+              <td className="num">{workshop.zero_revenue ?? "—"}</td>
+              <td className="num">{workshop.target_revenue ?? "—"}</td>
+              <td className="num">{workshop.target_norm_hours ?? "—"}</td>
             </tr>
           ))}
           {workshops.length === 0 && (
             <tr>
-              <td colSpan={7} className="admin-empty-row">
+              <td colSpan={10} className="admin-empty-row">
                 Цехов пока нет
               </td>
             </tr>
@@ -311,6 +329,45 @@ export function WorkshopsTab({
           />
           По умолчанию
         </label>
+
+        <h3 className="admin-form-section-title">Планирование</h3>
+        <div className="admin-form-grid">
+          <div className="admin-form-field">
+            <label htmlFor="workshop-zero-revenue">Выручка в ноль, ₽</label>
+            <input
+              id="workshop-zero-revenue"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.zero_revenue}
+              onChange={(e) => setForm((prev) => ({ ...prev, zero_revenue: e.target.value }))}
+            />
+          </div>
+
+          <div className="admin-form-field">
+            <label htmlFor="workshop-target-revenue">Выручка цель, ₽</label>
+            <input
+              id="workshop-target-revenue"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.target_revenue}
+              onChange={(e) => setForm((prev) => ({ ...prev, target_revenue: e.target.value }))}
+            />
+          </div>
+
+          <div className="admin-form-field">
+            <label htmlFor="workshop-target-norm-hours">Нормочасы</label>
+            <input
+              id="workshop-target-norm-hours"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.target_norm_hours}
+              onChange={(e) => setForm((prev) => ({ ...prev, target_norm_hours: e.target.value }))}
+            />
+          </div>
+        </div>
 
         {error && <p className="admin-form-error">{error}</p>}
         <div className="admin-form-actions">

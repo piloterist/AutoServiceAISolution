@@ -19,11 +19,13 @@ from sqlalchemy.orm import Session
 
 from app.models.import_batch import ImportBatch
 from app.models.work_order import WorkOrder
+from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 from app.schemas.import_work_order import (
+    ImportInvoiceRecord,
     ImportPaymentEventRecord,
     ImportStatusHistoryRecord,
     ImportWorkOrderRecord,
@@ -318,6 +320,60 @@ def _record_payment_events(
     db.execute(stmt)
 
 
+def _record_invoices(
+    db: Session,
+    work_order_id: uuid.UUID,
+    invoices: list[ImportInvoiceRecord],
+) -> None:
+    """Idempotently upsert Счета на оплату linked to this work order - see
+    models/work_order_invoice.py.
+
+    Same bulk INSERT ... ON CONFLICT DO UPDATE shape as
+    _record_payment_events, keyed on source_document_id alone (not a
+    composite key) - one invoice always belongs to exactly one work order,
+    see 1c/TestExportOrders.bsl's step 2b, so a plain unique constraint on
+    the invoice's own 1C GUID is enough and also catches the (should-never-
+    happen) case of the same invoice being re-sent under a different
+    work_order_id by re-pointing it rather than duplicating it.
+    """
+    if not invoices:
+        return
+
+    rows = [
+        {
+            "id": uuid.uuid4(),
+            "work_order_id": work_order_id,
+            "source_document_id": invoice.source_document_id,
+            "external_number": invoice.number,
+            "document_date": (
+                _naive_msk_to_utc(invoice.date) if invoice.date is not None else None
+            ),
+            "amount": invoice.amount,
+            "paid_amount": invoice.paid_amount,
+            "debt_amount": invoice.debt_amount,
+            "posted": invoice.posted,
+        }
+        for invoice in invoices
+    ]
+
+    table = WorkOrderInvoice.__table__
+    stmt = pg_insert(table).values(rows)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[table.c.source_document_id],
+        set_={
+            "work_order_id": stmt.excluded.work_order_id,
+            "external_number": stmt.excluded.external_number,
+            "document_date": stmt.excluded.document_date,
+            "amount": stmt.excluded.amount,
+            "paid_amount": stmt.excluded.paid_amount,
+            "debt_amount": stmt.excluded.debt_amount,
+            "posted": stmt.excluded.posted,
+            "updated_at": func.now(),
+        },
+    )
+    db.execute(stmt)
+
+
 def _replace_line_items(
     db: Session, work_order_id: uuid.UUID, record: ImportWorkOrderRecord
 ) -> None:
@@ -420,7 +476,8 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
     Processed in chunks of CHUNK_SIZE records, each its own committed
     transaction, rather than one transaction for the whole payload (see
     CHUNK_SIZE above). Every table this touches is upserted idempotently
-    (_upsert_work_order, _record_status_history, _record_payment_events), so
+    (_upsert_work_order, _record_status_history, _record_payment_events,
+    _record_invoices), so
     a chunk that commits is safe to see again on a retry - a later chunk
     failing never needs to roll back an earlier chunk's already-committed,
     correct data. A failing chunk is rolled back and logged, and processing
@@ -483,6 +540,7 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
                     observed_at,
                 )
                 _record_payment_events(db, work_order_id, record.payment_events)
+                _record_invoices(db, work_order_id, record.invoices)
                 if was_inserted:
                     chunk_inserted += 1
                 else:

@@ -33,10 +33,16 @@ export function StatusChipGrid({
   data,
   dateFrom,
   dateTo,
+  selectedDepartments,
 }: {
   data: StatusChipItem[];
   dateFrom?: string;
   dateTo?: string;
+  /** The dashboard's active department filter (single-select, same as
+   * RankedList's department-filter mode) - carried along so drilling into a
+   * status from a department-filtered dashboard doesn't drop back to
+   * showing every department's work orders. */
+  selectedDepartments?: string[];
 }) {
   const router = useRouter();
   const [grown, setGrown] = useState(false);
@@ -57,6 +63,7 @@ export function StatusChipGrid({
     params.set("status", status);
     if (dateFrom) params.set("date_from", dateFrom);
     if (dateTo) params.set("date_to", dateTo);
+    if (selectedDepartments?.[0]) params.set("departments", selectedDepartments[0]);
     router.push(`/work-orders?${params.toString()}`);
   };
 

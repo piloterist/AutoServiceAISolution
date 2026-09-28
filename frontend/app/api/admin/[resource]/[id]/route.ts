@@ -10,21 +10,25 @@ import {
   deleteRoleTabVisibility,
   deleteSlesarkaStatus,
   deleteWorkshop,
+  deleteWorkshopSourceDepartment,
   updateEmployee,
   updateOrgDepartment,
   updateOrgUser,
   updateRoleTabVisibility,
   updateSlesarkaStatus,
   updateWorkshop,
+  updateWorkshopSourceDepartment,
   type EmployeeWrite,
   type OrgUserUpdate,
   type RoleTabVisibilityWrite,
+  type WorkshopSourceDepartmentWrite,
   type WorkshopWrite,
 } from "@/lib/backend-api";
 
 type Resource =
   | "departments"
   | "workshops"
+  | "workshop-source-departments"
   | "users"
   | "slesarka-statuses"
   | "employees"
@@ -34,6 +38,7 @@ function isResource(value: string): value is Resource {
   return (
     value === "departments" ||
     value === "workshops" ||
+    value === "workshop-source-departments" ||
     value === "users" ||
     value === "slesarka-statuses" ||
     value === "employees" ||
@@ -56,6 +61,10 @@ export async function PUT(
         return NextResponse.json(await updateOrgDepartment(id, body.name));
       case "workshops":
         return NextResponse.json(await updateWorkshop(id, body as WorkshopWrite));
+      case "workshop-source-departments":
+        return NextResponse.json(
+          await updateWorkshopSourceDepartment(id, body as WorkshopSourceDepartmentWrite),
+        );
       case "users":
         return NextResponse.json(await updateOrgUser(id, body as OrgUserUpdate));
       case "slesarka-statuses":
@@ -92,6 +101,9 @@ export async function DELETE(
         break;
       case "workshops":
         await deleteWorkshop(id);
+        break;
+      case "workshop-source-departments":
+        await deleteWorkshopSourceDepartment(id);
         break;
       case "users":
         await deleteOrgUser(id);

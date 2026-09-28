@@ -21,10 +21,16 @@ def record_change(
     changes: dict,
     actor_user_id: uuid.UUID | None,
     actor_name: str,
+    work_order_id: uuid.UUID | None = None,
+    car_description: str | None = None,
 ) -> None:
     """Only called with a non-empty `changes` on update (no-op edits don't
     log); create/delete always log (changes is the created/deleted snapshot
-    in that case) - callers decide, this just writes the row."""
+    in that case) - callers decide, this just writes the row.
+
+    `work_order_id`/`car_description` are the entity's CURRENT linkage
+    (passed by the caller, not derived from `changes`) - see
+    models/schedule_audit_log.py on why that's deliberate."""
     db.add(
         ScheduleAuditLog(
             entity_type=entity_type,
@@ -33,5 +39,7 @@ def record_change(
             changes=changes,
             actor_user_id=actor_user_id,
             actor_name=actor_name,
+            work_order_id=work_order_id,
+            car_description=car_description,
         )
     )

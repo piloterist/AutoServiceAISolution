@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
     fullName: user.full_name,
     login: user.login,
     role: user.role,
+    theme: user.theme,
     departmentId: user.department_id,
     departmentName: user.department_name,
     workshopId: user.workshop_id,

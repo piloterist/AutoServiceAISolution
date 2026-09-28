@@ -20,7 +20,9 @@ from app.models.role_tab_visibility import NAV_TAB_KEYS, RoleTabVisibility
 from app.models.schedule_audit_log import ScheduleAuditLog
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.user import User
+from app.models.work_order import WorkOrder
 from app.models.workshop import Workshop
+from app.models.workshop_source_department import WorkshopSourceDepartment
 from app.services import auth_service
 
 # ---- Подразделения ----------------------------------------------------
@@ -100,6 +102,77 @@ def delete_workshop(db: Session, workshop_id: uuid.UUID) -> bool:
     return True
 
 
+# ---- Соответствие "строка 1С" -> цех (см. models/workshop_source_department.py,
+# services/cockpit_service.py) ----------------------------------------------
+
+
+def _source_department_with_labels(
+    db: Session, row: WorkshopSourceDepartment
+) -> tuple[WorkshopSourceDepartment, str]:
+    workshop = db.get(Workshop, row.workshop_id)
+    if workshop is None:
+        return row, ""
+    department = db.get(Department, workshop.department_id)
+    department_name = department.name if department else ""
+    return row, f"{department_name} — {workshop.workshop_type}"
+
+
+def list_workshop_source_departments(db: Session) -> list[tuple[WorkshopSourceDepartment, str]]:
+    rows = db.scalars(
+        select(WorkshopSourceDepartment).order_by(WorkshopSourceDepartment.source_department)
+    ).all()
+    return [_source_department_with_labels(db, r) for r in rows]
+
+
+def list_unmapped_source_departments(db: Session) -> list[str]:
+    """Distinct WorkOrder.department values with no Workshop mapping yet -
+    what an operator still needs to assign (see Settings -> Цеха ->
+    "Соответствие 1С")."""
+    mapped = select(WorkshopSourceDepartment.source_department)
+    return list(
+        db.scalars(
+            select(WorkOrder.department)
+            .where(WorkOrder.department.is_not(None), WorkOrder.department.not_in(mapped))
+            .distinct()
+            .order_by(WorkOrder.department)
+        )
+    )
+
+
+def create_workshop_source_department(
+    db: Session, *, workshop_id: uuid.UUID, source_department: str
+) -> tuple[WorkshopSourceDepartment, str]:
+    row = WorkshopSourceDepartment(
+        workshop_id=workshop_id, source_department=source_department.strip()
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _source_department_with_labels(db, row)
+
+
+def update_workshop_source_department(
+    db: Session, row_id: uuid.UUID, *, workshop_id: uuid.UUID, source_department: str
+) -> tuple[WorkshopSourceDepartment, str] | None:
+    row = db.get(WorkshopSourceDepartment, row_id)
+    if row is None:
+        return None
+    row.workshop_id = workshop_id
+    row.source_department = source_department.strip()
+    db.commit()
+    db.refresh(row)
+    return _source_department_with_labels(db, row)
+
+
+def delete_workshop_source_department(db: Session, row_id: uuid.UUID) -> bool:
+    row = db.get(WorkshopSourceDepartment, row_id)
+    if row is None:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
 # ---- Пользователи ---------------------------------------------------------
 
 
@@ -122,6 +195,7 @@ def create_user(
     login: str,
     password: str,
     role: str,
+    theme: str,
     department_id: uuid.UUID | None,
     workshop_id: uuid.UUID | None,
 ) -> tuple[User, str | None]:
@@ -130,6 +204,7 @@ def create_user(
         login=login.strip(),
         password_hash=auth_service.hash_password(password),
         role=role,
+        theme=theme,
         department_id=department_id,
         workshop_id=workshop_id,
     )
@@ -147,6 +222,7 @@ def update_user(
     login: str,
     password: str | None,
     role: str,
+    theme: str,
     department_id: uuid.UUID | None,
     workshop_id: uuid.UUID | None,
 ) -> tuple[User, str | None] | None:
@@ -158,6 +234,7 @@ def update_user(
     if password:
         user.password_hash = auth_service.hash_password(password)
     user.role = role
+    user.theme = theme
     user.department_id = department_id
     user.workshop_id = workshop_id
     db.commit()

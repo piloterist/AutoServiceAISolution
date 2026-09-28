@@ -59,6 +59,17 @@ class Workshop(Base):
     # Subset of WEEKDAY_CHOICES.
     working_days: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
 
+    # Планирование - плановые показатели цеха для аналитики (см. Settings ->
+    # Цеха -> группа "Планирование"). Все опциональны - не заполнены, пока
+    # оператор их не введёт; отчётность, которая на них опирается, должна
+    # сама решать, как трактовать null (см. её реализацию, не здесь).
+    # Выручка в ноль
+    zero_revenue: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Выручка цель
+    target_revenue: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Нормочасы
+    target_norm_hours: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

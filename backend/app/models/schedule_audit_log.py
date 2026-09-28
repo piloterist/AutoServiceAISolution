@@ -49,6 +49,19 @@ class ScheduleAuditLog(Base):
     # ("old" is always null) and ACTION_DELETE (a snapshot, "new" is null).
     changes: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
+    # Denormalized context for the Settings "Логи" table (see product
+    # feedback: raw `changes` diffs alone don't say WHICH car/ЗН a row is
+    # about unless that exact field happened to change this time). Captured
+    # from the entity's CURRENT linkage at write time, not from `changes` -
+    # so e.g. renaming a car's work description still shows its ЗН/car, even
+    # though neither field is part of that particular diff. SET NULL (not
+    # CASCADE) to match actor_user_id: deleting a ЗН must not erase history
+    # of what was once done to a Planner record linked to it.
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="SET NULL"), nullable=True
+    )
+    car_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # SET NULL, not CASCADE: deleting a user must not erase the history of
     # what they did - `actor_name` keeps the log readable even then.
     actor_user_id: Mapped[uuid.UUID | None] = mapped_column(

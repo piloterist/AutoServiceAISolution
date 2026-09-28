@@ -19,6 +19,7 @@ from app.schemas.work_order import (
     DepartmentListResponse,
     DepartmentSummaryItem,
     DepartmentSummaryResponse,
+    InvoiceItem,
     MonthlySummaryItem,
     MonthlySummaryResponse,
     PaymentEventItem,
@@ -44,6 +45,7 @@ from app.services.work_order_query_service import (
     department_summary,
     get_work_order,
     list_departments,
+    list_invoices,
     list_labor_lines,
     list_part_lines,
     list_payment_events,
@@ -322,6 +324,7 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
         payment_events=[
             PaymentEventItem.model_validate(row) for row in list_payment_events(db, work_order_id)
         ],
+        invoices=[InvoiceItem.from_model(row) for row in list_invoices(db, work_order_id)],
     )
 
 

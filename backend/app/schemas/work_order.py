@@ -184,13 +184,52 @@ class PaymentEventItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class InvoiceItem(BaseModel):
+    """A Счёт на оплату linked to this work order - see
+    models/work_order_invoice.py. `status` is derived here, not stored:
+    Alpha-Auto's own status field(s) for this document type haven't been
+    confirmed yet, so "paid/partial/unpaid" is computed from amount vs
+    paid_amount rather than guessed."""
+
+    external_number: str | None
+    document_date: datetime | None
+    amount: Decimal
+    paid_amount: Decimal | None
+    debt_amount: Decimal | None
+    posted: bool | None
+    status: str
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_model(cls, invoice) -> "InvoiceItem":
+        paid = invoice.paid_amount or Decimal("0")
+        if paid <= 0:
+            status = "Не оплачен"
+        elif invoice.amount is not None and paid >= invoice.amount:
+            status = "Оплачен"
+        else:
+            status = "Частично оплачен"
+        return cls(
+            external_number=invoice.external_number,
+            document_date=invoice.document_date,
+            amount=invoice.amount,
+            paid_amount=invoice.paid_amount,
+            debt_amount=invoice.debt_amount,
+            posted=invoice.posted,
+            status=status,
+        )
+
+
 class WorkOrderDetail(WorkOrderListItem):
     """Single work order's header (same fields as the list, plus `vin`)
     plus its labor (Работы) and parts (Товары) tabular-section lines, its
     status timeline (oldest first - see
     models/work_order_status_history.py), its payment/settlement snapshots
-    (oldest first - see models/work_order_payment_history.py), and its real
-    dated payments (oldest first - see models/work_order_payment_event.py).
+    (oldest first - see models/work_order_payment_history.py), its real
+    dated payments (oldest first - see models/work_order_payment_event.py),
+    and its linked Счета на оплату (newest first - see
+    models/work_order_invoice.py).
 
     `vin` is deliberately not on WorkOrderListItem - shown on the detail
     card only, never on the list or dashboard (see
@@ -202,3 +241,4 @@ class WorkOrderDetail(WorkOrderListItem):
     status_history: list[StatusHistoryItem]
     payment_history: list[PaymentHistoryItem]
     payment_events: list[PaymentEventItem]
+    invoices: list[InvoiceItem]

@@ -21,6 +21,7 @@ def _create_user(client, auth_headers, **overrides) -> dict:
         "login": "testuser",
         "password": "secret1",
         "role": "Сотрудник",
+        "theme": "light",
         "department_id": None,
         "workshop_id": None,
     }
@@ -113,6 +114,9 @@ def test_workshop_crud(client, auth_headers) -> None:
             "start_time": "07:00:00",
             "end_time": "22:00:00",
             "working_days": [0, 1, 2, 3, 4, 5],
+            "zero_revenue": "500000.00",
+            "target_revenue": "800000.00",
+            "target_norm_hours": "320.00",
         },
     )
     assert created.status_code == 201
@@ -120,6 +124,9 @@ def test_workshop_crud(client, auth_headers) -> None:
     assert body["department_name"] == "Каховка"
     assert body["posts_count"] == 5
     assert body["working_days"] == [0, 1, 2, 3, 4, 5]
+    assert body["zero_revenue"] == "500000.00"
+    assert body["target_revenue"] == "800000.00"
+    assert body["target_norm_hours"] == "320.00"
 
     workshop_id = body["id"]
     updated = client.put(
@@ -133,10 +140,16 @@ def test_workshop_crud(client, auth_headers) -> None:
             "start_time": "08:00:00",
             "end_time": "20:00:00",
             "working_days": [0, 1, 2, 3, 4],
+            "zero_revenue": "550000.00",
+            "target_revenue": "900000.00",
+            "target_norm_hours": "300.00",
         },
     )
     assert updated.status_code == 200
     assert updated.json()["posts_count"] == 6
+    assert updated.json()["zero_revenue"] == "550000.00"
+    assert updated.json()["target_revenue"] == "900000.00"
+    assert updated.json()["target_norm_hours"] == "300.00"
 
     deleted = client.delete(f"{WORKSHOPS_URL}/{workshop_id}", headers=auth_headers)
     assert deleted.status_code == 204
@@ -183,12 +196,14 @@ def test_user_crud(client, auth_headers) -> None:
             "full_name": "Петров П.П.",
             "login": "petrov",
             "role": "Управляющий",
+            "theme": "dark",
             "department_id": None,
             "workshop_id": None,
         },
     )
     assert updated.status_code == 200
     assert updated.json()["role"] == "Управляющий"
+    assert updated.json()["theme"] == "dark"
     assert updated.json()["department_id"] is None
 
     # Password unset on update keeps the old one working.

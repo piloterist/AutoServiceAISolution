@@ -6,6 +6,7 @@ import type { Employee, OrgDepartment, SlesarkaStatus, Workshop } from "@/lib/ba
 
 import { BodyView } from "./BodyView";
 import { MechanicalView } from "./MechanicalView";
+import { MissedCallsBadge } from "./MissedCallsBadge";
 
 /** Picks the workshop a department/type switch should land on: prefers the
  * one marked "по умолчанию", otherwise the first match - see product brief
@@ -103,6 +104,7 @@ export function PlannerShell({
             </button>
           ))}
         </div>
+        <MissedCallsBadge />
       </div>
 
       {departmentWorkshopTypes.length > 0 && (

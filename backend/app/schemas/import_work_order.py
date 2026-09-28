@@ -39,6 +39,23 @@ class ImportPaymentEventRecord(BaseModel):
     line_number: int = 1
 
 
+class ImportInvoiceRecord(BaseModel):
+    """One Документ.СчетНаОплату linked to this work order
+    (Счет.ДокументОснование = ЗН.Ссылка - a direct reference link, not the
+    Сделка/ДокументОснование/ОснованиеОснования chain used for payments
+    below). See 1c/TestExportOrders.bsl's step 2b for how these are found,
+    and models/work_order_invoice.py for why paid_amount/debt_amount are
+    computed by the export itself rather than recomputed here."""
+
+    source_document_id: str
+    number: str | None = None
+    date: datetime | None = None
+    amount: Decimal
+    paid_amount: Decimal | None = None
+    debt_amount: Decimal | None = None
+    posted: bool | None = None
+
+
 class ImportStatusHistoryRecord(BaseModel):
     """One РегистрСведений.пп_ВерсииОбъектов version of this work order,
     with its resolved Справочник.ВидыСостоянийЗаказНарядов status - see
@@ -130,6 +147,10 @@ class ImportWorkOrderRecord(BaseModel):
     # doesn't send it (older BSL versions, or a work order with no
     # available version history in 1C). See ImportStatusHistoryRecord above.
     status_history: list[ImportStatusHistoryRecord] = Field(default_factory=list)
+    # Счета на оплату linked to this work order - empty when the export
+    # doesn't send them (older BSL versions, or a work order with no
+    # invoices at all). See ImportInvoiceRecord above.
+    invoices: list[ImportInvoiceRecord] = Field(default_factory=list)
 
 
 class ImportWorkOrdersRequest(BaseModel):

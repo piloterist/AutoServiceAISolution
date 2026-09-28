@@ -14,6 +14,7 @@ import {
   createRoleTabVisibility,
   createSlesarkaStatus,
   createWorkshop,
+  createWorkshopSourceDepartment,
   getAuditLog,
   getEmployees,
   getOrgDepartments,
@@ -21,15 +22,18 @@ import {
   getRoleTabVisibility,
   getSlesarkaStatuses,
   getWorkshops,
+  getWorkshopSourceDepartments,
   type EmployeeWrite,
   type OrgUserCreate,
   type RoleTabVisibilityWrite,
+  type WorkshopSourceDepartmentWrite,
   type WorkshopWrite,
 } from "@/lib/backend-api";
 
 type Resource =
   | "departments"
   | "workshops"
+  | "workshop-source-departments"
   | "users"
   | "slesarka-statuses"
   | "audit-log"
@@ -40,6 +44,7 @@ function isResource(value: string): value is Resource {
   return (
     value === "departments" ||
     value === "workshops" ||
+    value === "workshop-source-departments" ||
     value === "users" ||
     value === "slesarka-statuses" ||
     value === "audit-log" ||
@@ -58,6 +63,8 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json(await getOrgDepartments());
       case "workshops":
         return NextResponse.json(await getWorkshops());
+      case "workshop-source-departments":
+        return NextResponse.json(await getWorkshopSourceDepartments());
       case "users":
         return NextResponse.json(await getOrgUsers());
       case "slesarka-statuses":
@@ -89,6 +96,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json(await createOrgDepartment(body.name), { status: 201 });
       case "workshops":
         return NextResponse.json(await createWorkshop(body as WorkshopWrite), { status: 201 });
+      case "workshop-source-departments":
+        return NextResponse.json(
+          await createWorkshopSourceDepartment(body as WorkshopSourceDepartmentWrite),
+          { status: 201 },
+        );
       case "users":
         return NextResponse.json(await createOrgUser(body as OrgUserCreate), { status: 201 });
       case "slesarka-statuses":

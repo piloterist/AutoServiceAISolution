@@ -5,20 +5,25 @@ autogenerate and for `Base.metadata.create_all()` in tests.
 from app.models.app_settings import AppSettings
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
+from app.models.call_record import CallRecord
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.import_batch import ImportBatch
+from app.models.phone_source import PhoneSource
 from app.models.role_tab_visibility import RoleTabVisibility
 from app.models.schedule_audit_log import ScheduleAuditLog
 from app.models.slesarka_status import SlesarkaStatus
+from app.models.telephony_settings import TelephonySettings
 from app.models.user import User
 from app.models.work_order import WorkOrder
+from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 from app.models.workshop import Workshop
 from app.models.workshop_job import WorkshopJob
+from app.models.workshop_source_department import WorkshopSourceDepartment
 
 __all__ = [
     "WorkOrder",
@@ -28,6 +33,7 @@ __all__ = [
     "WorkOrderStatusHistory",
     "WorkOrderPaymentHistory",
     "WorkOrderPaymentEvent",
+    "WorkOrderInvoice",
     "AppSettings",
     "Department",
     "Employee",
@@ -39,4 +45,8 @@ __all__ = [
     "WorkshopJob",
     "BodyCar",
     "BodyCarStage",
+    "TelephonySettings",
+    "PhoneSource",
+    "CallRecord",
+    "WorkshopSourceDepartment",
 ]

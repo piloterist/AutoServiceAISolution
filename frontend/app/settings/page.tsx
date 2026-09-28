@@ -5,10 +5,14 @@ import {
   getEmployees,
   getOrgDepartments,
   getOrgUsers,
+  getPhoneSources,
   getRepairTypes,
   getRoleTabVisibility,
   getSlesarkaStatuses,
+  getTelephonySettings,
+  getUnmappedSourceDepartments,
   getWorkshops,
+  getWorkshopSourceDepartments,
 } from "@/lib/backend-api";
 
 // Must never be statically prerendered: if the backend happens to be
@@ -29,20 +33,28 @@ export default async function SettingsPage() {
       repairTypesRes,
       departments,
       workshops,
+      sourceDepartments,
+      unmappedSourceDepartments,
       users,
       statuses,
       employees,
       roleTabVisibility,
+      telephonySettings,
+      phoneSources,
       auditLog,
     ] = await Promise.all([
       getAppSettings(),
       getRepairTypes(),
       getOrgDepartments(),
       getWorkshops(),
+      getWorkshopSourceDepartments(),
+      getUnmappedSourceDepartments(),
       getOrgUsers(),
       getSlesarkaStatuses(),
       getEmployees(),
       getRoleTabVisibility(),
+      getTelephonySettings(),
+      getPhoneSources(),
       getAuditLog(),
     ]);
     data = {
@@ -50,10 +62,14 @@ export default async function SettingsPage() {
       repairTypes: repairTypesRes.repair_types,
       departments,
       workshops,
+      sourceDepartments,
+      unmappedSourceDepartments,
       users,
       statuses,
       employees,
       roleTabVisibility,
+      telephonySettings,
+      phoneSources,
       auditLog,
     };
   } catch (err) {
@@ -76,10 +92,14 @@ export default async function SettingsPage() {
           repairTypes={data.repairTypes}
           departments={data.departments}
           workshops={data.workshops}
+          sourceDepartments={data.sourceDepartments}
+          unmappedSourceDepartments={data.unmappedSourceDepartments}
           users={data.users}
           statuses={data.statuses}
           employees={data.employees}
           roleTabVisibility={data.roleTabVisibility}
+          telephonySettings={data.telephonySettings}
+          phoneSources={data.phoneSources}
           auditLog={data.auditLog}
         />
       )}

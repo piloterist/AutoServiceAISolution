@@ -38,6 +38,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Authenticated
         full_name=user.full_name,
         login=user.login,
         role=user.role,
+        theme=user.theme,
         department_id=user.department_id,
         department_name=department_name,
         workshop_id=user.workshop_id,
