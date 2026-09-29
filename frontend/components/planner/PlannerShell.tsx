@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { Employee, OrgDepartment, SlesarkaStatus, Workshop } from "@/lib/backend-api";
 
 import { BodyView } from "./BodyView";
+import { LeadsBadge } from "./LeadsBadge";
 import { MechanicalView } from "./MechanicalView";
 import { MissedCallsBadge } from "./MissedCallsBadge";
 
@@ -105,6 +106,7 @@ export function PlannerShell({
           ))}
         </div>
         <MissedCallsBadge />
+        <LeadsBadge />
       </div>
 
       {departmentWorkshopTypes.length > 0 && (

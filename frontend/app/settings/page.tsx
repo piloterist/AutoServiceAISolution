@@ -3,6 +3,7 @@ import {
   getAppSettings,
   getAuditLog,
   getEmployees,
+  getLeadsSettings,
   getOrgDepartments,
   getOrgUsers,
   getPhoneSources,
@@ -41,6 +42,7 @@ export default async function SettingsPage() {
       roleTabVisibility,
       telephonySettings,
       phoneSources,
+      leadsSettings,
       auditLog,
     ] = await Promise.all([
       getAppSettings(),
@@ -55,6 +57,7 @@ export default async function SettingsPage() {
       getRoleTabVisibility(),
       getTelephonySettings(),
       getPhoneSources(),
+      getLeadsSettings(),
       getAuditLog(),
     ]);
     data = {
@@ -70,6 +73,7 @@ export default async function SettingsPage() {
       roleTabVisibility,
       telephonySettings,
       phoneSources,
+      leadsSettings,
       auditLog,
     };
   } catch (err) {
@@ -100,6 +104,7 @@ export default async function SettingsPage() {
           roleTabVisibility={data.roleTabVisibility}
           telephonySettings={data.telephonySettings}
           phoneSources={data.phoneSources}
+          leadsSettings={data.leadsSettings}
           auditLog={data.auditLog}
         />
       )}

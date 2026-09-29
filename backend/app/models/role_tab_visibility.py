@@ -34,6 +34,7 @@ NAV_TAB_KEYS = (
     "/employees",
     "/analytics",
     "/telephony",
+    "/leads",
 )
 
 

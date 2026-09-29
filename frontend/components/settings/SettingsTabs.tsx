@@ -7,6 +7,7 @@ import type {
   AppSettings,
   AuditLogEntry,
   Employee,
+  LeadsSettings,
   OrgDepartment,
   OrgUser,
   PhoneSource,
@@ -20,6 +21,7 @@ import type {
 import { AuditLogTab } from "./AuditLogTab";
 import { DepartmentsTab } from "./DepartmentsTab";
 import { EmployeesTab } from "./EmployeesTab";
+import { LeadsTab } from "./LeadsTab";
 import { RoleTabVisibilityCard } from "./RoleTabVisibilityCard";
 import { SlesarkaStatusesTab } from "./SlesarkaStatusesTab";
 import { TelephonyTab } from "./TelephonyTab";
@@ -36,6 +38,7 @@ type TabKey =
   | "statuses"
   | "employees"
   | "telephony"
+  | "leads"
   | "log";
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -47,6 +50,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "statuses", label: "Статусы слесарки" },
   { key: "employees", label: "Сотрудники" },
   { key: "telephony", label: "IP-телефония" },
+  { key: "leads", label: "Заявки" },
   { key: "log", label: "Логи" },
 ];
 
@@ -63,6 +67,7 @@ export function SettingsTabs({
   roleTabVisibility,
   telephonySettings,
   phoneSources,
+  leadsSettings,
   auditLog,
 }: {
   appSettings: AppSettings;
@@ -77,6 +82,7 @@ export function SettingsTabs({
   roleTabVisibility: RoleTabVisibility[];
   telephonySettings: TelephonySettings;
   phoneSources: PhoneSource[];
+  leadsSettings: LeadsSettings;
   auditLog: AuditLogEntry[];
 }) {
   const [tab, setTab] = useState<TabKey>("general");
@@ -119,6 +125,7 @@ export function SettingsTabs({
       {tab === "telephony" && (
         <TelephonyTab initialSettings={telephonySettings} initialSources={phoneSources} />
       )}
+      {tab === "leads" && <LeadsTab initialSettings={leadsSettings} />}
       {tab === "log" && <AuditLogTab initialEntries={auditLog} />}
     </div>
   );

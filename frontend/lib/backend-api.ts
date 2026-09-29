@@ -1134,6 +1134,65 @@ export function getOpenMissedCalls(): Promise<OpenMissedCallsResponse> {
 }
 
 // ============================================================================
+// Заявки (pan-motors.ru website leads) - Planner envelope badge, /leads
+// full history page, Settings -> Заявки. See backend
+// app/api/v1/endpoints/leads.py, app/services/leads_service.py.
+// ============================================================================
+
+export type LeadStatus = "open" | "resolved" | "stale";
+
+export type WebsiteLead = {
+  id: string;
+  source: string;
+  phone: string;
+  name: string | null;
+  photos: string[] | null;
+  raw_payload: Record<string, unknown>;
+  created_at: string;
+  status: LeadStatus;
+};
+
+export type WebsiteLeadsResponse = {
+  leads: WebsiteLead[];
+};
+
+export type OpenLeadsResponse = {
+  count: number;
+  leads: WebsiteLead[];
+};
+
+export type LeadsSettings = {
+  enabled: boolean;
+  stale_after_days: number;
+  has_intake_token: boolean;
+};
+
+export type LeadsSettingsWrite = {
+  enabled: boolean;
+  stale_after_days: number;
+};
+
+export function getLeads(): Promise<WebsiteLeadsResponse> {
+  return backendGet<WebsiteLeadsResponse>("/api/v1/leads");
+}
+
+export function getOpenLeads(): Promise<OpenLeadsResponse> {
+  return backendGet<OpenLeadsResponse>("/api/v1/leads/open");
+}
+
+export function getLeadsSettings(): Promise<LeadsSettings> {
+  return backendGet<LeadsSettings>("/api/v1/leads/settings");
+}
+
+export function updateLeadsSettings(payload: LeadsSettingsWrite): Promise<LeadsSettings> {
+  return backendPut<LeadsSettings>("/api/v1/leads/settings", payload);
+}
+
+export function regenerateLeadsIntakeToken(): Promise<{ intake_token: string }> {
+  return backendPost<{ intake_token: string }>("/api/v1/leads/settings/regenerate-token", {});
+}
+
+// ============================================================================
 // Cockpit - see backend app/api/v1/endpoints/cockpit.py,
 // app/services/cockpit_service.py.
 // ============================================================================

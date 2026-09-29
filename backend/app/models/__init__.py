@@ -9,12 +9,14 @@ from app.models.call_record import CallRecord
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.import_batch import ImportBatch
+from app.models.leads_settings import LeadsSettings
 from app.models.phone_source import PhoneSource
 from app.models.role_tab_visibility import RoleTabVisibility
 from app.models.schedule_audit_log import ScheduleAuditLog
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.telephony_settings import TelephonySettings
 from app.models.user import User
+from app.models.website_lead import WebsiteLead
 from app.models.work_order import WorkOrder
 from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
@@ -49,4 +51,6 @@ __all__ = [
     "PhoneSource",
     "CallRecord",
     "WorkshopSourceDepartment",
+    "LeadsSettings",
+    "WebsiteLead",
 ]

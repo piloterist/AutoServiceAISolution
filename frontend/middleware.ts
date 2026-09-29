@@ -65,7 +65,13 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/telephony/ping") ||
     pathname.startsWith("/api/telephony/import") ||
     pathname.startsWith("/api/telephony/recordings");
-  const isAdminApi = pathname.startsWith("/api/admin") || isTelephonyAdminApi;
+  // /api/leads/settings (incl. its regenerate-token action) is the
+  // connection config for Заявки, same Admin-only gate as telephony's own
+  // settings above. /api/leads and /api/leads/open (full history page +
+  // Planner envelope badge) are deliberately excluded, same reasoning as
+  // /api/telephony/source-summary and /api/telephony/missed-calls above.
+  const isLeadsAdminApi = pathname.startsWith("/api/leads/settings");
+  const isAdminApi = pathname.startsWith("/api/admin") || isTelephonyAdminApi || isLeadsAdminApi;
   const isAdminArea = pathname.startsWith("/settings") || isAdminApi;
 
   if (isAdminArea && user.role !== ROLE_ADMIN) {
