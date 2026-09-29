@@ -1,7 +1,9 @@
 "use client";
 
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 
+import { NzpToggle } from "@/components/cockpit/NzpToggle";
 import {
   arcPath,
   gaugeAngle,
@@ -13,7 +15,7 @@ import {
   ringSegmentPath,
   tickPath,
 } from "@/lib/cockpit-geometry";
-import type { GaugeReading } from "@/lib/backend-api";
+import type { GaugeReading, WorkshopOption } from "@/lib/backend-api";
 
 const VIEW_W = 1648;
 const VIEW_H = 650;
@@ -520,30 +522,278 @@ function PaymentsGauge({ payments, gauge }: { payments: number; gauge: GaugeRead
   );
 }
 
-function WarningIcons() {
-  // Compact outline icons - real <button>s so they're keyboard focusable
-  // and clickable, per spec ("настоящие button... aria-label, действие
-  // пока не назначено"), positioned via a small local grid rather than
-  // absolute SVG coordinates so focus rings render natively.
-  const icons: { key: string; label: string; tone: "down" | "warn" | "ok"; path: string }[] = [
-    { key: "warn", label: "Предупреждения", tone: "down", path: "M12 2 L23 21 H1 Z M12 9v6 M12 17.5v.1" },
-    { key: "doc", label: "Документы", tone: "down", path: "M5 2h10l4 4v16H5Z M15 2v4h4 M8 12h8 M8 16h8 M8 8h4" },
-    { key: "clock", label: "Регламент", tone: "down", path: "M12 12 L12 6 M12 12 L16 14 M12 2a10 10 0 1 0 .1 0Z" },
-    { key: "pay", label: "Платежи", tone: "warn", path: "M2 6h20v13H2Z M2 10h20 M6 16h4" },
-    { key: "sync", label: "Синхронизация", tone: "ok", path: "M4 12a8 8 0 0 1 14-5.3L21 4v6h-6l2.6-2.6A6 6 0 0 0 6 12Z M20 12a8 8 0 0 1-14 5.3L3 20v-6h6l-2.6 2.6A6 6 0 0 0 18 12Z" },
-    { key: "service", label: "Сервис", tone: "down", path: "M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 1 5.4-5.4L21 6l-3-3Z" },
+// Exact same glyphs as components/planner/MissedCallsBadge.tsx /
+// LeadsBadge.tsx (per product feedback, 2026-09-29: "как сделаны на
+// планере") - filled shapes, not outline strokes like the other lamps here.
+const PHONE_PATH =
+  "M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.9 21 3 13.1 3 3.6 3 3 3.4 2.6 4 2.6h3.4c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8Z";
+const ENVELOPE_PATH =
+  "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1 2.4V17h14V7.4l-6.4 4.8a1 1 0 0 1-1.2 0L5 7.4Zm.9-.4L12 11l6.1-4H5.9Z";
+const REFRESH_PATH =
+  "M4 12a8 8 0 0 1 14-5.3L21 4v6h-6l2.6-2.6A6 6 0 0 0 6 12Z M20 12a8 8 0 0 1-14 5.3L3 20v-6h6l-2.6 2.6A6 6 0 0 0 18 12Z";
+
+/** Top-right "lamp" row - all gray by default (per product feedback,
+ * 2026-09-29: the old per-icon warn/ok tint coloring is gone), except the
+ * phone/envelope lamps, which mirror the Planner's own missed-calls/leads
+ * badges and light up red exactly when those badges would show a count.
+ * The "sync" lamp doubles as the page's only refresh control now that the
+ * topbar (and its own dedicated refresh button) is gone. */
+// Visible window: this many rows show at once, the middle one being the
+// "selected" slot - see DepartmentWheel below. Row height is a fixed CSS
+// px value (WHEEL_ROW_H) so scroll-position <-> index math stays exact
+// (rows are forced to a single line via CSS - see .cockpit-dept-wheel-row).
+// Sized up per product feedback, 2026-09-30 ("делай еще крупнее").
+const WHEEL_VISIBLE_ROWS = 3;
+const WHEEL_ROW_H = 48;
+// How far the pointer has to move before a press counts as "dragging the
+// drum" rather than "clicking a row" - below this, pointer capture is
+// never taken, so the row button's own native click still fires normally
+// (per product feedback, 2026-09-30: "надо чтобы кроме колесика можно
+// было ткнуть мышкой в значение" - an earlier version captured the
+// pointer unconditionally on press, which ate every click).
+const DRAG_THRESHOLD_PX = 6;
+
+/** Цех filter, a real spinning drum (per product feedback, 2026-09-30:
+ * "барабан который можно вращать мышкой или скролом" - not a flat list,
+ * not dots). Three ways to move it, each tuned for what it's good at:
+ * - Mouse wheel: intercepted and stepped exactly one row per notch (native
+ *   wheel-driven scrolling is too imprecise to reliably land on one value
+ *   - per product feedback, 2026-09-30: "поймать каждое значение почти
+ *   нереально").
+ * - Touch/trackpad: native scroll + CSS scroll-snap, since a finger
+ *   already tracks 1:1 and snapping to the nearest row on release is the
+ *   right feel there.
+ * - Mouse drag: a small pointer-drag handler so a plain mouse can grab and
+ *   spin it too (distinct from a plain click via DRAG_THRESHOLD_PX above).
+ * - A row can always just be clicked directly to jump to it.
+ * Every row is the same size; only color (gray vs. the bright cyan-white
+ * the main gauge's own sum uses) marks which one is centered/selected -
+ * per product feedback, explicitly not "small vs big". Scales to a client
+ * with ~20 цехов without ever showing more than WHEEL_VISIBLE_ROWS labels
+ * at once. */
+function DepartmentWheel({
+  items,
+  selectedIndex,
+  onSelect,
+}: {
+  items: { id: string; label: string }[];
+  selectedIndex: number;
+  onSelect: (index: number) => void;
+}) {
+  const n = items.length;
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragState = useRef<{ startY: number; startScrollTop: number; dragging: boolean; pointerId: number } | null>(
+    null,
+  );
+  const hasCentered = useRef(false);
+
+  // Renders 3 back-to-back copies of the list (per product feedback,
+  // 2026-09-30: "закольцовано, можно крутить бесконечно в обе стороны") -
+  // the scroll position is always kept within the MIDDLE copy's own
+  // render-index range [n, 2n); scrolling past either edge of it triggers
+  // an instant (invisible, since every copy is identical) jump back into
+  // the middle copy - see settleScroll below. This is the standard
+  // "infinite" scroller trick and needs no real infinite DOM.
+  const loopItems = [...items, ...items, ...items];
+
+  // scrollTop=0 puts render-index 0's own TOP edge at the viewport's top,
+  // not its center - CENTER_OFFSET (1 row, for a 3-row window) is the
+  // correction so the row we mean to select actually lands in the middle
+  // slot instead of the top one (per product feedback, 2026-09-30:
+  // "выбираться должен тот что по центру, а не сверху" - this was a real
+  // off-by-one, not just a CSS/color question).
+  const CENTER_OFFSET = Math.floor(WHEEL_VISIBLE_ROWS / 2);
+
+  const scrollToRenderIndex = (renderIndex: number, behavior: ScrollBehavior) => {
+    trackRef.current?.scrollTo({ top: (renderIndex - CENTER_OFFSET) * WHEEL_ROW_H, behavior });
+  };
+
+  const nearestRenderIndex = () => {
+    const el = trackRef.current;
+    if (!el) return n + selectedIndex;
+    return Math.round(el.scrollTop / WHEEL_ROW_H) + CENTER_OFFSET;
+  };
+
+  const toLogical = (renderIndex: number) => ((renderIndex % n) + n) % n;
+
+  // Called once a scroll gesture (of any kind) has settled: reports the
+  // logical selection, and - only now, never mid-gesture - silently snaps
+  // back into the middle copy if the drum drifted into an outer one.
+  const settleScroll = () => {
+    const renderIndex = nearestRenderIndex();
+    const logical = toLogical(renderIndex);
+    if (logical !== selectedIndex) onSelect(logical);
+    if (renderIndex < n || renderIndex >= 2 * n) {
+      scrollToRenderIndex(n + logical, "auto");
+    }
+  };
+
+  // Centers in the middle copy exactly once on mount (unconditionally -
+  // scrollTop starts at 0, which is the very edge of the loop, not a
+  // position that already "agrees" with any selection), then only nudges
+  // the drum for genuine external selectedIndex changes afterward -
+  // skipped when the scroll position already agrees, so this never fights
+  // the user's own in-progress scroll/drag/wheel (which is what reports
+  // those changes in the first place).
+  useEffect(() => {
+    if (!hasCentered.current) {
+      hasCentered.current = true;
+      scrollToRenderIndex(n + selectedIndex, "auto");
+      return;
+    }
+    if (toLogical(nearestRenderIndex()) !== selectedIndex) {
+      scrollToRenderIndex(n + selectedIndex, "auto");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIndex, n]);
+
+  // Mouse wheel: exactly one row per notch, not native free-scrolling -
+  // see module comment. React's onWheel is passive by default (can't
+  // preventDefault there), so this is a real, non-passive DOM listener.
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onWheelNative = (e: WheelEvent) => {
+      e.preventDefault();
+      const dir = e.deltaY > 0 ? 1 : -1;
+      const next = nearestRenderIndex() + dir;
+      scrollToRenderIndex(next, "smooth");
+      const logical = toLogical(next);
+      if (logical !== selectedIndex) onSelect(logical);
+    };
+    el.addEventListener("wheel", onWheelNative, { passive: false });
+    return () => el.removeEventListener("wheel", onWheelNative);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [n, selectedIndex, onSelect]);
+
+  const scrollEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleScroll = () => {
+    if (scrollEndTimer.current) clearTimeout(scrollEndTimer.current);
+    scrollEndTimer.current = setTimeout(settleScroll, 120);
+  };
+
+  const handlePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = trackRef.current;
+    if (!el) return;
+    // Not captured yet - see handlePointerMove, DRAG_THRESHOLD_PX.
+    dragState.current = { startY: e.clientY, startScrollTop: el.scrollTop, dragging: false, pointerId: e.pointerId };
+  };
+
+  const handlePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = trackRef.current;
+    const state = dragState.current;
+    if (!el || !state) return;
+    const delta = e.clientY - state.startY;
+    if (!state.dragging) {
+      if (Math.abs(delta) < DRAG_THRESHOLD_PX) return; // still just a click-in-progress
+      state.dragging = true;
+      el.setPointerCapture(state.pointerId);
+      el.classList.add("cockpit-dept-wheel--dragging");
+    }
+    el.scrollTop = state.startScrollTop - delta;
+  };
+
+  const endDrag = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const el = trackRef.current;
+    const state = dragState.current;
+    if (!el || !state) return;
+    dragState.current = null;
+    if (!state.dragging) return; // a plain click - let the row's own onClick handle it
+    el.releasePointerCapture(e.pointerId);
+    el.classList.remove("cockpit-dept-wheel--dragging");
+    const renderIndex = nearestRenderIndex();
+    scrollToRenderIndex(renderIndex, "smooth");
+    const logical = toLogical(renderIndex);
+    if (logical !== selectedIndex) onSelect(logical);
+  };
+
+  return (
+    <div className="cockpit-dept-wheel-wrap">
+      <div
+        ref={trackRef}
+        className="cockpit-dept-wheel"
+        style={{ height: WHEEL_ROW_H * WHEEL_VISIBLE_ROWS }}
+        onScroll={handleScroll}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        role="listbox"
+        aria-label="Подразделение"
+      >
+        {loopItems.map((item, renderIndex) => (
+          <button
+            key={`${item.id || "all"}-${renderIndex}`}
+            type="button"
+            role="option"
+            aria-selected={toLogical(renderIndex) === selectedIndex}
+            className="cockpit-dept-wheel-row"
+            style={{ height: WHEEL_ROW_H }}
+            data-selected={toLogical(renderIndex) === selectedIndex}
+            onClick={() => {
+              scrollToRenderIndex(renderIndex, "smooth");
+              const logical = toLogical(renderIndex);
+              if (logical !== selectedIndex) onSelect(logical);
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WarningIcons({
+  missedCallsCount,
+  openLeadsCount,
+  onRefresh,
+  refreshing,
+}: {
+  missedCallsCount: number;
+  openLeadsCount: number;
+  onRefresh: () => void;
+  refreshing: boolean;
+}) {
+  const icons: {
+    key: string;
+    label: string;
+    path: string;
+    filled?: boolean;
+    active?: boolean;
+    onClick?: () => void;
+    spinning?: boolean;
+  }[] = [
+    { key: "warn", label: "Предупреждения — демо, действие пока не назначено", path: "M12 2 L23 21 H1 Z M12 9v6 M12 17.5v.1" },
+    { key: "phone", label: "Пропущенные звонки", path: PHONE_PATH, filled: true, active: missedCallsCount > 0 },
+    { key: "leads", label: "Новые заявки", path: ENVELOPE_PATH, filled: true, active: openLeadsCount > 0 },
+    { key: "pay", label: "Платежи — демо, действие пока не назначено", path: "M2 6h20v13H2Z M2 10h20 M6 16h4" },
+    { key: "sync", label: "Обновить данные", path: REFRESH_PATH, onClick: onRefresh, spinning: refreshing },
+    { key: "service", label: "Сервис — демо, действие пока не назначено", path: "M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 1 5.4-5.4L21 6l-3-3Z" },
   ];
   return (
-    <div className="cockpit-warning-grid" role="group" aria-label="Предупреждения — демо, действие пока не назначено">
+    <div className="cockpit-warning-grid" role="group" aria-label="Индикаторы">
       {icons.map((icon) => (
         <button
           key={icon.key}
           type="button"
-          className={`cockpit-warning-icon cockpit-warning-icon--${icon.tone}`}
-          aria-label={`${icon.label} — демо, действие пока не назначено`}
+          className="cockpit-warning-icon"
+          data-active={icon.active ?? false}
+          aria-label={icon.label}
+          onClick={icon.onClick}
         >
-          <svg viewBox="0 0 24 24" width={20} height={20} aria-hidden="true">
-            <path d={icon.path} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+          <svg
+            viewBox="0 0 24 24"
+            width={30}
+            height={30}
+            aria-hidden="true"
+            className={icon.spinning ? "cockpit-warning-icon-spin" : undefined}
+          >
+            {icon.filled ? (
+              <path d={icon.path} fill="currentColor" />
+            ) : (
+              <path d={icon.path} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+            )}
           </svg>
         </button>
       ))}
@@ -607,8 +857,17 @@ export function InstrumentCluster({
   revenueGauge,
   paymentsGauge,
   nzpActive,
+  onNzpToggle,
   planUnusable,
   hasUnattributedRevenue,
+  workshops,
+  workshopId,
+  onWorkshopChange,
+  periodLabel,
+  missedCallsCount,
+  openLeadsCount,
+  onRefresh,
+  refreshing,
 }: {
   revenue: number;
   effectiveRevenue: number;
@@ -616,8 +875,17 @@ export function InstrumentCluster({
   revenueGauge: GaugeReading;
   paymentsGauge: GaugeReading;
   nzpActive: boolean;
+  onNzpToggle: () => void;
   planUnusable: boolean;
   hasUnattributedRevenue: boolean;
+  workshops: WorkshopOption[];
+  workshopId: string;
+  onWorkshopChange: (value: string) => void;
+  periodLabel: string;
+  missedCallsCount: number;
+  openLeadsCount: number;
+  onRefresh: () => void;
+  refreshing: boolean;
 }) {
   return (
     <>
@@ -694,15 +962,35 @@ export function InstrumentCluster({
         </g>
       </svg>
 
-      <div className="cockpit-left-panel" aria-hidden="true">
-        <span className="cockpit-demo-tag">DEMO</span>
-        <div className="cockpit-left-row">ПРИВОД AWD</div>
-        <div className="cockpit-left-row">РЕЖИМ SPORT</div>
-        <div className="cockpit-left-row">СТАБИЛИЗАЦИЯ ON</div>
-        <div className="cockpit-left-big">18°C</div>
+      {/* Цех filter - replaces the old topbar's <select> (per product
+          feedback, 2026-09-29/30: "сделать как раз выбор подразделений
+          который сейчас вверху", then "барабан который можно вращать
+          мышкой или скролом"). */}
+      <div className="cockpit-left-panel">
+        <DepartmentWheel
+          items={[{ id: "", label: "Вся компания" }, ...workshops.map((w) => ({ id: w.id, label: `${w.department_name} — ${w.workshop_type}` }))]}
+          selectedIndex={workshopId === "" ? 0 : Math.max(0, workshops.findIndex((w) => w.id === workshopId) + 1)}
+          onSelect={(index) => onWorkshopChange(index === 0 ? "" : workshops[index - 1].id)}
+        />
+        <div className="cockpit-left-big" aria-hidden="true">
+          {periodLabel}
+        </div>
       </div>
 
-      <WarningIcons />
+      {/* НЗП - moved off the old topbar onto the cluster itself, above the
+          two gauges roughly where their rims cross (per product feedback,
+          2026-09-29: "над циферблатами, примерно над тем местом где они
+          пересекаются") - same button, just relocated. */}
+      <div className="cockpit-nzp-overlay">
+        <NzpToggle active={nzpActive} onToggle={onNzpToggle} />
+      </div>
+
+      <WarningIcons
+        missedCallsCount={missedCallsCount}
+        openLeadsCount={openLeadsCount}
+        onRefresh={onRefresh}
+        refreshing={refreshing}
+      />
 
       <div className="cockpit-strips">
         <ReceivablesStrip />

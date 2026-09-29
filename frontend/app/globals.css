@@ -3485,101 +3485,10 @@ main:has(.cockpit-page) {
   padding: 0;
 }
 
-.cockpit-topbar {
-  display: flex;
-  align-items: center;
-  gap: 1.1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1.1rem;
-  padding: 0 0.25rem;
-}
-
-.cockpit-topbar h1 {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #eafcff;
-  margin: 0;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.cockpit-topbar-field {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.78rem;
-  color: #8a999e;
-}
-
-.cockpit-topbar select {
-  background: #101516;
-  border: 1px solid #24292b;
-  color: #eafcff;
-  border-radius: 6px;
-  padding: 0.35rem 0.55rem;
-  font-size: 0.82rem;
-}
-
-.cockpit-period {
-  font-size: 0.78rem;
-  color: #8a999e;
-  font-variant-numeric: tabular-nums;
-}
-
-.cockpit-refresh {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  color: #3ebecc;
-  background: transparent;
-  border: 1px solid #24292b;
-  border-radius: 999px;
-  width: 34px;
-  height: 34px;
-  cursor: pointer;
-  position: relative;
-}
-
-.cockpit-refresh:hover {
-  border-color: #3ebecc;
-}
-
-.cockpit-refresh:focus-visible {
-  outline: 2px solid #3ebecc;
-  outline-offset: 2px;
-}
-
-.cockpit-refresh[data-loading="true"] svg {
-  animation: cockpit-spin 900ms linear infinite;
-}
-
 @keyframes cockpit-spin {
   to {
     transform: rotate(360deg);
   }
-}
-
-.cockpit-refresh-tooltip {
-  position: absolute;
-  top: 120%;
-  right: 0;
-  white-space: nowrap;
-  background: #101516;
-  border: 1px solid #24292b;
-  color: #8a999e;
-  font-size: 0.7rem;
-  padding: 0.3rem 0.5rem;
-  border-radius: 6px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 150ms ease;
-}
-
-.cockpit-refresh:hover .cockpit-refresh-tooltip,
-.cockpit-refresh:focus-visible .cockpit-refresh-tooltip {
-  opacity: 1;
 }
 
 .cockpit-cluster {
@@ -3704,15 +3613,86 @@ main:has(.cockpit-page) {
   color: #8a999e;
 }
 
-.cockpit-left-row {
-  border-left: 2px solid #3ebecc;
-  padding-left: 0.5rem;
+/* Цех filter, a real spinning drum (see InstrumentCluster.tsx's
+   DepartmentWheel; product feedback, 2026-09-30: "барабан который можно
+   вращать мышкой или скролом" - built on native CSS scroll-snap, plus a
+   small pointer-drag handler for a plain mouse). The wrap claims all
+   vertical space left in the panel (.cockpit-left-big sits below it, at
+   its own natural size) and centers the wheel's fixed-height window in
+   it, so the drum sits mid-panel rather than pinned to the top. */
+.cockpit-dept-wheel-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+}
+
+.cockpit-dept-wheel {
+  width: 100%;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  cursor: grab;
+  touch-action: pan-y;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 65%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 35%, black 65%, transparent 100%);
+}
+
+.cockpit-dept-wheel::-webkit-scrollbar {
+  display: none;
+}
+
+.cockpit-dept-wheel--dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* Every row is the same size - only color marks the centered/selected one
+   (per product feedback: "не мелкими, а просто серыми"), not size. */
+.cockpit-dept-wheel-row {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  width: 100%;
+  scroll-snap-align: center;
+  cursor: pointer;
+  color: #596063;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 150ms ease;
+}
+
+.cockpit-dept-wheel-row:hover {
+  color: #8a999e;
+}
+
+.cockpit-dept-wheel-row:focus-visible {
+  outline: 2px solid #3ebecc;
+  outline-offset: -2px;
+}
+
+/* Reads in the same bright tone as the main gauge's own digital sum
+   (.cockpit-money-main's #eafcff) - per product feedback, 2026-09-29 -
+   and noticeably larger too (per product feedback, 2026-09-30: "выделяй
+   более крупным шрифтом и ярким цветом тот цех, который выбрался"). */
+.cockpit-dept-wheel-row[data-selected="true"] {
+  color: #eafcff;
+  font-size: 1.4rem;
+  font-weight: 800;
+  text-shadow: 0 0 10px rgba(62, 190, 204, 0.5);
 }
 
 .cockpit-left-big {
-  margin-top: auto;
   font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
-  font-size: 1.7rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: #f4fafa;
   font-variant-numeric: tabular-nums;
@@ -3728,17 +3708,31 @@ main:has(.cockpit-page) {
   padding: 1px 5px;
 }
 
-.cockpit-warning-grid {
+/* НЗП, relocated off the old topbar onto the cluster itself - see
+   InstrumentCluster.tsx's .cockpit-nzp-overlay wrapper. Anchored above
+   where the two gauges' rims cross (viewBox x≈620 of 1648, well above
+   both dials' tops). */
+.cockpit-nzp-overlay {
   position: absolute;
-  left: 71%;
-  top: 20%;
-  width: 14.56%;
-  height: 11.5%;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  left: 37.6%;
+  top: 12%;
+  transform: translateX(-50%);
 }
 
+.cockpit-warning-grid {
+  position: absolute;
+  left: 69%;
+  top: 18%;
+  width: 19%;
+  height: 15%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+/* All gray by default now (per product feedback, 2026-09-29: the old
+   per-icon warn/ok tint is gone) - only the phone/leads lamps light up,
+   and only from real data (see data-active below). */
 .cockpit-warning-icon {
   all: unset;
   display: flex;
@@ -3746,22 +3740,23 @@ main:has(.cockpit-page) {
   justify-content: center;
   cursor: pointer;
   border-radius: 6px;
-  color: #ff5b63;
+  color: #596063;
   transition:
     background 150ms ease,
+    color 150ms ease,
     transform 100ms ease;
 }
 
-.cockpit-warning-icon--warn {
-  color: #e7c663;
-}
-
-.cockpit-warning-icon--ok {
-  color: #f4fafa;
+.cockpit-warning-icon[data-active="true"] {
+  color: #ff5b63;
 }
 
 .cockpit-warning-icon:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.cockpit-warning-icon-spin {
+  animation: cockpit-spin 900ms linear infinite;
 }
 
 .cockpit-warning-icon:focus-visible {
@@ -3876,14 +3871,14 @@ main:has(.cockpit-page) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 84px;
-  height: 30px;
+  width: 109px;
+  height: 39px;
   background: #0a0d0e;
   border: 1px solid #24292b;
   clip-path: polygon(10% 0, 90% 0, 100% 100%, 0 100%);
   color: #8a999e;
   font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
-  font-size: 0.78rem;
+  font-size: 1.01rem;
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -3891,10 +3886,10 @@ main:has(.cockpit-page) {
 .cockpit-nzp-btn::after {
   content: "";
   position: absolute;
-  bottom: 3px;
+  bottom: 4px;
   left: 22%;
   width: 56%;
-  height: 2px;
+  height: 3px;
   background: transparent;
   border-radius: 2px;
 }

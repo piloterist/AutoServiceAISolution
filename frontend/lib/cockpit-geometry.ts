@@ -25,9 +25,19 @@ export const MAIN_GAUGE_SWEEP = 270;
 export const PAYMENTS_GAUGE_START_ANGLE = 150;
 export const PAYMENTS_GAUGE_SWEEP = 270;
 
+// Rounded to a precision far below anything visible (a fraction of a
+// pixel at this SVG's scale) - purely to fix a real hydration mismatch:
+// Math.sin/Math.cos aren't required by spec to be bit-identical across JS
+// engines, so Node (SSR) and the browser (client) can disagree in the
+// last couple of float64 digits for the same angle, which React's
+// hydration then flags as a real (if invisible) server/client mismatch.
+function round(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
 export function polarPoint(cx: number, cy: number, r: number, angleDeg: number): Point {
   const rad = (angleDeg * Math.PI) / 180;
-  return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
+  return { x: round(cx + r * Math.sin(rad)), y: round(cy - r * Math.cos(rad)) };
 }
 
 export function clamp01(value: number): number {

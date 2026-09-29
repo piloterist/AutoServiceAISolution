@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import { InstrumentCluster } from "@/components/cockpit/InstrumentCluster";
-import { NzpToggle } from "@/components/cockpit/NzpToggle";
 import type { CockpitSnapshot, WorkshopOption } from "@/lib/backend-api";
 
 const NZP_STORAGE_KEY_PREFIX = "cockpit-nzp-";
+const COUNTS_POLL_INTERVAL_MS = 60_000;
 
 // Both period_start/period_end are UTC instants representing Moscow-local
 // calendar points (see backend cockpit_service.period_bounds) - formatting
@@ -18,20 +18,17 @@ const NZP_STORAGE_KEY_PREFIX = "cockpit-nzp-";
 // rendered "31.08" for a UTC-midnight instant the browser rendered as
 // "01.09" MSK-local). Pinning timeZone here keeps server and client
 // agreeing regardless of either one's own local zone.
-function formatPeriod(snapshot: CockpitSnapshot): string {
-  const fmt = (iso: string) =>
-    new Date(iso).toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", timeZone: "Europe/Moscow" });
-  return `${fmt(snapshot.period_start)} – ${fmt(snapshot.period_end)}`;
-}
-
-function formatUpdatedAt(iso: string): string {
-  return new Date(iso).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+//
+// "Месяц ГГГГ" (per product feedback, 2026-09-29: replaces the old
+// dd.mm-dd.mm range shown in the now-removed topbar) - period_start's own
+// month, since this is always a "month to date" window.
+function formatMonthYear(snapshot: CockpitSnapshot): string {
+  const raw = new Date(snapshot.period_start).toLocaleDateString("ru-RU", {
+    month: "long",
+    year: "numeric",
     timeZone: "Europe/Moscow",
   });
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
 /** Cockpit's top bar + instrument cluster - see components/cockpit/
@@ -56,6 +53,12 @@ export function CockpitView({
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Feeds the phone/envelope "lamps" in InstrumentCluster's warning grid -
+  // same counts and same polling cadence as MissedCallsBadge/LeadsBadge in
+  // the Planner (see product feedback, 2026-09-29: these should light up
+  // red on Cockpit exactly when those badges would show a count).
+  const [missedCallsCount, setMissedCallsCount] = useState(0);
+  const [openLeadsCount, setOpenLeadsCount] = useState(0);
   // One-shot reveal: the whole cluster (gauges + side panels together, as
   // one unit - see .cockpit-cluster's opacity transition in globals.css)
   // fades in from fully transparent to fully opaque exactly once on
@@ -101,6 +104,37 @@ export function CockpitView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCounts = async () => {
+      try {
+        const [missedRes, leadsRes] = await Promise.all([
+          fetch("/api/telephony/missed-calls", { cache: "no-store" }),
+          fetch("/api/leads/open", { cache: "no-store" }),
+        ]);
+        if (cancelled) return;
+        if (missedRes.ok) {
+          const data = (await missedRes.json()) as { count: number };
+          setMissedCallsCount(data.count);
+        }
+        if (leadsRes.ok) {
+          const data = (await leadsRes.json()) as { count: number };
+          setOpenLeadsCount(data.count);
+        }
+      } catch {
+        // Best-effort - the lamps just stay at their last known state.
+      }
+    };
+
+    void loadCounts();
+    const timer = setInterval(() => void loadCounts(), COUNTS_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
   const load = async (nextWorkshopId: string, nextNzp: boolean) => {
     const myRequest = ++requestId.current;
     setLoading(true);
@@ -144,38 +178,6 @@ export function CockpitView({
 
   return (
     <div className="cockpit-page">
-      <div className="cockpit-topbar">
-        <h1>Cockpit</h1>
-        <label className="cockpit-topbar-field">
-          <span className="sr-only">Цех</span>
-          <select value={workshopId} onChange={(e) => handleWorkshopChange(e.target.value)}>
-            <option value="">Вся компания</option>
-            {workshops.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.department_name} — {w.workshop_type}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className="cockpit-period">С начала месяца по сейчас ({formatPeriod(snapshot)})</span>
-        <NzpToggle active={nzpActive} onToggle={handleNzpToggle} />
-        <button
-          type="button"
-          className="cockpit-refresh"
-          onClick={handleRefresh}
-          data-loading={loading}
-          aria-label="Обновить"
-        >
-          <svg viewBox="0 0 24 24" width={16} height={16} aria-hidden="true">
-            <path
-              d="M4 12a8 8 0 0 1 14-5.3L21 4v6h-6l2.6-2.6A6 6 0 0 0 6 12Z M20 12a8 8 0 0 1-14 5.3L3 20v-6h6l-2.6 2.6A6 6 0 0 0 18 12Z"
-              fill="currentColor"
-            />
-          </svg>
-          <span className="cockpit-refresh-tooltip">Данные на {formatUpdatedAt(snapshot.period_end)}</span>
-        </button>
-      </div>
-
       {error && <p className="admin-form-error">{error}</p>}
 
       <div className="cockpit-cluster" data-revealed={revealed}>
@@ -186,8 +188,17 @@ export function CockpitView({
           revenueGauge={snapshot.revenue_gauge}
           paymentsGauge={snapshot.payments_gauge}
           nzpActive={nzpActive}
+          onNzpToggle={handleNzpToggle}
           planUnusable={!snapshot.plan.usable}
           hasUnattributedRevenue={snapshot.has_unattributed_revenue && workshopId === ""}
+          workshops={workshops}
+          workshopId={workshopId}
+          onWorkshopChange={handleWorkshopChange}
+          periodLabel={formatMonthYear(snapshot)}
+          missedCallsCount={missedCallsCount}
+          openLeadsCount={openLeadsCount}
+          onRefresh={handleRefresh}
+          refreshing={loading}
         />
       </div>
     </div>
