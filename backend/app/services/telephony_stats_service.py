@@ -669,16 +669,22 @@ def get_open_missed_calls(db: Session, *, now: datetime | None = None) -> list[O
     - One real contact (either direction, whichever operator) clears EVERY
       still-open miss from that same number in the window, not just the
       one immediately before it (confirmed product decision).
+    - A number only appears here at all if THEY called us and we missed it
+      at least once in the window - a purely outbound thread (we called a
+      number that never called us, and never reached them) is not shown,
+      no matter how many attempts (confirmed product decision, 2026-09-29:
+      showing that as an alarm is "тупо" - the badge answers "who called us
+      and we still haven't reached", not "who did we fail to reach").
 
     Processes each client's calls in this window in chronological order: a
     real (>=5s) contact clears everything queued so far for that number; an
     unanswered IN call queues as "звонил, не дозвонился"; an unanswered OUT
-    call queues as "перезвонили, не дозвонились" (any of our unanswered
-    outbound attempts to this number in the window, not only ones that
-    followed a specific miss - the badge's point is "this number still
-    needs to be reached", not a strict causal link to one original call). A
-    briefly-answered call under 5s resolves nothing but isn't queued as a
-    fresh miss either, since the provider does consider it answered.
+    call queues as "перезвонили, не дозвонились" - but only for a client
+    that has at least one unanswered IN call somewhere in the window (their
+    outbound attempts are then shown alongside it as "still trying", not as
+    a stand-alone alarm). A briefly-answered call under 5s resolves nothing
+    but isn't queued as a fresh miss either, since the provider does
+    consider it answered.
     """
     start_utc, end_utc = _missed_badge_window_utc(now)
 
@@ -706,8 +712,14 @@ def get_open_missed_calls(db: Session, *, now: datetime | None = None) -> list[O
         source = sources_by_line.get(line)
         return source.name if source else f"Неизвестная линия {line}"
 
+    clients_with_inbound_miss = {
+        row.client for row in rows if row.call_type == CALL_TYPE_IN and not row.answered
+    }
+
     open_by_client: dict[str, list[CallRecord]] = {}
     for row in rows:
+        if row.client not in clients_with_inbound_miss:
+            continue  # never called us - not the badge's concern, see docstring
         bucket = open_by_client.setdefault(row.client, [])
         if row.talk_sec >= MIN_REAL_TALK_SEC:
             bucket.clear()

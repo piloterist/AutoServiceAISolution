@@ -214,7 +214,32 @@ def test_miss_from_yesterday_still_counts(db_session: Session) -> None:
     assert calls[0].client == "9990000008"
 
 
-def test_outbound_missed_callback_shows_up_as_callback_direction(db_session: Session) -> None:
+def test_outbound_only_thread_with_no_inbound_miss_is_not_shown(db_session: Session) -> None:
+    """We called a number that never called us - not the badge's concern,
+    no matter how many attempts (confirmed product decision, 2026-09-29:
+    "если нам не звонили, а мы клиенту звоним, то не надо подсвечивать")."""
+    for i in range(5):
+        _call(
+            db_session,
+            external_id=f"failed-callback-{i}",
+            when_msk=datetime(2026, 9, 20, 10, i),
+            call_type="OUT",
+            client="9990000009",
+        )
+    db_session.commit()
+
+    assert stats.get_open_missed_calls(db_session, now=NOW) == []
+
+
+def test_outbound_missed_callback_shows_up_alongside_its_inbound_miss(db_session: Session) -> None:
+    _call(
+        db_session,
+        external_id="inbound-miss",
+        when_msk=datetime(2026, 9, 20, 9, 0),
+        call_type="IN",
+        client="9990000009",
+        line="pan",
+    )
     _call(
         db_session,
         external_id="failed-callback",
@@ -225,9 +250,9 @@ def test_outbound_missed_callback_shows_up_as_callback_direction(db_session: Ses
     db_session.commit()
 
     calls = stats.get_open_missed_calls(db_session, now=NOW)
-    assert len(calls) == 1
-    assert calls[0].direction == "callback"
-    assert calls[0].source_label is None  # line only meaningful for IN
+    assert len(calls) == 2
+    callback = next(c for c in calls if c.direction == "callback")
+    assert callback.source_label is None  # line only meaningful for IN
 
 
 def test_fresh_miss_after_resolution_is_not_retroactively_cleared(db_session: Session) -> None:
@@ -301,6 +326,14 @@ def test_rang_not_answered_not_shown_for_outbound_callback(db_session: Session) 
     # something.
     _call(
         db_session,
+        external_id="inbound-miss",
+        when_msk=datetime(2026, 9, 20, 9, 0),
+        call_type="IN",
+        client="9990000013",
+        line="pan",
+    )
+    _call(
+        db_session,
         external_id="failed-callback",
         when_msk=datetime(2026, 9, 20, 10, 0),
         call_type="OUT",
@@ -310,4 +343,5 @@ def test_rang_not_answered_not_shown_for_outbound_callback(db_session: Session) 
     db_session.commit()
 
     calls = stats.get_open_missed_calls(db_session, now=NOW)
-    assert calls[0].rang_not_answered == []
+    callback = next(c for c in calls if c.direction == "callback")
+    assert callback.rang_not_answered == []
