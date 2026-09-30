@@ -10,6 +10,7 @@ pattern as the rest of this codebase's services.
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -198,6 +199,7 @@ def create_user(
     theme: str,
     department_id: uuid.UUID | None,
     workshop_id: uuid.UUID | None,
+    default_repair_type: str | None = None,
 ) -> tuple[User, str | None]:
     user = User(
         full_name=full_name.strip(),
@@ -207,6 +209,7 @@ def create_user(
         theme=theme,
         department_id=department_id,
         workshop_id=workshop_id,
+        default_repair_type=default_repair_type,
     )
     db.add(user)
     db.commit()
@@ -225,6 +228,7 @@ def update_user(
     theme: str,
     department_id: uuid.UUID | None,
     workshop_id: uuid.UUID | None,
+    default_repair_type: str | None = None,
 ) -> tuple[User, str | None] | None:
     user = db.get(User, user_id)
     if user is None:
@@ -237,6 +241,7 @@ def update_user(
     user.theme = theme
     user.department_id = department_id
     user.workshop_id = workshop_id
+    user.default_repair_type = default_repair_type
     db.commit()
     db.refresh(user)
     return _user_with_department_name(db, user)
@@ -283,12 +288,16 @@ def create_employee(
     *,
     full_name: str,
     specialty: str,
+    phone: str | None = None,
+    birth_date: date | None = None,
     department_id: uuid.UUID | None,
     workshop_id: uuid.UUID | None,
 ) -> tuple[Employee, str | None, str | None]:
     employee = Employee(
         full_name=full_name.strip(),
         specialty=specialty,
+        phone=phone.strip() if phone else None,
+        birth_date=birth_date,
         department_id=department_id,
         workshop_id=workshop_id,
     )
@@ -304,6 +313,8 @@ def update_employee(
     *,
     full_name: str,
     specialty: str,
+    phone: str | None = None,
+    birth_date: date | None = None,
     department_id: uuid.UUID | None,
     workshop_id: uuid.UUID | None,
 ) -> tuple[Employee, str | None, str | None] | None:
@@ -312,6 +323,8 @@ def update_employee(
         return None
     employee.full_name = full_name.strip()
     employee.specialty = specialty
+    employee.phone = phone.strip() if phone else None
+    employee.birth_date = birth_date
     employee.department_id = department_id
     employee.workshop_id = workshop_id
     db.commit()

@@ -25,13 +25,13 @@ export function Nav({ user }: { user: SessionUser | null }) {
   const visibleTabs = NAV_TABS.filter((tab) => user?.allowedTabs?.includes(tab.key));
   const items =
     user?.role === ROLE_ADMIN
-      ? [...visibleTabs.map((t) => ({ href: t.key, label: t.label })), { href: "/settings", label: "Settings" }]
+      ? [...visibleTabs.map((t) => ({ href: t.key, label: t.label })), { href: "/settings", label: "Настройки" }]
       : visibleTabs.map((t) => ({ href: t.key, label: t.label }));
 
   return (
     <nav className="nav">
       <Link href="/" className="nav-brand">
-        AutoService Platform
+        Enterprise Stability Platform
       </Link>
       <ul className="nav-list">
         {items.map((item) => (

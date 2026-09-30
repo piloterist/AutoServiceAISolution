@@ -219,6 +219,7 @@ def _user_out(user, department_name: str | None) -> UserOut:
         department_id=user.department_id,
         department_name=department_name,
         workshop_id=user.workshop_id,
+        default_repair_type=user.default_repair_type,
     )
 
 
@@ -245,6 +246,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
             theme=payload.theme,
             department_id=payload.department_id,
             workshop_id=payload.workshop_id,
+            default_repair_type=payload.default_repair_type,
         )
     except Exception as exc:  # unique login violation
         db.rollback()
@@ -273,6 +275,7 @@ def update_user(user_id: uuid.UUID, payload: UserUpdate, db: Session = Depends(g
             theme=payload.theme,
             department_id=payload.department_id,
             workshop_id=payload.workshop_id,
+            default_repair_type=payload.default_repair_type,
         )
     except Exception as exc:
         db.rollback()
@@ -298,6 +301,8 @@ def _employee_out(employee, department_name: str | None, workshop_label: str | N
         id=employee.id,
         full_name=employee.full_name,
         specialty=employee.specialty,
+        phone=employee.phone,
+        birth_date=employee.birth_date,
         department_id=employee.department_id,
         department_name=department_name,
         workshop_id=employee.workshop_id,
@@ -322,6 +327,8 @@ def create_employee(payload: EmployeeWrite, db: Session = Depends(get_db)) -> Em
         db,
         full_name=payload.full_name,
         specialty=payload.specialty,
+        phone=payload.phone,
+        birth_date=payload.birth_date,
         department_id=payload.department_id,
         workshop_id=payload.workshop_id,
     )
@@ -343,6 +350,8 @@ def update_employee(
         employee_id,
         full_name=payload.full_name,
         specialty=payload.specialty,
+        phone=payload.phone,
+        birth_date=payload.birth_date,
         department_id=payload.department_id,
         workshop_id=payload.workshop_id,
     )

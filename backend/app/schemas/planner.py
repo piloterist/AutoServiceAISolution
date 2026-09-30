@@ -117,6 +117,10 @@ class BodyCarOut(BaseModel):
     workshop_id: uuid.UUID
     work_order_id: uuid.UUID | None
     work_order_number: str | None
+    # ЗаказНаряд.ВидРемонта, live from the linked ЗН like work_order_number/
+    # amount above - "Страховой" drives the red "Страховой" label on the
+    # Planner car list (see BodyView.tsx), per product feedback, 2026-09-30.
+    repair_type: str | None
     amount: Decimal | None
     car_description: str | None
     vin: str | None

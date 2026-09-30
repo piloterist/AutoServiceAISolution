@@ -42,5 +42,6 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Authenticated
         department_id=user.department_id,
         department_name=department_name,
         workshop_id=user.workshop_id,
+        default_repair_type=user.default_repair_type,
         allowed_tabs=get_visible_tabs_for_role(db, user.role),
     )

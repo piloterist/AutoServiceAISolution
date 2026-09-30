@@ -29,6 +29,11 @@ export type SessionUser = {
   departmentId: string | null;
   departmentName: string | null;
   workshopId: string | null;
+  // Settings -> Пользователи -> "Вид ремонта по умолчанию" - when set, the
+  // Кузовной Planner opens with its "Вид ремонта" filter defaulted to this
+  // value instead of "Все" (see app/planner/page.tsx, components/planner/
+  // BodyView.tsx). Product spec, 2026-09-30.
+  defaultRepairType: string | null;
   // Baked in at login time from the backend's RoleTabVisibility table (see
   // lib/nav-tabs.ts, middleware.ts) - a snapshot as of login, same
   // staleness tradeoff `role` itself already has (no revocation short of
@@ -121,6 +126,7 @@ export async function readSessionToken(
       departmentId: payload.departmentId,
       departmentName: payload.departmentName,
       workshopId: payload.workshopId,
+      defaultRepairType: payload.defaultRepairType,
       allowedTabs: payload.allowedTabs,
     };
   } catch {

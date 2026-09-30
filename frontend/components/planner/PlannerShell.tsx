@@ -24,6 +24,7 @@ export function PlannerShell({
   employees,
   defaultDepartmentId,
   defaultWorkshopId,
+  defaultRepairType,
   fivesystemsApiEnabled,
 }: {
   departments: OrgDepartment[];
@@ -33,6 +34,11 @@ export function PlannerShell({
   employees: Employee[];
   defaultDepartmentId: string | null;
   defaultWorkshopId: string | null;
+  /** Settings -> Пользователи -> "Вид ремонта по умолчанию" - the Кузовной
+   * tab's own "Вид ремонта" filter starts here instead of "Все" (see
+   * BodyView.tsx). Already resolved to "Все" by app/planner/page.tsx when
+   * the user has no default set. */
+  defaultRepairType: string;
   /** Настройки → Интеграции → "Включить API" - gates the Planner's
    * "Получить ЗН" button in both dialogs below (see SettingsForm.tsx). */
   fivesystemsApiEnabled: boolean;
@@ -139,7 +145,12 @@ export function PlannerShell({
         />
       )}
       {selectedWorkshop && selectedWorkshop.workshop_type === "Кузовной" && (
-        <BodyView workshop={selectedWorkshop} employees={employees} fivesystemsApiEnabled={fivesystemsApiEnabled} />
+        <BodyView
+          workshop={selectedWorkshop}
+          employees={employees}
+          fivesystemsApiEnabled={fivesystemsApiEnabled}
+          defaultRepairType={defaultRepairType}
+        />
       )}
     </div>
   );

@@ -64,6 +64,12 @@ class User(Base):
     workshop_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workshops.id", ondelete="SET NULL"), nullable=True
     )
+    # Optional - one of planner_constants.REPAIR_TYPE_FILTERS. When set,
+    # opening the Кузовной Planner defaults its "Вид ремонта" filter to
+    # this value instead of "Все" (product spec, 2026-09-30: "если у
+    # пользователя выбрано значение в карточке, то открывать кузовной
+    # планер сразу с фильтром по этому полю").
+    default_repair_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

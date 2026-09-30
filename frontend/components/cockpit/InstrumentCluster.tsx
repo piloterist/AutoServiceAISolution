@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
 import { NzpToggle } from "@/components/cockpit/NzpToggle";
@@ -144,6 +144,7 @@ function Needle({
   angle,
   hubR,
   scale = 1,
+  transitionMs,
 }: {
   cx: number;
   cy: number;
@@ -151,12 +152,21 @@ function Needle({
   angle: number;
   hubR: number;
   scale?: number;
+  // Overrides .cockpit-needle's own default CSS transition duration for
+  // this render - used only during MainGauge's one-shot "прогазовка"
+  // reveal (see there), which needs its first rise noticeably slower than
+  // a normal data-driven needle movement.
+  transitionMs?: number;
 }) {
   const w = 10 * scale;
   const tailW = 7 * scale;
   const tail = 28 * scale;
   return (
-    <g transform={`rotate(${angle} ${cx} ${cy})`} className="cockpit-needle">
+    <g
+      transform={`rotate(${angle} ${cx} ${cy})`}
+      className="cockpit-needle"
+      style={transitionMs !== undefined ? { transitionDuration: `${transitionMs}ms` } : undefined}
+    >
       {/* Needle body: points "up" at rest (angle 0), rotated to its real
           reading via the SVG transform above - this module's angle
           convention (clockwise from 12 o'clock) is exactly SVG rotate()'s
@@ -242,6 +252,78 @@ function MainGauge({
   const endAngle = MAIN_GAUGE_START_ANGLE + MAIN_GAUGE_SWEEP;
 
   const displayValue = nzpActive ? effectiveRevenue : revenue;
+
+  // "Прогазовка" reveal (per product feedback, 2026-09-30 - a reference to
+  // how a combustion-engine tach blips on startup, refined twice the same
+  // day: one slow rise from 0 to mid-red, a long hold there with a bit of
+  // natural wobble rather than standing dead still, then settle on the
+  // real reading - no second rise, no dip through blue). A one-shot
+  // sequence of discrete angle jumps, each animated by .cockpit-needle's
+  // own existing CSS transition mechanism (deliberately NOT a parallel CSS
+  // keyframe animation on the needle's transform - see that class's
+  // comment on why a second transform-origin/pivot source is a real bug
+  // magnet here); the REVEAL_*_MS constants override that transition's
+  // default duration for these jumps, via Needle's own transitionMs prop.
+  // Same red-zone math as the red band below.
+  const redStartFraction =
+    scale.labels_millions.length > 2 ? Math.max(0, (scale.labels_millions.length - 3) / (scale.labels_millions.length - 1)) : 0;
+  const redMidAngle = gaugeAngle(MAIN_GAUGE_START_ANGLE, MAIN_GAUGE_SWEEP, (redStartFraction + 1) / 2);
+  // .cockpit-cluster fades in over 5.7s on an ease-out curve, which is
+  // already ~50% opaque well before 1s in - starting the rise any earlier
+  // makes it invisible (per product feedback: "не видно как она
+  // поднимается от нуля... начинать чуть позже, когда прозрачность уже
+  // достигнута процентов на 50").
+  const REVEAL_RISE_START_MS = 1000;
+  const REVEAL_RISE_MS = 1600;
+  const REVEAL_HOLD_MS = 1400;
+  const REVEAL_WOBBLE_STEP_MS = 260;
+  const REVEAL_WOBBLE_MS = 200;
+  const REVEAL_SETTLE_MS = 700;
+  const [revealAngle, setRevealAngle] = useState(MAIN_GAUGE_START_ANGLE);
+  const [revealDurationMs, setRevealDurationMs] = useState(REVEAL_RISE_MS);
+  const [blipDone, setBlipDone] = useState(false);
+
+  useEffect(() => {
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) {
+      setBlipDone(true);
+      return;
+    }
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const at = (delay: number, fn: () => void) => timers.push(setTimeout(fn, delay));
+
+    at(REVEAL_RISE_START_MS, () => {
+      setRevealDurationMs(REVEAL_RISE_MS);
+      setRevealAngle(redMidAngle);
+    });
+
+    // A few small, quick nudges around mid-red instead of standing dead
+    // still through the whole hold - per product feedback: "в красной
+    // зоне пусть она немного меняет положение... а то выглядит не
+    // натурально".
+    const holdStart = REVEAL_RISE_START_MS + REVEAL_RISE_MS;
+    for (let t = 0; t < REVEAL_HOLD_MS; t += REVEAL_WOBBLE_STEP_MS) {
+      at(holdStart + t, () => {
+        setRevealDurationMs(REVEAL_WOBBLE_MS);
+        setRevealAngle(redMidAngle + (Math.random() - 0.5) * 12);
+      });
+    }
+
+    const settleStart = holdStart + REVEAL_HOLD_MS;
+    at(settleStart, () => {
+      setRevealDurationMs(REVEAL_SETTLE_MS);
+      setRevealAngle(needleAngle);
+    });
+    at(settleStart + REVEAL_SETTLE_MS, () => setBlipDone(true));
+
+    return () => timers.forEach(clearTimeout);
+    // Runs once on mount only, like .cockpit-cluster's own reveal fade -
+    // later data/filter changes move the needle straight to its new real
+    // angle via the normal CSS transition, never replaying the blip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const displayAngle = blipDone ? needleAngle : revealAngle;
 
   return (
     <g aria-hidden="true">
@@ -420,7 +502,15 @@ function MainGauge({
         </text>
       )}
 
-      <Needle cx={cx} cy={cy} length={faceR - 24} angle={needleAngle} hubR={26} scale={1.3} />
+      <Needle
+        cx={cx}
+        cy={cy}
+        length={faceR - 24}
+        angle={displayAngle}
+        hubR={26}
+        scale={1.3}
+        transitionMs={blipDone ? undefined : revealDurationMs}
+      />
     </g>
   );
 }
@@ -942,9 +1032,33 @@ export function InstrumentCluster({
           />
         </g>
 
-        {/* Right side: big decorative "P" + digital rows (see spec section 9). */}
-        <text x={1325} y={345} textAnchor="middle" className="cockpit-letter-p" fill="#f4fafa" aria-hidden="true">
-          P
+        {/* Right side: big decorative "Drive" wordmark + digital rows (see
+            spec section 9 for the digital rows; the big letter was plain
+            "P" before - per product feedback, 2026-09-30, it's now a big
+            "D" followed immediately by small "rive", spelling "Drive",
+            with "your business" below it shifted right). */}
+        <text x={1235} y={340} aria-hidden="true">
+          <tspan className="cockpit-letter-d" fill="#f4fafa">
+            D
+          </tspan>
+          {/* Explicit x, not left to flow right after "D" - that flow
+              position depends on the actual rendered width of the "D"
+              glyph, which varies with whichever font in the stack the
+              browser actually has available (e.g. no "Arial Narrow" falls
+              back to the much wider "Segoe UI"), producing an
+              unpredictable gap - per product feedback, 2026-09-30. */}
+          {/* Also an explicit y, not inherited from the parent's 340 -
+              sharing D's own baseline made "rive" read as hanging off D's
+              foot rather than continuing from it (per product feedback,
+              2026-09-30: "буквы не болтались отдельно друг от друга") -
+              raised to sit against D's upper-middle instead, the usual fix
+              for pairing a huge letter with a small suffix. */}
+          <tspan className="cockpit-letter-d-suffix" x={1310} y={323} fill="#8a999e">
+            rive
+          </tspan>
+        </text>
+        <text x={1317} y={348} className="cockpit-letter-d-tagline" fill="#8a999e" aria-hidden="true">
+          your business
         </text>
         <g className="cockpit-digital-rows" aria-hidden="true">
           <text x={1200} y={395} className="cockpit-row-line">

@@ -5,7 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DateInput } from "@/components/DateInput";
 import type { BodyCar, BodyCarStage, BodyCarWrite, Employee, Workshop } from "@/lib/backend-api";
 import { bodyCarsApi } from "@/lib/planner-client";
-import { CAR_STATUS_APPROVAL, CAR_STATUSES, SPECIAL_CAR_STATUSES } from "@/lib/planner-constants";
+import {
+  CAR_STATUS_APPROVAL,
+  CAR_STATUSES,
+  REPAIR_TYPE_FILTERS,
+  SPECIAL_CAR_STATUSES,
+  type RepairTypeFilter,
+} from "@/lib/planner-constants";
 import { addDaysIso, addMonthsIso, diffDaysIso, formatShortDate, formatShortDay, todayIso } from "@/lib/planner-time";
 
 import { BodyCarDialog, carToDraft, emptyCarDraft, type CarDraft } from "./BodyCarDialog";
@@ -126,10 +132,32 @@ function carMatches(car: BodyCar, query: string): boolean {
   return [car.work_order_number, car.car_description, car.vin].filter(Boolean).some((f) => f!.toLowerCase().includes(q));
 }
 
+// The linked ЗН's real ВидРемонта values, as confirmed in production data -
+// "Гарантийный (бесплатный)" is deliberately folded into the same
+// "Гарантийный" bucket as plain "Гарантийный", per product spec, 2026-09-30.
+const WARRANTY_REPAIR_TYPES = ["Гарантийный", "Гарантийный (бесплатный)"];
+const INSURANCE_REPAIR_TYPE = "Страховой";
+
+/** "Вид ремонта" filter (Кузовной Planner toolbar, per product spec,
+ * 2026-09-30): "Текущий" is a catch-all for every ЗН that isn't
+ * Гарантийный/Гарантийный (бесплатный)/Страховой - including a car with no
+ * linked ЗН at all (repair_type null) - not a literal "Текущий" match. */
+function carMatchesRepairTypeFilter(car: BodyCar, filter: RepairTypeFilter): boolean {
+  if (filter === "Все") return true;
+  if (filter === "Страховой") return car.repair_type === INSURANCE_REPAIR_TYPE;
+  if (filter === "Гарантийный") return WARRANTY_REPAIR_TYPES.includes(car.repair_type ?? "");
+  return car.repair_type !== INSURANCE_REPAIR_TYPE && !WARRANTY_REPAIR_TYPES.includes(car.repair_type ?? "");
+}
+
 /** Wraps BodyViewInner and forces a full remount of it (fresh state,
  * fresh useEffect, fresh fetch) after every write, by bumping `key` - see
  * the identical wrapper on MechanicalView for the full reasoning. */
-export function BodyView(props: { workshop: Workshop; employees: Employee[]; fivesystemsApiEnabled: boolean }) {
+export function BodyView(props: {
+  workshop: Workshop;
+  employees: Employee[];
+  fivesystemsApiEnabled: boolean;
+  defaultRepairType: string;
+}) {
   const [instanceKey, setInstanceKey] = useState(0);
   return <BodyViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
 }
@@ -138,16 +166,23 @@ function BodyViewInner({
   workshop,
   employees,
   fivesystemsApiEnabled,
+  defaultRepairType,
   onWritten,
 }: {
   workshop: Workshop;
   employees: Employee[];
   fivesystemsApiEnabled: boolean;
+  defaultRepairType: string;
   onWritten: () => void;
 }) {
   const [currentDate, setCurrentDate] = useState(todayIso());
   const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(21);
   const [search, setSearch] = useState("");
+  const [repairTypeFilter, setRepairTypeFilter] = useState<RepairTypeFilter>(
+    REPAIR_TYPE_FILTERS.includes(defaultRepairType as RepairTypeFilter)
+      ? (defaultRepairType as RepairTypeFilter)
+      : "Все",
+  );
   const [cars, setCars] = useState<BodyCar[]>([]);
   const [dialogDraft, setDialogDraft] = useState<CarDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -200,11 +235,15 @@ function BodyViewInner({
 
   const todayStr = todayIso();
   const hasSearch = search.trim().length > 0;
+  // "Вид ремонта" - a hard filter (unlike search below, which dims rather
+  // than hides): a car whose linked ЗН doesn't match the selected bucket
+  // is dropped before the date-window/search logic ever sees it.
+  const repairFilteredCars = cars.filter((car) => carMatchesRepairTypeFilter(car, repairTypeFilter));
   // Обычные (попавшие в текущее окно дат) машины видны всегда; машины ВНЕ
   // окна показываются, только если сейчас идёт поиск и они ему
   // соответствуют - product ask: искать нужно по всем периодам, но сам
   // график/окно дат при этом двигать не надо.
-  const visibleCars = cars
+  const visibleCars = repairFilteredCars
     .filter((car) => {
       const span = carDisplaySpan(car);
       const inWindow = !span || (span.start <= windowEnd && span.end >= windowStart);
@@ -407,6 +446,22 @@ function BodyViewInner({
             ))}
           </select>
         </div>
+        <div className="grp">
+          <label htmlFor="body-repair-type-filter" className="planner-repair-filter-label">
+            Вид ремонта
+          </label>
+          <select
+            id="body-repair-type-filter"
+            value={repairTypeFilter}
+            onChange={(e) => setRepairTypeFilter(e.target.value as RepairTypeFilter)}
+          >
+            {REPAIR_TYPE_FILTERS.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="grp planner-search-grp">
           <input type="search" placeholder="Поиск автомобиля" value={search} onChange={(e) => setSearch(e.target.value)} />
           <button type="button" onClick={() => setSearch("")}>
@@ -428,7 +483,7 @@ function BodyViewInner({
             <tr>
               <th className="hcar">
                 Список автомобилей в цеху
-                <span className="cnt">{visibleCars.length} из {cars.length}</span>
+                <span className="cnt">{visibleCars.length} из {repairFilteredCars.length}</span>
               </th>
               {days.map((day) => (
                 <th key={day} className={day === todayStr ? "today" : ""} style={{ width: DAY_WIDTH }}>
@@ -459,9 +514,16 @@ function BodyViewInner({
                             </option>
                           ))}
                         </select>
-                        {car.on_site && <span className="planner-body-onsite">На территории</span>}
                       </div>
                     </div>
+                    {(car.repair_type === "Страховой" || car.on_site) && (
+                      <div className="planner-body-flags">
+                        {car.repair_type === "Страховой" && (
+                          <span className="planner-body-insurance">Страховой</span>
+                        )}
+                        {car.on_site && <span className="planner-body-onsite">На территории</span>}
+                      </div>
+                    )}
                     <div className="model" title={car.car_description ?? undefined}>
                       {car.car_description || "—"}
                     </div>

@@ -2564,6 +2564,14 @@ table.admin-data-table td {
   font-size: 0.82rem;
 }
 
+/* Кузовной's "Вид ремонта" filter - see BodyView.tsx, product spec,
+   2026-09-30. */
+.planner-repair-filter-label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .planner-toolbar .seg {
   display: inline-flex;
   border: 1px solid var(--border);
@@ -3009,9 +3017,30 @@ table.bt {
   font-weight: 600;
 }
 
+/* "Страховой"/"На территории" share one line, opposite ends - same size,
+   only color differs (per product feedback, 2026-09-30: "хотел, чтобы они
+   были на одной линии, одним размером шрифта... и с разных сторон
+   строки" - stacking them as separate blocks made the row noticeably
+   taller). Either can appear alone; .planner-body-onsite's own
+   margin-left:auto keeps it pinned to the right edge either way. */
+.planner-body-flags {
+  display: flex;
+  align-items: center;
+}
+
 .planner-body-onsite {
   font-size: 1.06rem;
   color: var(--ok);
+  font-weight: 600;
+  margin-left: auto;
+}
+
+/* Same type treatment as .planner-body-onsite, just red - shown when the
+   linked ЗН's ВидРемонта is "Страховой" (see BodyView.tsx), per product
+   feedback, 2026-09-30. */
+.planner-body-insurance {
+  font-size: 1.06rem;
+  color: var(--down);
   font-weight: 600;
 }
 
@@ -3491,6 +3520,164 @@ main:has(.cockpit-page) {
   }
 }
 
+/* ---- ESP branding row (see components/cockpit/EspBrand.tsx) - sits
+   above .cockpit-cluster in normal flow, which is what pushes the whole
+   instrument cluster down a bit (per product feedback, 2026-09-30:
+   "основную часть немного сдвигаем вниз") without touching the SVG's own
+   viewBox/coordinates. Fades in on the same schedule as .cockpit-cluster
+   itself (shared `revealed` state, same transition duration) so the
+   letters visibly emerge from darkness together with the gauges - see
+   that class below for why this is a single un-staggered fade. */
+.cockpit-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 1.4rem;
+  padding: 0 0.25rem;
+  margin-bottom: 0.9rem;
+  min-height: 64px;
+  opacity: 0;
+  transition: opacity 5.7s ease-out;
+}
+
+.cockpit-brand-row[data-revealed="true"] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-brand-row {
+    opacity: 1;
+    transition: none;
+  }
+}
+
+/* Half the size of .cockpit-letter-d's own 128px, same weight - the "ESP"
+   letters are this dashboard's actual system name (per product feedback:
+   "это основное название системы"). */
+.cockpit-esp-letters {
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-size: 64px;
+  font-weight: 800;
+  color: #f4fafa;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.cockpit-esp-tagline {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  font-style: italic;
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  white-space: nowrap;
+}
+
+.cockpit-esp-tagline-en {
+  font-size: 1.8rem;
+  line-height: 1.1;
+  color: #c8d3d6;
+}
+
+.cockpit-esp-tagline-ru {
+  font-size: 1.5rem;
+  line-height: 1.1;
+  color: #8a999e;
+}
+
+.cockpit-esp-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #e58a12;
+  flex-shrink: 0;
+}
+
+/* The source file is a JPG with a black (not transparent) background -
+   screen blend mode makes true black contribute nothing to the composite,
+   so it disappears into this page's own near-black background instead of
+   showing as a visible square. */
+.cockpit-esp-indicator-icon {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  mix-blend-mode: screen;
+}
+
+.cockpit-esp-indicator-on {
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-weight: 800;
+  font-size: 1.4rem;
+  letter-spacing: 0.05em;
+}
+
+/* Snaps through a few rough on/off/dim steps before settling fully lit -
+   a real fluorescent-tube flicker, not a smooth fade (per product
+   feedback: "загораться должен как люминесцентная лампа, с таким
+   мерцанием", with a reference photo of a real ESP dash light).
+   steps(1, end) between keyframes keeps each jump an instant snap rather
+   than an eased fade. */
+@keyframes cockpit-esp-flicker {
+  0% {
+    opacity: 0;
+  }
+  2% {
+    opacity: 1;
+  }
+  4% {
+    opacity: 0.1;
+  }
+  7% {
+    opacity: 1;
+  }
+  9% {
+    opacity: 0.2;
+  }
+  13% {
+    opacity: 1;
+  }
+  17% {
+    opacity: 0.15;
+  }
+  21% {
+    opacity: 1;
+  }
+  26% {
+    opacity: 0.4;
+  }
+  31% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.6;
+  }
+  46% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.8;
+  }
+  66% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Duration tuned so this finishes at roughly the same moment MainGauge's
+   needle settles on its real reading - see EspBrand.tsx's
+   ICON_DELAY_AFTER_TYPING_MS comment. */
+.cockpit-esp-indicator--flicker {
+  animation: cockpit-esp-flicker 2300ms steps(1, end) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-esp-indicator--flicker {
+    animation: none;
+  }
+}
+
 .cockpit-cluster {
   position: relative;
   width: 100%;
@@ -3554,10 +3741,25 @@ main:has(.cockpit-page) {
   font-size: 19px;
 }
 
-.cockpit-letter-p {
+.cockpit-letter-d {
   font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
   font-size: 128px;
   font-weight: 800;
+  opacity: 0.92;
+}
+
+/* "rive" right after the big "D", spelling "Drive", and the "your
+   business" tagline below it - per product feedback, 2026-09-30,
+   deliberately sharing one style (same size/weight/italic) rather than
+   two separately-tuned rules, after a weight mismatch made them read as
+   two different typefaces. */
+.cockpit-letter-d-suffix,
+.cockpit-letter-d-tagline {
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-style: italic;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
   opacity: 0.92;
 }
 

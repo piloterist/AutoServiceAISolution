@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models.call_record import CallRecord
+from app.models.employee import Employee
 from app.models.phone_source import PhoneSource
 from app.services import telephony_stats_service as stats
 
@@ -345,3 +346,22 @@ def test_rang_not_answered_not_shown_for_outbound_callback(db_session: Session) 
     calls = stats.get_open_missed_calls(db_session, now=NOW)
     callback = next(c for c in calls if c.direction == "callback")
     assert callback.rang_not_answered == []
+
+
+def test_employee_phone_never_shows_on_badge(db_session: Session) -> None:
+    """A known employee's own phone never lights up the Planner badge, no
+    matter how many real misses it has (per product spec, 2026-09-30 -
+    replaces the old standalone "Исключения" table: staff calling/being
+    called by each other internally was the actual original problem)."""
+    _call(
+        db_session,
+        external_id="miss",
+        when_msk=datetime(2026, 9, 20, 10, 0),
+        call_type="IN",
+        client="9990000014",
+        line="pan",
+    )
+    db_session.add(Employee(full_name="Служебный номер", specialty="Механик", phone="9990000014"))
+    db_session.commit()
+
+    assert stats.get_open_missed_calls(db_session, now=NOW) == []

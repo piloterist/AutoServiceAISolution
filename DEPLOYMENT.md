@@ -231,6 +231,49 @@ REST API with the same `YANDEX_DISK_OAUTH_TOKEN` value configured on the
 backend (pasted directly into the 1C module - see
 `1c/TestExportOrders.bsl`) - no separate login/password needed.
 
+## Known issue: Zeon (IP-telephony) unreachable from prod, works fine locally
+
+First hit right after the Cockpit/telephony feature deploy (2026-09-28):
+the Zeon connection worked perfectly from local/TEST (same network as the
+operator's own machine) with the exact same `zeon_api_url`/`zeon_api_key`
+copied verbatim onto prod, but every call from the Timeweb-hosted backend to
+Zeon's API (`https://z138.fpg.ru/zeon/api/v2/start.php`) hung and timed out.
+
+Diagnosis (via two one-shot temporary debug endpoints added to
+`app/api/health.py`, hit once, then reverted - see git history around
+commits `c37c806`/`2a50390`/`73babcb`/`ddab350` for the exact throwaway code
+if this needs re-diagnosing):
+
+1. Prod's outbound/egress IP (via `https://api.ipify.org`, from inside the
+   running backend) was **`5.42.114.135`** at the time - this is dynamic on
+   Timeweb's App Platform in general, so re-check it if this recurs rather
+   than assuming it's still the same value.
+2. A raw socket test against `z138.fpg.ru:443` from prod showed **TCP
+   connects instantly** (so this is not a routing/ASN-level block the way
+   Railway's IP ranges were blocked by RU networks - see the Yandex.Disk
+   relay section above for that unrelated older issue), but the **TLS
+   handshake on top of that same connection hangs and times out** (~8s,
+   `_ssl.c:993`). The same TLS handshake against the same host succeeds in
+   under 0.2s from the operator's own network.
+3. Checked Zeon's own web panel (Настройки → API, → Безопасность, Сетевые
+   настройки, Система → Списки, Системный журнал) end to end - **no
+   IP-allowlist or access-restriction setting exists anywhere in the Zeon
+   application itself.** Since the block happens between TCP and TLS - i.e.
+   before any request ever reaches the Zeon application - this is
+   consistent with the block living in front of Zeon entirely.
+
+**Conclusion**: this smells like a firewall/fail2ban-style rule on the
+server hosting `z138.fpg.ru` itself (or a security appliance in front of
+it) reacting to the TLS ClientHello from an unrecognized source IP - not a
+misconfiguration in this repo's code/settings, not a Zeon account setting,
+and not a Timeweb outbound restriction (TCP proves that path is fine).
+**Fix**: whoever administers that server (this is 5Systems' hosting per the
+"5SYSTEMS: AUTO" module installed in the same Zeon instance - the same
+party from the Alpha-Auto/1C RDP history) needs to allow prod's egress IP
+through on port 443, with the specific detail that TCP succeeds but TLS
+hangs (points them straight at a firewall/IPS rule, not an application
+setting).
+
 ## What stays local
 
 `docker-compose.yml` and `.env` are unaffected by any of the above - local

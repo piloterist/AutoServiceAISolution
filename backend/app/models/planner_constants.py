@@ -29,6 +29,7 @@ CAR_STATUSES = (
 
 # Кузовной этап - each BodyCarStage row picks one of these.
 BODY_STAGE_TYPES = (
+    "Осмотр",
     "Приёмка",
     "Разбор",
     "Дефектовка",
@@ -41,6 +42,28 @@ BODY_STAGE_TYPES = (
     "Ждём з/ч",
     "Оплата",
     "Другое",
+)
+
+# Кузовной Planner "Вид ремонта" filter (BodyView.tsx) + Settings ->
+# Пользователи -> "Вид ремонта по умолчанию" (User.default_repair_type) -
+# per product feedback, 2026-09-30. Not the same closed set as a real
+# WorkOrder.repair_type value (1C's own ЗаказНаряд.ВидРемонта text, e.g.
+# "Страховой"/"Гарантийный"/"Гарантийный (бесплатный)"/"Текущий"/"Основной"/
+# ...) - "Текущий" here is a catch-all bucket for every ЗН that isn't
+# Гарантийный/Гарантийный (бесплатный)/Страховой, not a literal repair_type
+# match. The actual car<->bucket matching only ever happens client-side
+# (BodyView.tsx's carMatchesRepairTypeFilter) since BodyCar.repair_type is
+# read live from the linked ЗН, never stored - this tuple exists purely to
+# validate User.default_repair_type at the schema layer.
+REPAIR_TYPE_FILTER_ALL = "Все"
+REPAIR_TYPE_FILTER_CURRENT = "Текущий"
+REPAIR_TYPE_FILTER_WARRANTY = "Гарантийный"
+REPAIR_TYPE_FILTER_INSURANCE = "Страховой"
+REPAIR_TYPE_FILTERS = (
+    REPAIR_TYPE_FILTER_ALL,
+    REPAIR_TYPE_FILTER_CURRENT,
+    REPAIR_TYPE_FILTER_WARRANTY,
+    REPAIR_TYPE_FILTER_INSURANCE,
 )
 
 # Assigned round-robin to new BodyCar rows (product brief: "цвет машины на

@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     departmentId: user.department_id,
     departmentName: user.department_name,
     workshopId: user.workshop_id,
+    defaultRepairType: user.default_repair_type,
     allowedTabs: user.allowed_tabs,
   });
   const response = NextResponse.redirect(absoluteUrl(next, request), { status: 303 });

@@ -5,12 +5,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, time
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
 from app.models.employee import SPECIALTIES
+from app.models.planner_constants import REPAIR_TYPE_FILTERS
 from app.models.role_tab_visibility import NAV_TAB_KEYS
 from app.models.user import ROLES, THEMES
 from app.models.workshop import WEEKDAY_CHOICES, WORKSHOP_TYPES
@@ -106,6 +107,7 @@ class UserOut(BaseModel):
     department_id: uuid.UUID | None
     department_name: str | None
     workshop_id: uuid.UUID | None
+    default_repair_type: str | None
 
     model_config = {"from_attributes": True}
 
@@ -118,12 +120,18 @@ class UserCreate(BaseModel):
     theme: str
     department_id: uuid.UUID | None = None
     workshop_id: uuid.UUID | None = None
+    default_repair_type: str | None = None
 
     def validate_role(self) -> None:
         if self.role not in ROLES:
             raise ValueError(f"role must be one of {ROLES}")
         if self.theme not in THEMES:
             raise ValueError(f"theme must be one of {THEMES}")
+        if (
+            self.default_repair_type is not None
+            and self.default_repair_type not in REPAIR_TYPE_FILTERS
+        ):
+            raise ValueError(f"default_repair_type must be one of {REPAIR_TYPE_FILTERS}")
 
 
 class UserUpdate(BaseModel):
@@ -135,12 +143,18 @@ class UserUpdate(BaseModel):
     theme: str
     department_id: uuid.UUID | None = None
     workshop_id: uuid.UUID | None = None
+    default_repair_type: str | None = None
 
     def validate_role(self) -> None:
         if self.role not in ROLES:
             raise ValueError(f"role must be one of {ROLES}")
         if self.theme not in THEMES:
             raise ValueError(f"theme must be one of {THEMES}")
+        if (
+            self.default_repair_type is not None
+            and self.default_repair_type not in REPAIR_TYPE_FILTERS
+        ):
+            raise ValueError(f"default_repair_type must be one of {REPAIR_TYPE_FILTERS}")
 
 
 # ---- Сотрудники ---------------------------------------------------------
@@ -150,6 +164,11 @@ class EmployeeOut(BaseModel):
     id: uuid.UUID
     full_name: str
     specialty: str
+    # Any format, typed by hand - matched against real calls by
+    # normalizing on read, see services/telephony_stats_service
+    # ._excluded_phones (replaces the old standalone "Исключения" table).
+    phone: str | None
+    birth_date: date | None
     department_id: uuid.UUID | None
     department_name: str | None
     workshop_id: uuid.UUID | None
@@ -161,6 +180,8 @@ class EmployeeOut(BaseModel):
 class EmployeeWrite(BaseModel):
     full_name: str = Field(min_length=1, max_length=255)
     specialty: str
+    phone: str | None = Field(default=None, max_length=30)
+    birth_date: date | None = None
     department_id: uuid.UUID | None = None
     workshop_id: uuid.UUID | None = None
 
@@ -245,6 +266,7 @@ class AuthenticatedUser(BaseModel):
     department_id: uuid.UUID | None
     department_name: str | None
     workshop_id: uuid.UUID | None
+    default_repair_type: str | None
     # Baked in at login time from RoleTabVisibility - see
     # services/admin_service.get_visible_tabs_for_role.
     allowed_tabs: list[str]

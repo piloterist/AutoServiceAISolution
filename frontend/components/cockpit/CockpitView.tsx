@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { EspBrand } from "@/components/cockpit/EspBrand";
 import { InstrumentCluster } from "@/components/cockpit/InstrumentCluster";
 import type { CockpitSnapshot, WorkshopOption } from "@/lib/backend-api";
 
@@ -179,6 +180,8 @@ export function CockpitView({
   return (
     <div className="cockpit-page">
       {error && <p className="admin-form-error">{error}</p>}
+
+      <EspBrand revealed={revealed} />
 
       <div className="cockpit-cluster" data-revealed={revealed}>
         <InstrumentCluster

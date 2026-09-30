@@ -334,6 +334,38 @@ def test_create_and_list_body_car(client, auth_headers, body_workshop) -> None:
     assert len(listed.json()) == 1
 
 
+def test_body_car_surfaces_linked_work_order_repair_type(
+    client, auth_headers, body_workshop, sample_work_order, db_session: Session
+) -> None:
+    """repair_type is live from the linked ЗН (like work_order_number/
+    amount) - "Страховой" drives the red label on the Planner car list, see
+    BodyView.tsx (product feedback, 2026-09-30)."""
+    sample_work_order.repair_type = "Страховой"
+    db_session.commit()
+
+    response = client.post(
+        f"{PLANNER_URL}/workshops/{body_workshop.id}/cars",
+        headers=auth_headers,
+        json=_car_payload(work_order_id=str(sample_work_order.id)),
+    )
+    assert response.status_code == 201
+    assert response.json()["repair_type"] == "Страховой"
+
+    listed = client.get(f"{PLANNER_URL}/workshops/{body_workshop.id}/cars", headers=auth_headers)
+    assert listed.json()[0]["repair_type"] == "Страховой"
+
+
+def test_body_car_repair_type_null_without_linked_work_order(
+    client, auth_headers, body_workshop
+) -> None:
+    response = client.post(
+        f"{PLANNER_URL}/workshops/{body_workshop.id}/cars",
+        headers=auth_headers,
+        json=_car_payload(),
+    )
+    assert response.json()["repair_type"] is None
+
+
 def test_body_car_colors_rotate_round_robin(client, auth_headers, body_workshop) -> None:
     colors = []
     for _ in range(3):

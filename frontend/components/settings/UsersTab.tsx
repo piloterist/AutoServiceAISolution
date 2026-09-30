@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { usersApi } from "@/lib/admin-client";
 import { USER_ROLES, USER_THEMES } from "@/lib/admin-constants";
 import type { OrgDepartment, OrgUser, Workshop } from "@/lib/backend-api";
+import { REPAIR_TYPE_FILTERS } from "@/lib/planner-constants";
 
 import { AdminModal } from "./AdminModal";
 
@@ -16,6 +17,7 @@ type FormState = {
   theme: string;
   department_id: string; // "" = не выбрано
   workshop_id: string;
+  default_repair_type: string; // "" = не задано
 };
 
 function emptyForm(): FormState {
@@ -27,6 +29,7 @@ function emptyForm(): FormState {
     theme: USER_THEMES[0].value,
     department_id: "",
     workshop_id: "",
+    default_repair_type: "",
   };
 }
 
@@ -39,6 +42,7 @@ function toForm(user: OrgUser): FormState {
     theme: user.theme,
     department_id: user.department_id ?? "",
     workshop_id: user.workshop_id ?? "",
+    default_repair_type: user.default_repair_type ?? "",
   };
 }
 
@@ -98,6 +102,7 @@ export function UsersTab({
           theme: form.theme,
           department_id: form.department_id || null,
           workshop_id: form.workshop_id || null,
+          default_repair_type: form.default_repair_type || null,
         });
         setUsers((prev) => [...prev, created].sort((a, b) => a.full_name.localeCompare(b.full_name)));
       } else if (editing) {
@@ -109,6 +114,7 @@ export function UsersTab({
           theme: form.theme,
           department_id: form.department_id || null,
           workshop_id: form.workshop_id || null,
+          default_repair_type: form.default_repair_type || null,
         });
         setUsers((prev) =>
           prev.map((u) => (u.id === updated.id ? updated : u)).sort((a, b) => a.full_name.localeCompare(b.full_name)),
@@ -286,6 +292,24 @@ export function UsersTab({
               {availableWorkshops.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.department_name} / {w.workshop_type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="admin-form-field">
+            <label htmlFor="user-default-repair-type">
+              Вид ремонта по умолчанию <span className="admin-hint">(для кузовного планировщика)</span>
+            </label>
+            <select
+              id="user-default-repair-type"
+              value={form.default_repair_type}
+              onChange={(e) => setForm((prev) => ({ ...prev, default_repair_type: e.target.value }))}
+            >
+              <option value="">— не задано —</option>
+              {REPAIR_TYPE_FILTERS.map((type) => (
+                <option key={type} value={type}>
+                  {type}
                 </option>
               ))}
             </select>

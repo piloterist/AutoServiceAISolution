@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import { employeesApi } from "@/lib/admin-client";
 import { SPECIALTIES } from "@/lib/admin-constants";
 import type { Employee, OrgDepartment, Workshop } from "@/lib/backend-api";
@@ -11,18 +12,29 @@ import { AdminModal } from "./AdminModal";
 type FormState = {
   full_name: string;
   specialty: string;
+  phone: string;
+  birth_date: string; // "" = не указано, иначе "YYYY-MM-DD"
   department_id: string; // "" = не выбрано
   workshop_id: string;
 };
 
 function emptyForm(): FormState {
-  return { full_name: "", specialty: SPECIALTIES[0], department_id: "", workshop_id: "" };
+  return {
+    full_name: "",
+    specialty: SPECIALTIES[0],
+    phone: "",
+    birth_date: "",
+    department_id: "",
+    workshop_id: "",
+  };
 }
 
 function toForm(employee: Employee): FormState {
   return {
     full_name: employee.full_name,
     specialty: employee.specialty,
+    phone: employee.phone ?? "",
+    birth_date: employee.birth_date ?? "",
     department_id: employee.department_id ?? "",
     workshop_id: employee.workshop_id ?? "",
   };
@@ -75,6 +87,8 @@ export function EmployeesTab({
       const payload = {
         full_name: form.full_name.trim(),
         specialty: form.specialty,
+        phone: form.phone.trim() || null,
+        birth_date: form.birth_date || null,
         department_id: form.department_id || null,
         workshop_id: form.workshop_id || null,
       };
@@ -135,6 +149,7 @@ export function EmployeesTab({
           <tr>
             <th>ФИО</th>
             <th>Специальность</th>
+            <th>Телефон</th>
             <th>Подразделение</th>
             <th>Цех</th>
           </tr>
@@ -148,13 +163,14 @@ export function EmployeesTab({
             >
               <td>{employee.full_name}</td>
               <td>{employee.specialty}</td>
+              <td>{employee.phone ?? "—"}</td>
               <td>{employee.department_name ?? "—"}</td>
               <td>{employee.workshop_label ?? "—"}</td>
             </tr>
           ))}
           {employees.length === 0 && (
             <tr>
-              <td colSpan={4} className="admin-empty-row">
+              <td colSpan={5} className="admin-empty-row">
                 Сотрудников пока нет
               </td>
             </tr>
@@ -191,6 +207,26 @@ export function EmployeesTab({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div className="admin-form-field">
+            <label htmlFor="emp-phone">Телефон</label>
+            <input
+              id="emp-phone"
+              value={form.phone}
+              onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
+              placeholder="+7 999 000-00-00"
+            />
+          </div>
+
+          <div className="admin-form-field">
+            <label htmlFor="emp-birth-date">Дата рождения</label>
+            <DateInput
+              id="emp-birth-date"
+              value={form.birth_date}
+              onChange={(iso) => setForm((prev) => ({ ...prev, birth_date: iso }))}
+              ariaLabel="Дата рождения"
+            />
           </div>
 
           <div className="admin-form-field">

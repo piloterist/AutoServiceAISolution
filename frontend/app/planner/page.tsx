@@ -72,6 +72,7 @@ export default async function PlannerPage() {
           employees={employees}
           defaultDepartmentId={user?.departmentId ?? null}
           defaultWorkshopId={user?.workshopId ?? null}
+          defaultRepairType={user?.defaultRepairType ?? "Все"}
           fivesystemsApiEnabled={fivesystemsApiEnabled}
         />
       )}

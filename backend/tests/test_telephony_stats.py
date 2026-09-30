@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.models.call_record import CallRecord
+from app.models.employee import Employee
 from app.models.phone_source import PhoneSource
 from app.services import telephony_stats_service as stats
 
@@ -211,6 +212,49 @@ def test_list_line_calls_labels_client_self_recall(db_session: Session, scenario
         ("13:00:00", "in", "incoming", "9990000004"),
         ("13:30:00", "in", "client_recall", "9990000004"),
     ]
+
+
+def test_compute_day_stats_ignores_employee_phone(db_session: Session, scenario: None) -> None:
+    """A known employee's phone never counts toward any telephony reporting
+    (per product spec, 2026-09-30 - replaces the old standalone "Исключения"
+    table). scenario's own client "9990000003" is a real no_reaction miss on
+    line "pan" - matching it to an employee should drop it from every count."""
+    db_session.add(Employee(full_name="Служебный номер", specialty="Механик", phone="9990000003"))
+    db_session.commit()
+
+    doc = stats.compute_day_stats(db_session, DAY)
+    summary = doc["summary"]
+
+    assert summary["inbound"]["total"] == 4  # was 5
+    assert summary["inbound"]["missed"] == 2  # was 3
+    assert summary["missed_clients_outcome"]["no_reaction"] == 0  # was 1
+    assert "9990000003" not in {m["client"] for m in doc["missed_clients"]}
+
+
+def test_compute_source_summary_ignores_employee_phone(db_session: Session, scenario: None) -> None:
+    db_session.add(Employee(full_name="Служебный номер", specialty="Механик", phone="9990000003"))
+    db_session.commit()
+    pan_source = PhoneSource(
+        line_code="pan", name="2GIS", group_name="Карты и каталоги", sort_order=1
+    )
+    db_session.add(pan_source)
+    db_session.commit()
+
+    rows = stats.compute_source_summary(db_session, DAY, DAY, [pan_source])
+    pan = next(r for r in rows if r.line_code == "pan")
+
+    assert pan.inbound_total == 2  # was 3
+    assert pan.unique_missed_callers == 1  # was 2
+
+
+def test_list_line_calls_ignores_employee_phone(db_session: Session, scenario: None) -> None:
+    db_session.add(Employee(full_name="Служебный номер", specialty="Механик", phone="9990000003"))
+    db_session.commit()
+
+    events = stats.list_line_calls(db_session, DAY, DAY, "pan")
+    clients = {e.client for e in events}
+
+    assert "9990000003" not in clients
 
 
 def test_list_line_calls_surfaces_rang_not_answered(db_session: Session) -> None:

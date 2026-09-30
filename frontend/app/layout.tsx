@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AutoService Platform",
+  title: "Enterprise Stability Platform",
   description: "Multi-tenant hosted platform for auto service work order management",
 };
 

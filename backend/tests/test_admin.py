@@ -229,6 +229,36 @@ def test_user_create_rejects_unknown_role(client, auth_headers) -> None:
     assert response.status_code == 422
 
 
+def test_user_default_repair_type_persists_and_surfaces_at_login(client, auth_headers) -> None:
+    """Settings -> Пользователи -> "Вид ремонта по умолчанию" - baked into
+    the login response so the frontend can default the Кузовной Planner's
+    filter to it (product spec, 2026-09-30)."""
+    created = _create_user(
+        client, auth_headers, login="body-default", default_repair_type="Страховой"
+    )
+    assert created.status_code == 201
+    assert created.json()["default_repair_type"] == "Страховой"
+
+    login = client.post(
+        "/api/v1/auth/login",
+        headers=auth_headers,
+        json={"login": "body-default", "password": "secret1"},
+    )
+    assert login.status_code == 200
+    assert login.json()["default_repair_type"] == "Страховой"
+
+
+def test_user_default_repair_type_optional_and_null_by_default(client, auth_headers) -> None:
+    response = _create_user(client, auth_headers, login="no-default")
+    assert response.status_code == 201
+    assert response.json()["default_repair_type"] is None
+
+
+def test_user_create_rejects_unknown_repair_type(client, auth_headers) -> None:
+    response = _create_user(client, auth_headers, default_repair_type="Плановый")
+    assert response.status_code == 422
+
+
 # ---- Статусы слесарки ------------------------------------------------
 
 

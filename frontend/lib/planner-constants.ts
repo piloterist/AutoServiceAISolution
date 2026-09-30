@@ -18,7 +18,18 @@ export const CAR_STATUS_APPROVAL = "Согласование";
 export const CAR_STATUS_READY_FOR_PICKUP = "Готова к выдаче";
 export const SPECIAL_CAR_STATUSES = [CAR_STATUS_APPROVAL, CAR_STATUS_READY_FOR_PICKUP] as const;
 
+// Кузовной Planner "Вид ремонта" filter (BodyView.tsx) + Settings ->
+// Пользователи -> "Вид ремонта по умолчанию" - not the same closed set as
+// a real WorkOrder.repair_type value (1C's own ЗаказНаряд.ВидРемонта text,
+// e.g. "Страховой"/"Гарантийный"/"Гарантийный (бесплатный)"/"Текущий"/...) -
+// "Текущий" here is a catch-all bucket for every ЗН that isn't
+// Гарантийный/Гарантийный (бесплатный)/Страховой, not a literal match -
+// see BodyView.tsx's carMatchesRepairTypeFilter.
+export const REPAIR_TYPE_FILTERS = ["Все", "Текущий", "Гарантийный", "Страховой"] as const;
+export type RepairTypeFilter = (typeof REPAIR_TYPE_FILTERS)[number];
+
 export const BODY_STAGE_TYPES = [
+  "Осмотр",
   "Приёмка",
   "Разбор",
   "Дефектовка",

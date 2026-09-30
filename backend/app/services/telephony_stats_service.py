@@ -24,16 +24,18 @@ table.
 
 from __future__ import annotations
 
+import re
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.call_record import CALL_TYPE_IN, CALL_TYPE_OUT, CallRecord
+from app.models.employee import Employee
 from app.models.phone_source import GROUP_OTHER, SOURCE_GROUPS, PhoneSource
 
 CALLBACK_WINDOW = timedelta(hours=24)
@@ -177,12 +179,39 @@ def parse_operator_names(value: str | None) -> dict[str, str]:
     return names
 
 
-def _fetch_recs(db: Session, start_utc: datetime, end_utc: datetime) -> list[_Rec]:
-    rows = db.scalars(
-        select(CallRecord).where(
-            CallRecord.occurred_at >= start_utc, CallRecord.occurred_at < end_utc
-        )
-    ).all()
+def _normalize_phone(value: str | None) -> str:
+    """Last 10 digits - same convention as CallRecord.client (see
+    services/zeon_client.py's own _norm_phone)."""
+    digits = re.sub(r"\D", "", value or "")
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+def _excluded_phones(db: Session) -> set[str]:
+    """Any phone number belonging to a known employee (Settings ->
+    Сотрудники, models.employee.Employee.phone) is dropped from every bit
+    of telephony reporting entirely - replaces the old standalone
+    "Исключения" table (per product feedback, 2026-09-30: "исключаем
+    телефоны из недозвонов из этой таблицы [Сотрудники] вместо той что
+    удаляем" - staff calling/being called by each other internally showing
+    up as "missed calls" was the actual original problem). Employee.phone
+    is stored as typed (any format), so normalized here the same way
+    CallRecord.client already is at import time."""
+    raw_phones = db.scalars(select(Employee.phone).where(Employee.phone.is_not(None)))
+    normalized = {_normalize_phone(p) for p in raw_phones}
+    normalized.discard("")
+    return normalized
+
+
+def _fetch_recs(
+    db: Session, start_utc: datetime, end_utc: datetime, excluded: set[str]
+) -> list[_Rec]:
+    conditions = [CallRecord.occurred_at >= start_utc, CallRecord.occurred_at < end_utc]
+    if excluded:
+        # NULL NOT IN (...) evaluates to NULL (row dropped) in plain SQL -
+        # explicitly keeping client IS NULL rows avoids silently excluding
+        # every call with no caller ID the moment any exclusion exists.
+        conditions.append(or_(CallRecord.client.is_(None), CallRecord.client.notin_(excluded)))
+    rows = db.scalars(select(CallRecord).where(*conditions)).all()
     return [_row_to_rec(r) for r in rows]
 
 
@@ -193,10 +222,13 @@ def _period_and_tail_recs(
     period_end_utc = _msk_naive_to_utc(datetime.combine(end_day + timedelta(days=1), time.min))
     now_utc = datetime.now(UTC)
 
-    period_recs = _fetch_recs(db, period_start_utc, period_end_utc)
+    excluded = _excluded_phones(db)
+    period_recs = _fetch_recs(db, period_start_utc, period_end_utc, excluded)
     tail_end_utc = min(period_end_utc + CALLBACK_WINDOW, now_utc)
     later_recs = (
-        _fetch_recs(db, period_end_utc, tail_end_utc) if tail_end_utc > period_end_utc else []
+        _fetch_recs(db, period_end_utc, tail_end_utc, excluded)
+        if tail_end_utc > period_end_utc
+        else []
     )
     return period_recs, later_recs
 
@@ -687,17 +719,22 @@ def get_open_missed_calls(db: Session, *, now: datetime | None = None) -> list[O
     consider it answered.
     """
     start_utc, end_utc = _missed_badge_window_utc(now)
+    excluded = _excluded_phones(db)
+
+    conditions = [
+        CallRecord.occurred_at >= start_utc,
+        CallRecord.occurred_at < end_utc,
+        CallRecord.call_type.in_((CALL_TYPE_IN, CALL_TYPE_OUT)),
+        CallRecord.client.is_not(None),
+        CallRecord.client != "",
+    ]
+    if excluded:
+        conditions.append(CallRecord.client.notin_(excluded))
 
     rows = (
         db.execute(
             select(CallRecord)
-            .where(
-                CallRecord.occurred_at >= start_utc,
-                CallRecord.occurred_at < end_utc,
-                CallRecord.call_type.in_((CALL_TYPE_IN, CALL_TYPE_OUT)),
-                CallRecord.client.is_not(None),
-                CallRecord.client != "",
-            )
+            .where(*conditions)
             .order_by(CallRecord.client, CallRecord.occurred_at)
         )
         .scalars()

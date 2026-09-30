@@ -465,6 +465,7 @@ export type AuthenticatedUser = {
   department_id: string | null;
   department_name: string | null;
   workshop_id: string | null;
+  default_repair_type: string | null;
   allowed_tabs: string[];
 };
 
@@ -603,6 +604,7 @@ export type OrgUser = {
   department_id: string | null;
   department_name: string | null;
   workshop_id: string | null;
+  default_repair_type: string | null;
 };
 
 export type OrgUserCreate = {
@@ -613,6 +615,7 @@ export type OrgUserCreate = {
   theme: string;
   department_id: string | null;
   workshop_id: string | null;
+  default_repair_type: string | null;
 };
 
 export type OrgUserUpdate = {
@@ -623,6 +626,7 @@ export type OrgUserUpdate = {
   theme: string;
   department_id: string | null;
   workshop_id: string | null;
+  default_repair_type: string | null;
 };
 
 export function getOrgUsers(): Promise<OrgUser[]> {
@@ -683,6 +687,8 @@ export type Employee = {
   id: string;
   full_name: string;
   specialty: string;
+  phone: string | null;
+  birth_date: string | null; // "YYYY-MM-DD"
   department_id: string | null;
   department_name: string | null;
   workshop_id: string | null;
@@ -692,6 +698,8 @@ export type Employee = {
 export type EmployeeWrite = {
   full_name: string;
   specialty: string;
+  phone: string | null;
+  birth_date: string | null; // "YYYY-MM-DD"
   department_id: string | null;
   workshop_id: string | null;
 };
@@ -874,6 +882,10 @@ export type BodyCar = {
   workshop_id: string;
   work_order_id: string | null;
   work_order_number: string | null;
+  // ЗаказНаряд.ВидРемонта, live from the linked ЗН - "Страховой" drives
+  // the red label on the Planner car list, see components/planner/
+  // BodyView.tsx.
+  repair_type: string | null;
   amount: string | null;
   car_description: string | null;
   vin: string | null;
