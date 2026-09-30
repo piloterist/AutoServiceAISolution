@@ -133,14 +133,36 @@ def compute_gauge_scale(plan_rub: Decimal) -> GaugeScale:
     )
 
 
-def period_bounds(now: datetime | None = None) -> tuple[datetime, datetime]:
-    """Current Moscow-local calendar month, start inclusive / now exclusive
-    (both returned as UTC-aware datetimes, ready to compare against
-    timestamptz columns directly)."""
+def period_bounds(
+    now: datetime | None = None,
+    *,
+    year: int | None = None,
+    month: int | None = None,
+) -> tuple[datetime, datetime]:
+    """Moscow-local calendar month bounds (both returned as UTC-aware
+    datetimes, ready to compare against timestamptz columns directly).
+
+    `year`/`month` pick which month (both omitted - the default - means the
+    current month, per product spec, 2026-09-30: "по умолчанию всегда
+    должен показывать текущий"). The *current* month's own end is always
+    `now` itself (a running month-to-date total, unchanged from before this
+    picker existed); any other month gets its real end-of-month boundary.
+    A month that hasn't started yet collapses to an empty [start, start)
+    range rather than a negative one - defensive only, the frontend's own
+    picker never offers a future month.
+    """
     now = now or datetime.now(UTC)
     now_msk = now.astimezone(MSK)
-    start_msk = now_msk.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    return start_msk.astimezone(UTC), now
+    if year is None or month is None:
+        year, month = now_msk.year, now_msk.month
+    start_msk = datetime(year, month, 1, tzinfo=MSK)
+    if (year, month) == (now_msk.year, now_msk.month):
+        return start_msk.astimezone(UTC), now
+    next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+    next_start_msk = datetime(next_year, next_month, 1, tzinfo=MSK)
+    end = min(next_start_msk.astimezone(UTC), now)
+    end = max(end, start_msk.astimezone(UTC))
+    return start_msk.astimezone(UTC), end
 
 
 def _mapped_source_departments(db: Session, *, workshop_id: uuid.UUID | None) -> list[str] | None:
@@ -337,9 +359,11 @@ def get_snapshot(
     *,
     workshop_id: uuid.UUID | None,
     include_nzp: bool,
+    year: int | None = None,
+    month: int | None = None,
     now: datetime | None = None,
 ) -> CockpitSnapshot:
-    period_start, period_end = period_bounds(now)
+    period_start, period_end = period_bounds(now, year=year, month=month)
     settings = get_settings()
     app_settings = get_app_settings(db)
     revenue_statuses = settings.revenue_statuses_list

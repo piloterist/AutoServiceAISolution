@@ -3892,12 +3892,110 @@ main:has(.cockpit-page) {
   text-shadow: 0 0 10px rgba(62, 190, 204, 0.5);
 }
 
+.cockpit-left-big-wrap {
+  position: relative;
+}
+
+/* A <button> now (see InstrumentCluster.tsx's PeriodPicker, per product
+   feedback, 2026-09-30: click opens a month/year-only calendar) - reset to
+   read exactly as the plain text label it replaced. */
 .cockpit-left-big {
+  all: unset;
+  cursor: pointer;
   font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
   font-size: 1.25rem;
   font-weight: 700;
   color: #f4fafa;
   font-variant-numeric: tabular-nums;
+}
+
+.cockpit-left-big:hover,
+.cockpit-left-big:focus-visible {
+  color: #3ebecc;
+}
+
+.cockpit-left-big:focus-visible {
+  outline: 2px solid #3ebecc;
+  outline-offset: 2px;
+}
+
+.cockpit-period-picker {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 208px;
+  padding: 10px;
+  background: #0b1214;
+  border: 1px solid #24292b;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+}
+
+.cockpit-period-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #f4fafa;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cockpit-period-picker-nav {
+  all: unset;
+  cursor: pointer;
+  color: #8a999e;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.cockpit-period-picker-nav:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4fafa;
+}
+
+.cockpit-period-picker-nav:disabled {
+  color: #3a4144;
+  cursor: default;
+}
+
+.cockpit-period-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.cockpit-period-picker-month {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  text-align: center;
+  padding: 6px 0;
+  border-radius: 5px;
+  cursor: pointer;
+  color: #8a999e;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.cockpit-period-picker-month:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4fafa;
+}
+
+.cockpit-period-picker-month:disabled {
+  color: #3a4144;
+  cursor: default;
+}
+
+.cockpit-period-picker-month[data-selected="true"] {
+  background: rgba(62, 190, 204, 0.18);
+  color: #eafcff;
 }
 
 .cockpit-demo-tag {

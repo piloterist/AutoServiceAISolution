@@ -9,9 +9,13 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const workshopId = searchParams.get("workshop_id") ?? undefined;
   const includeNzp = searchParams.get("include_nzp") === "true";
+  const yearParam = searchParams.get("year");
+  const monthParam = searchParams.get("month");
+  const year = yearParam ? Number(yearParam) : undefined;
+  const month = monthParam ? Number(monthParam) : undefined;
 
   try {
-    return NextResponse.json(await getCockpitSnapshot({ workshopId, includeNzp }));
+    return NextResponse.json(await getCockpitSnapshot({ workshopId, includeNzp, year, month }));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 502 });

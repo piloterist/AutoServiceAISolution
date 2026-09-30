@@ -32,6 +32,22 @@ function formatMonthYear(snapshot: CockpitSnapshot): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 }
 
+// Same Europe/Moscow pinning as formatMonthYear above, and for the same
+// reason - deterministic regardless of the runtime's own local zone, so
+// server and client agree. Used to seed the month/year picker's "currently
+// selected" month from the snapshot already on hand, without a second
+// source of truth for what month is showing.
+function moscowYearMonth(iso: string): { year: number; month: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(new Date(iso));
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  return { year, month };
+}
+
 /** Cockpit's top bar + instrument cluster - see components/cockpit/
  * InstrumentCluster.tsx for the SVG itself. Owns: the цех filter, the one-
  * shot startup animation stage (never replayed on filter/data changes -
@@ -51,6 +67,13 @@ export function CockpitView({
 }) {
   const [workshopId, setWorkshopId] = useState("");
   const [nzpActive, setNzpActive] = useState(false);
+  // null = "always current month" (per product spec, 2026-09-30: "по
+  // умолчанию всегда должен показывать текущий") - only ever set once the
+  // operator actively picks a month via the period label's own
+  // month/year-only calendar (see InstrumentCluster's PeriodPicker).
+  // Persists across цех/НЗП/refresh changes, unlike those, which never
+  // reset it back to null on their own.
+  const [period, setPeriod] = useState<{ year: number; month: number } | null>(null);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,7 +159,11 @@ export function CockpitView({
     };
   }, []);
 
-  const load = async (nextWorkshopId: string, nextNzp: boolean) => {
+  const load = async (
+    nextWorkshopId: string,
+    nextNzp: boolean,
+    nextPeriod: { year: number; month: number } | null = period,
+  ) => {
     const myRequest = ++requestId.current;
     setLoading(true);
     setError(null);
@@ -144,6 +171,10 @@ export function CockpitView({
       const params = new URLSearchParams();
       if (nextWorkshopId) params.set("workshop_id", nextWorkshopId);
       if (nextNzp) params.set("include_nzp", "true");
+      if (nextPeriod) {
+        params.set("year", String(nextPeriod.year));
+        params.set("month", String(nextPeriod.month));
+      }
       const res = await fetch(`/api/cockpit?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
       const data = (await res.json()) as CockpitSnapshot;
@@ -177,6 +208,12 @@ export function CockpitView({
     void load(workshopId, nzpActive);
   };
 
+  const handlePeriodChange = (year: number, month: number) => {
+    const next = { year, month };
+    setPeriod(next);
+    void load(workshopId, nzpActive, next);
+  };
+
   return (
     <div className="cockpit-page">
       {error && <p className="admin-form-error">{error}</p>}
@@ -198,6 +235,8 @@ export function CockpitView({
           workshopId={workshopId}
           onWorkshopChange={handleWorkshopChange}
           periodLabel={formatMonthYear(snapshot)}
+          periodYearMonth={period ?? moscowYearMonth(snapshot.period_start)}
+          onPeriodChange={handlePeriodChange}
           missedCallsCount={missedCallsCount}
           openLeadsCount={openLeadsCount}
           onRefresh={handleRefresh}

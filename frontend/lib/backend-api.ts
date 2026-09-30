@@ -1249,10 +1249,14 @@ export type CockpitSnapshot = {
 export function getCockpitSnapshot(params?: {
   workshopId?: string;
   includeNzp?: boolean;
+  year?: number;
+  month?: number;
 }): Promise<CockpitSnapshot> {
   return backendGet<CockpitSnapshot>("/api/v1/cockpit", {
     workshop_id: params?.workshopId ?? "",
     include_nzp: params?.includeNzp ? "true" : "",
+    year: params?.year ? String(params.year) : "",
+    month: params?.month ? String(params.month) : "",
   });
 }
 

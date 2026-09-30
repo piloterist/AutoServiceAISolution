@@ -7,7 +7,7 @@ endpoints/settings.py's docstring for the same reasoning.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
@@ -22,11 +22,17 @@ router = APIRouter(prefix="/cockpit", tags=["cockpit"], dependencies=[Depends(ve
 def read_cockpit_snapshot(
     workshop_id: UUID | None = None,
     include_nzp: bool = False,
+    year: int | None = None,
+    month: int | None = Query(None, ge=1, le=12),
     db: Session = Depends(get_db),
 ) -> CockpitSnapshotOut:
-    """Current Moscow-local calendar month to date - the only period
-    Cockpit itself shows (see product spec section 1: "Первая версия
-    показывает текущий месяц... Произвольные периоды сейчас не нужны").
-    `workshop_id` omitted or null means the whole company."""
-    snapshot = cockpit_service.get_snapshot(db, workshop_id=workshop_id, include_nzp=include_nzp)
+    """Moscow-local calendar month - `year`/`month` omitted (both together)
+    defaults to the current month to date (per product spec, 2026-09-30:
+    "по умолчанию всегда должен показывать текущий" - supersedes the
+    original spec's "произвольные периоды сейчас не нужны", now that
+    Cockpit's own month/year picker exists). `workshop_id` omitted or null
+    means the whole company."""
+    snapshot = cockpit_service.get_snapshot(
+        db, workshop_id=workshop_id, include_nzp=include_nzp, year=year, month=month
+    )
     return CockpitSnapshotOut.model_validate(snapshot)

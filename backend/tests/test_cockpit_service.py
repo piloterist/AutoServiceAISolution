@@ -87,6 +87,34 @@ def test_period_bounds_is_msk_month_start_to_now() -> None:
     assert end == NOW
 
 
+def test_period_bounds_explicit_current_month_matches_default() -> None:
+    """Cockpit's own month/year picker (per product spec, 2026-09-30)
+    explicitly passing the current year/month must behave identically to
+    omitting both - still a running month-to-date total, not a full month
+    ending at midnight."""
+    start, end = cockpit_service.period_bounds(NOW, year=2026, month=9)
+    assert start == PERIOD_START
+    assert end == NOW
+
+
+def test_period_bounds_past_month_is_full_calendar_month() -> None:
+    """A month other than the current one gets its real end-of-month
+    boundary, not `now` - August's end (2026-08-31 21:00 UTC = 2026-09-01
+    00:00 MSK) happens to be exactly this suite's own PERIOD_START."""
+    start, end = cockpit_service.period_bounds(NOW, year=2026, month=8)
+    assert start == datetime(2026, 7, 31, 21, 0, 0, tzinfo=UTC)
+    assert end == PERIOD_START
+
+
+def test_period_bounds_future_month_is_empty_range() -> None:
+    """Defensive only - the frontend's own picker never offers a future
+    month, but a month that hasn't started yet must never produce a
+    negative (end < start) range."""
+    start, end = cockpit_service.period_bounds(NOW, year=2026, month=10)
+    assert start == datetime(2026, 9, 30, 21, 0, 0, tzinfo=UTC)
+    assert end == start
+
+
 # ---- fixtures: department/workshop + the 1C-string mapping ----------------
 
 

@@ -643,6 +643,94 @@ const WHEEL_ROW_H = 48;
 // pointer unconditionally on press, which ate every click).
 const DRAG_THRESHOLD_PX = 6;
 
+const MONTH_ABBR = ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"];
+
+/** Click-to-open month+year picker for the period label (per product
+ * feedback, 2026-09-30: "при клике... должен открываться календарь но не
+ * по датам а по месяцам и годам"). A plain positioned panel, not
+ * AdminModal - that one's styled for the Settings pages, not this dark
+ * instrument-panel chrome. Closes on an outside click or Escape; a future
+ * month is shown but disabled - no data can exist there yet, and the
+ * current month is always where this reopens (see CockpitView's `period`
+ * state: null until the operator actively picks something else). */
+function PeriodPicker({
+  year,
+  month,
+  onSelect,
+  onClose,
+}: {
+  year: number;
+  month: number; // 1-12, currently selected
+  onSelect: (year: number, month: number) => void;
+  onClose: () => void;
+}) {
+  const [viewYear, setViewYear] = useState(year);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) onClose();
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [onClose]);
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+
+  return (
+    <div className="cockpit-period-picker" ref={rootRef}>
+      <div className="cockpit-period-picker-header">
+        <button
+          type="button"
+          className="cockpit-period-picker-nav"
+          onClick={() => setViewYear((y) => y - 1)}
+          aria-label="Предыдущий год"
+        >
+          ‹
+        </button>
+        <span>{viewYear}</span>
+        <button
+          type="button"
+          className="cockpit-period-picker-nav"
+          onClick={() => setViewYear((y) => y + 1)}
+          disabled={viewYear >= currentYear}
+          aria-label="Следующий год"
+        >
+          ›
+        </button>
+      </div>
+      <div className="cockpit-period-picker-grid">
+        {MONTH_ABBR.map((label, index) => {
+          const m = index + 1;
+          const disabled = viewYear === currentYear && m > currentMonth;
+          const selected = viewYear === year && m === month;
+          return (
+            <button
+              key={label}
+              type="button"
+              className="cockpit-period-picker-month"
+              data-selected={selected || undefined}
+              disabled={disabled}
+              onClick={() => onSelect(viewYear, m)}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Цех filter, a real spinning drum (per product feedback, 2026-09-30:
  * "барабан который можно вращать мышкой или скролом" - not a flat list,
  * not dots). Three ways to move it, each tuned for what it's good at:
@@ -954,6 +1042,8 @@ export function InstrumentCluster({
   workshopId,
   onWorkshopChange,
   periodLabel,
+  periodYearMonth,
+  onPeriodChange,
   missedCallsCount,
   openLeadsCount,
   onRefresh,
@@ -972,11 +1062,15 @@ export function InstrumentCluster({
   workshopId: string;
   onWorkshopChange: (value: string) => void;
   periodLabel: string;
+  periodYearMonth: { year: number; month: number };
+  onPeriodChange: (year: number, month: number) => void;
   missedCallsCount: number;
   openLeadsCount: number;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+
   return (
     <>
       <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="cockpit-svg" role="img" aria-label="Приборная панель">
@@ -1086,8 +1180,26 @@ export function InstrumentCluster({
           selectedIndex={workshopId === "" ? 0 : Math.max(0, workshops.findIndex((w) => w.id === workshopId) + 1)}
           onSelect={(index) => onWorkshopChange(index === 0 ? "" : workshops[index - 1].id)}
         />
-        <div className="cockpit-left-big" aria-hidden="true">
-          {periodLabel}
+        <div className="cockpit-left-big-wrap">
+          <button
+            type="button"
+            className="cockpit-left-big"
+            onClick={() => setPeriodPickerOpen((v) => !v)}
+            aria-label={`Выбрать месяц и год, сейчас: ${periodLabel}`}
+          >
+            {periodLabel}
+          </button>
+          {periodPickerOpen && (
+            <PeriodPicker
+              year={periodYearMonth.year}
+              month={periodYearMonth.month}
+              onSelect={(y, m) => {
+                onPeriodChange(y, m);
+                setPeriodPickerOpen(false);
+              }}
+              onClose={() => setPeriodPickerOpen(false)}
+            />
+          )}
         </div>
       </div>
 
