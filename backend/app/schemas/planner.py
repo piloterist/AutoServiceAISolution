@@ -58,6 +58,13 @@ class WorkshopJobOut(BaseModel):
     employee_id: uuid.UUID | None
     # Resolved from employee_id - see services/planner_service.employee_lookup.
     employee_name: str | None
+    # Read-only "RecId"/"CreatedBy" footer in WorkshopJobDialog.tsx (per
+    # product ask, 2026-10-01 - logs were unreadable without a stable link
+    # back to the record). `id` above already serves as RecId; this is
+    # resolved from WorkshopJob.created_by_id via
+    # services/planner_service.user_lookup, None for a record predating
+    # that column or whose creator was since deleted.
+    created_by_name: str | None
 
     model_config = {"from_attributes": True}
 
@@ -136,6 +143,9 @@ class BodyCarOut(BaseModel):
     # cars with a stage covering today, latest-created first among the
     # rest) - see BodyView.tsx.
     created_at: datetime
+    # Read-only "RecId"/"CreatedBy" footer in BodyCarDialog.tsx - same as
+    # WorkshopJobOut.created_by_name above, see that field's own comment.
+    created_by_name: str | None
 
     model_config = {"from_attributes": True}
 

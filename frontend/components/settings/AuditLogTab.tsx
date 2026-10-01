@@ -76,15 +76,22 @@ function formatValue(field: string, value: unknown): string {
   return String(value);
 }
 
-function formatChanges(changes: Record<string, { old: unknown; new: unknown }>): string {
+// One line per changed field, stacked (per product ask, 2026-10-01: "каждое
+// значение было-стало выводи в столбик, а не встрочку как сейчас") - a
+// single audit entry with 3 changed fields is still one table row, just
+// with 3 stacked lines in this one cell, not one run-together line.
+function renderChanges(changes: Record<string, { old: unknown; new: unknown }>) {
   const entries = Object.entries(changes);
   if (entries.length === 0) return "—";
-  return entries
-    .map(
-      ([field, { old, new: next }]) =>
-        `${FIELD_LABELS[field] ?? field}: ${formatValue(field, old)} → ${formatValue(field, next)}`,
-    )
-    .join("; ");
+  return (
+    <div className="audit-changes-list">
+      {entries.map(([field, { old, new: next }]) => (
+        <div key={field}>
+          {FIELD_LABELS[field] ?? field}: {formatValue(field, old)} → {formatValue(field, next)}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** Read-only - see backend app/models/schedule_audit_log.py. Empty until
@@ -104,6 +111,7 @@ export function AuditLogTab({ initialEntries }: { initialEntries: AuditLogEntry[
             <th>Кто</th>
             <th>Действие</th>
             <th>Объект</th>
+            <th>RecId</th>
             <th>ЗН</th>
             <th>Автомобиль</th>
             <th>Что изменилось</th>
@@ -116,14 +124,15 @@ export function AuditLogTab({ initialEntries }: { initialEntries: AuditLogEntry[
               <td>{entry.actor_name}</td>
               <td>{ACTION_LABELS[entry.action] ?? entry.action}</td>
               <td>{ENTITY_TYPE_LABELS[entry.entity_type] ?? entry.entity_type}</td>
+              <td>{entry.entity_id}</td>
               <td>{entry.work_order_number ?? "—"}</td>
               <td>{entry.car_description ?? "—"}</td>
-              <td>{formatChanges(entry.changes)}</td>
+              <td className="audit-changes-cell">{renderChanges(entry.changes)}</td>
             </tr>
           ))}
           {initialEntries.length === 0 && (
             <tr>
-              <td colSpan={7} className="admin-empty-row">
+              <td colSpan={8} className="admin-empty-row">
                 Пока нет записей
               </td>
             </tr>

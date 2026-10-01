@@ -46,6 +46,10 @@ export type WorkOrderListItem = {
   debt_amount: string | null;
   paid_amount: string | null;
   payment_percent: string | null;
+  // Whether this ЗН has any Планировщик record (either цех) - see backend
+  // services/planner_service.scheduled_work_order_ids. Feeds the Work
+  // Orders list's "Запланирован" Да/Нет column/filter.
+  is_scheduled: boolean;
 };
 
 export type WorkOrderListResponse = {
@@ -184,6 +188,14 @@ export type PaymentEventItem = {
   source_document_number: string | null;
 };
 
+// Where this ЗН is scheduled, for the detail page's "Перейти к записи"
+// button - see backend services/planner_service.find_planner_record.
+export type PlannerRecordRef = {
+  kind: "body" | "mechanical";
+  workshop_id: string;
+  date: string; // "YYYY-MM-DD" - the planner's own date window positions on this day
+};
+
 export type WorkOrderDetail = WorkOrderListItem & {
   // ЗаказНаряд.Автомобиль.VIN - shown on the detail card only, never on
   // the list or dashboard (see backend services/internal_order_rules.py).
@@ -193,6 +205,7 @@ export type WorkOrderDetail = WorkOrderListItem & {
   status_history: StatusHistoryItem[];
   payment_history: PaymentHistoryItem[];
   payment_events: PaymentEventItem[];
+  planner_record: PlannerRecordRef | null;
 };
 
 function backendToken(): string {
@@ -813,6 +826,9 @@ export type WorkshopJob = {
   status_color: string | null;
   employee_id: string | null;
   employee_name: string | null;
+  // Read-only "RecId"/"CreatedBy" footer in WorkshopJobDialog.tsx - `id`
+  // above is RecId, this is CreatedBy (per product ask, 2026-10-01).
+  created_by_name: string | null;
 };
 
 export type WorkshopJobWrite = {
@@ -898,6 +914,9 @@ export type BodyCar = {
   on_site: boolean;
   stages: BodyCarStage[];
   created_at: string;
+  // Read-only "RecId"/"CreatedBy" footer in BodyCarDialog.tsx - same as
+  // WorkshopJob.created_by_name above.
+  created_by_name: string | null;
 };
 
 export type BodyCarWrite = {

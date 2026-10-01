@@ -77,6 +77,11 @@ export function MechanicalView(props: {
   statuses: SlesarkaStatus[];
   employees: Employee[];
   fivesystemsApiEnabled: boolean;
+  /** "Перейти к записи" deep link (see PlannerShell.tsx) - seeds the
+   * search box and positions the date window on arrival, same as if the
+   * operator had typed the ЗН number in themselves. */
+  initialSearch?: string;
+  initialDate?: string;
 }) {
   const [instanceKey, setInstanceKey] = useState(0);
   return <MechanicalViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
@@ -87,19 +92,28 @@ function MechanicalViewInner({
   statuses,
   employees,
   fivesystemsApiEnabled,
+  initialSearch,
+  initialDate,
   onWritten,
 }: {
   workshop: Workshop;
   statuses: SlesarkaStatus[];
   employees: Employee[];
   fivesystemsApiEnabled: boolean;
+  initialSearch?: string;
+  initialDate?: string;
   onWritten: () => void;
 }) {
   const [viewSpan, setViewSpan] = useState<ViewSpan>(7);
   // По умолчанию неделя открывается со вчерашнего дня (не с понедельника) -
   // самый ходовой вариант: видно "что было вчера" и весь ближайший план.
-  const [currentDate, setCurrentDate] = useState(() => addDaysIso(todayIso(), -1));
-  const [search, setSearch] = useState("");
+  // `initialDate` (deep link) instead puts the linked record's own day
+  // first in the window, guaranteeing it's actually fetched/rendered - see
+  // the scroll-into-view effect below.
+  const [currentDate, setCurrentDate] = useState(() => initialDate ?? addDaysIso(todayIso(), -1));
+  const [search, setSearch] = useState(initialSearch ?? "");
+  const jobElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const didScrollToLinkRef = useRef(false);
   const [jobs, setJobs] = useState<WorkshopJob[]>([]);
   const [dialogDraft, setDialogDraft] = useState<JobDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -175,6 +189,19 @@ function MechanicalViewInner({
   };
 
   useEffect(reload, [workshop.id, days[0], days[days.length - 1]]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Перейти к записи" deep link (per product ask, 2026-10-01): once jobs
+  // for the (already correctly positioned, via `initialDate` above)
+  // window have loaded, scroll the matched card into view. Runs once per
+  // mount (didScrollToLinkRef), not on every later `jobs` refresh.
+  useEffect(() => {
+    if (!initialSearch || didScrollToLinkRef.current || jobs.length === 0) return;
+    const match = jobs.find((job) => jobMatches(job, initialSearch));
+    if (match) {
+      jobElsRef.current.get(match.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      didScrollToLinkRef.current = true;
+    }
+  }, [jobs, initialSearch]);
 
   const jobsFor = (day: string, post: number) =>
     jobs.filter((j) => j.job_date === day && j.post_number === post);
@@ -460,16 +487,18 @@ function MechanicalViewInner({
                 className={day === todayStr ? "dayh today" : "dayh"}
                 style={{ gridColumn: `span ${workshop.posts_count}` }}
               >
-                <div className="planner-dayh-title">
-                  <b>{formatLongDay(day)}</b>
-                  {day === todayStr && <span className="dayh-badge">сегодня</span>}
-                </div>
-                <div className="planner-dayh-stats">
-                  {/* План/Факт в рублях скрыты по просьбе - расчёт (dayStats
-                      выше) не тронут, просто не выводится здесь. */}
-                  <span>
-                    Загрузка <b>{stats.load}%</b>
-                  </span>
+                <div className="planner-dayh-row">
+                  <div className="planner-dayh-title">
+                    <b>{formatLongDay(day)}</b>
+                    {day === todayStr && <span className="dayh-badge">сегодня</span>}
+                  </div>
+                  <div className="planner-dayh-stats">
+                    {/* План/Факт в рублях скрыты по просьбе - расчёт (dayStats
+                        выше) не тронут, просто не выводится здесь. */}
+                    <span>
+                      Загрузка <b>{stats.load}%</b>
+                    </span>
+                  </div>
                 </div>
               </div>
             );
@@ -545,6 +574,10 @@ function MechanicalViewInner({
                   return (
                     <div
                       key={job.id}
+                      ref={(el) => {
+                        if (el) jobElsRef.current.set(job.id, el);
+                        else jobElsRef.current.delete(job.id);
+                      }}
                       className={[dim ? "job planner-job-dim" : "job", isDragSource ? "planner-job-drag-source" : ""]
                         .filter(Boolean)
                         .join(" ")}

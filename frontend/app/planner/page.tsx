@@ -12,7 +12,23 @@ import { getCurrentUser } from "@/lib/session";
 // data-backed page here (see app/work-orders/page.tsx).
 export const dynamic = "force-dynamic";
 
-export default async function PlannerPage() {
+type SearchParams = {
+  // "Перейти к записи" deep link from the Work Order detail page (per
+  // product ask, 2026-10-01: opens the Planner "как будто номер
+  // заказ-наряда внесли в поиск", positioned on that record) - see
+  // app/work-orders/[id]/page.tsx and PlannerShell.tsx/BodyView.tsx/
+  // MechanicalView.tsx for how these three seed the initial view.
+  workshop?: string;
+  zn?: string;
+  date?: string;
+};
+
+export default async function PlannerPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const params = await searchParams;
   let error: string | null = null;
   let departments, workshops, statuses;
   // Defaults to "off" on a fetch failure - same fail-safe direction as the
@@ -74,6 +90,9 @@ export default async function PlannerPage() {
           defaultWorkshopId={user?.workshopId ?? null}
           defaultRepairType={user?.defaultRepairType ?? "Все"}
           fivesystemsApiEnabled={fivesystemsApiEnabled}
+          linkWorkshopId={params.workshop ?? null}
+          linkSearch={params.zn ?? null}
+          linkDate={params.date ?? null}
         />
       )}
     </div>

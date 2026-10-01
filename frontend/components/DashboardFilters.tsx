@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
 import { previousPeriod } from "@/lib/period";
+import { writePeriodOverride } from "@/lib/period-override";
 
 // Plain GET form (no onSubmit handler - native browser navigation on
 // submit reads whatever's currently in the inputs) that navigates to
@@ -25,6 +26,7 @@ export function DashboardFilters({
   prevDateTo,
   selectedDepartment,
   hasActiveFilters,
+  userId,
 }: {
   /** Pre-filled into the date inputs - the dashboard defaults these when
    * the URL has no explicit params (see app/dashboard/page.tsx), so these
@@ -44,6 +46,12 @@ export function DashboardFilters({
    * plain default view, only once the operator has actually changed
    * something. */
   hasActiveFilters: boolean;
+  /** Clears Cockpit's cross-page month override (see lib/period-override.ts)
+   * on a manual filter change here - per product ask, 2026-10-01: "фильтр
+   * там можно изменить или руками или при изменении месяца на листе ESP".
+   * Without this, a later bare /dashboard visit would silently snap back
+   * to whatever month Cockpit last picked, undoing the manual change. */
+  userId: string;
 }) {
   const [currentFrom, setCurrentFrom] = useState(dateFrom ?? "");
   const [currentTo, setCurrentTo] = useState(dateTo ?? "");
@@ -61,7 +69,7 @@ export function DashboardFilters({
   };
 
   return (
-    <form className="filters-form-row" method="get">
+    <form className="filters-form-row" method="get" onSubmit={() => writePeriodOverride(userId, null)}>
       {selectedDepartment && <input type="hidden" name="departments" value={selectedDepartment} />}
 
       <div className="filters-periods-stack">
@@ -115,7 +123,11 @@ export function DashboardFilters({
           Применить
         </button>
         {hasActiveFilters && (
-          <a href="/dashboard" className="filters-reset">
+          <a
+            href="/dashboard"
+            className="filters-reset"
+            onClick={() => writePeriodOverride(userId, null)}
+          >
             Сбросить фильтры
           </a>
         )}

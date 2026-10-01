@@ -52,6 +52,21 @@ export function monthToDateRange(): { dateFrom: string; dateTo: string } {
   };
 }
 
+/** Full calendar month (1st through last day) for an explicit year/month -
+ * used when the dashboard's period filter is driven by Cockpit's own
+ * month/year override (see lib/period-override.ts). Unlike
+ * monthToDateRange above, there's no "today" to truncate at - Cockpit's
+ * own picker never offers the current/a future month as an override
+ * (picking the current month there is treated as "no override" instead,
+ * see CockpitView's handlePeriodChange), so an override month is always
+ * fully elapsed. */
+export function monthRange(year: number, month: number): { dateFrom: string; dateTo: string } {
+  return {
+    dateFrom: fmt(new Date(Date.UTC(year, month - 1, 1))),
+    dateTo: fmt(new Date(Date.UTC(year, month, 0))), // last day of that month
+  };
+}
+
 /** Fixed window for the "заказ-нарядов по месяцам" chart - always January
  * of the current year through the current month, regardless of whatever
  * period is selected up top. A chart titled "by month" that only ever

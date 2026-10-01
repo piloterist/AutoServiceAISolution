@@ -1044,6 +1044,8 @@ export function InstrumentCluster({
   periodLabel,
   periodYearMonth,
   onPeriodChange,
+  isCustomPeriod,
+  onResetPeriod,
   missedCallsCount,
   openLeadsCount,
   onRefresh,
@@ -1064,6 +1066,11 @@ export function InstrumentCluster({
   periodLabel: string;
   periodYearMonth: { year: number; month: number };
   onPeriodChange: (year: number, month: number) => void;
+  /** True once the operator has picked a month other than the current one
+   * (see CockpitView's `period` state) - lights up the reset lamp next to
+   * the period label (per product ask, 2026-10-01). */
+  isCustomPeriod: boolean;
+  onResetPeriod: () => void;
   missedCallsCount: number;
   openLeadsCount: number;
   onRefresh: () => void;
@@ -1180,26 +1187,42 @@ export function InstrumentCluster({
           selectedIndex={workshopId === "" ? 0 : Math.max(0, workshops.findIndex((w) => w.id === workshopId) + 1)}
           onSelect={(index) => onWorkshopChange(index === 0 ? "" : workshops[index - 1].id)}
         />
-        <div className="cockpit-left-big-wrap">
+        <div className="cockpit-period-row">
+          <div className="cockpit-left-big-wrap">
+            <button
+              type="button"
+              className="cockpit-left-big"
+              onClick={() => setPeriodPickerOpen((v) => !v)}
+              aria-label={`Выбрать месяц и год, сейчас: ${periodLabel}`}
+            >
+              {periodLabel}
+            </button>
+            {periodPickerOpen && (
+              <PeriodPicker
+                year={periodYearMonth.year}
+                month={periodYearMonth.month}
+                onSelect={(y, m) => {
+                  onPeriodChange(y, m);
+                  setPeriodPickerOpen(false);
+                }}
+                onClose={() => setPeriodPickerOpen(false)}
+              />
+            )}
+          </div>
           <button
             type="button"
-            className="cockpit-left-big"
-            onClick={() => setPeriodPickerOpen((v) => !v)}
-            aria-label={`Выбрать месяц и год, сейчас: ${periodLabel}`}
+            className="cockpit-period-reset"
+            data-active={isCustomPeriod}
+            disabled={!isCustomPeriod}
+            onClick={onResetPeriod}
+            aria-label={isCustomPeriod ? "Сбросить на текущий месяц" : "Показан текущий месяц"}
+            title={isCustomPeriod ? "Сбросить на текущий месяц" : "Показан текущий месяц"}
           >
-            {periodLabel}
+            {/* eslint-disable-next-line @next/next/no-img-element -- fixed
+                small decorative icon, next/image's optimization pipeline
+                buys nothing here. */}
+            <img src="/icon-new.png" alt="" className="cockpit-period-reset-icon" />
           </button>
-          {periodPickerOpen && (
-            <PeriodPicker
-              year={periodYearMonth.year}
-              month={periodYearMonth.month}
-              onSelect={(y, m) => {
-                onPeriodChange(y, m);
-                setPeriodPickerOpen(false);
-              }}
-              onClose={() => setPeriodPickerOpen(false)}
-            />
-          )}
         </div>
       </div>
 

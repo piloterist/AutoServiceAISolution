@@ -142,7 +142,7 @@ body {
   display: flex;
   align-items: center;
   gap: 1.5rem;
-  padding: 0.9rem 1.5rem;
+  padding: 0.4rem 1.5rem;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
@@ -286,7 +286,7 @@ main:has(.wide-page) {
    with the side padding trimmed down too. */
 main:has(.full-width-page) {
   max-width: none;
-  padding: 0.85rem 0.75rem;
+  padding: 0.3rem 0.75rem;
   /* The Planner's own grid is the only thing meant to scroll - without
      this, the whole page grows past the viewport instead (pushing the
      grid's own horizontal scrollbar below the fold) whenever there isn't
@@ -821,6 +821,40 @@ table.admin-data-table td {
 
 .admin-form-actions-spacer {
   flex: 1;
+}
+
+/* Read-only "RecId"/"CreatedBy" footer on the Planner's two record dialogs
+   (WorkshopJobDialog.tsx, BodyCarDialog.tsx) - per product ask, 2026-10-01:
+   "серым, нередактируемым... чтобы всегда можно было посмотреть". Plain
+   text, not styled as an editable .admin-form-field, so it reads as
+   metadata rather than another input to fill in. Only shown for an
+   existing record - a brand-new, unsaved one has neither yet. */
+.admin-form-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.5rem;
+  margin: 0 0 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.admin-form-meta span {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Settings -> Логи - each changed field on its own line within the one
+   "Что изменилось" cell (per product ask, 2026-10-01: "выводи в столбик, а
+   не встрочку") - see AuditLogTab.tsx's renderChanges. */
+.audit-changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+table.admin-data-table td.audit-changes-cell {
+  vertical-align: top;
 }
 
 /* .admin-btn is the base every button in this area carries (toolbar
@@ -1793,6 +1827,21 @@ table.admin-data-table td {
   color: var(--text);
 }
 
+/* "Перейти к записи" button next to the <h1> (per product ask,
+   2026-10-01) - only rendered when this ЗН has a Планировщик record (see
+   WorkOrderDetail.planner_record). */
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.detail-title-row h1 {
+  margin: 0;
+}
+
 .detail-header {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -2241,7 +2290,7 @@ table.admin-data-table td {
   align-items: center;
   flex-wrap: wrap;
   gap: 0.75rem 1rem;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.3rem;
   flex-shrink: 0;
 }
 
@@ -2252,7 +2301,7 @@ table.admin-data-table td {
 }
 
 .planner-workshop-type-tabs {
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.3rem;
   flex-shrink: 0;
 }
 
@@ -2262,7 +2311,7 @@ table.admin-data-table td {
 }
 
 .planner-dept-btn {
-  padding: 0.7rem 1.4rem;
+  padding: 0.4rem 1rem;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -2289,8 +2338,8 @@ table.admin-data-table td {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 76px;
-  height: 76px;
+  width: 44px;
+  height: 44px;
   margin-left: auto;
   border-radius: 50%;
   color: var(--text-muted);
@@ -2299,8 +2348,8 @@ table.admin-data-table td {
 }
 
 .missed-calls-badge-btn svg {
-  width: 40px;
-  height: 40px;
+  width: 24px;
+  height: 24px;
 }
 
 .missed-calls-badge-btn:hover {
@@ -2315,19 +2364,19 @@ table.admin-data-table td {
 
 .missed-calls-badge-count {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
+  top: -2px;
+  right: -2px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
   border-radius: 999px;
   background: var(--down);
   color: #fff;
-  font-size: 22px;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 36px;
+  line-height: 20px;
   text-align: center;
-  box-shadow: 0 0 0 4px var(--bg);
+  box-shadow: 0 0 0 3px var(--bg);
 }
 
 .missed-calls-list {
@@ -2391,8 +2440,8 @@ table.admin-data-table td {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 76px;
-  height: 76px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   color: var(--text-muted);
   cursor: pointer;
@@ -2400,8 +2449,8 @@ table.admin-data-table td {
 }
 
 .leads-badge-btn svg {
-  width: 40px;
-  height: 40px;
+  width: 24px;
+  height: 24px;
 }
 
 .leads-badge-btn:hover {
@@ -2416,19 +2465,19 @@ table.admin-data-table td {
 
 .leads-badge-count {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 36px;
-  height: 36px;
-  padding: 0 8px;
+  top: -2px;
+  right: -2px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
   border-radius: 999px;
   background: var(--down);
   color: #fff;
-  font-size: 22px;
+  font-size: 12px;
   font-weight: 700;
-  line-height: 36px;
+  line-height: 20px;
   text-align: center;
-  box-shadow: 0 0 0 4px var(--bg);
+  box-shadow: 0 0 0 3px var(--bg);
 }
 
 .leads-badge-list {
@@ -2650,7 +2699,7 @@ table.admin-data-table td {
 }
 
 .planner-corner-1 {
-  height: 58px;
+  height: 30px;
 }
 
 .planner-corner-2 {
@@ -2661,18 +2710,30 @@ table.admin-data-table td {
   position: sticky;
   top: 0;
   z-index: 2;
-  height: 58px;
+  height: 30px;
   background: var(--surface2);
   border-bottom: 1px solid var(--border);
   border-left: 2px solid var(--border);
-  padding: 6px 10px;
+  padding: 0 10px;
   display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+  align-items: center;
 }
 
 .dayh.today {
   background: var(--today);
+}
+
+/* День+дата слева, "Загрузка" справа, одной строкой (per product ask,
+   2026-10-01: "день и дата со сдвигом по левому краю... загрузку со
+   сдвигом по правому краю в одной строке") - this is what let .dayh's own
+   height halve, from two stacked rows to one. */
+.planner-dayh-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
 }
 
 .planner-dayh-title {
@@ -2680,6 +2741,14 @@ table.admin-data-table td {
   gap: 8px;
   align-items: baseline;
   font-size: 0.85rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.planner-dayh-title b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .planner-dayh-title b::first-letter {
@@ -2700,7 +2769,7 @@ table.admin-data-table td {
   gap: 10px;
   font-size: 0.72rem;
   color: var(--text-muted);
-  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .planner-dayh-stats b {
@@ -2710,7 +2779,7 @@ table.admin-data-table td {
 
 .posth {
   position: sticky;
-  top: 58px;
+  top: 30px;
   z-index: 2;
   height: 28px;
   background: var(--surface2);
@@ -3892,8 +3961,60 @@ main:has(.cockpit-page) {
   text-shadow: 0 0 10px rgba(62, 190, 204, 0.5);
 }
 
+.cockpit-period-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .cockpit-left-big-wrap {
   position: relative;
+}
+
+/* "Lamp" icon next to the period label (public/icon-new.png, a real
+   transparent PNG - the first version, month-icon.jpg, baked in an opaque
+   white background with no alpha channel to strip) - grey/desaturated for
+   the current month, full color once a different month is picked; click
+   resets back to the current month (per product ask, 2026-10-01). The
+   image itself is the lit-color artwork; "off" is a grayscale filter over
+   it rather than a second asset. */
+.cockpit-period-reset {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cockpit-period-reset:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cockpit-period-reset:disabled {
+  cursor: default;
+}
+
+.cockpit-period-reset-icon {
+  display: block;
+  /* 22px (hand-drawn v1) -> 27px (+20%, month-icon.jpg) -> 35px (+30% on
+     top of that, icon-new.png) - per product feedback, 2026-10-01. No
+     border-radius now - a real transparent PNG, not a tile with a baked-in
+     background to round off. */
+  height: 35px;
+  width: auto;
+  filter: grayscale(1) brightness(0.75) opacity(0.75);
+  transition: filter 150ms ease;
+}
+
+.cockpit-period-reset[data-active="true"] .cockpit-period-reset-icon {
+  filter: drop-shadow(0 0 4px rgba(62, 190, 204, 0.55));
+}
+
+.cockpit-period-reset:focus-visible {
+  outline: 2px solid #3ebecc;
+  outline-offset: 2px;
 }
 
 /* A <button> now (see InstrumentCluster.tsx's PeriodPicker, per product

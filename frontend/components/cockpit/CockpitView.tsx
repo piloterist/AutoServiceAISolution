@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { EspBrand } from "@/components/cockpit/EspBrand";
 import { InstrumentCluster } from "@/components/cockpit/InstrumentCluster";
 import type { CockpitSnapshot, WorkshopOption } from "@/lib/backend-api";
+import { readPeriodOverride, writePeriodOverride } from "@/lib/period-override";
 
 const NZP_STORAGE_KEY_PREFIX = "cockpit-nzp-";
 const COUNTS_POLL_INTERVAL_MS = 60_000;
@@ -119,10 +120,10 @@ export function CockpitView({
     } catch {
       // private browsing / blocked storage - fall back to the default (off)
     }
-    if (savedNzp) {
-      setNzpActive(true);
-      void load(workshopId, true);
-    }
+    const savedPeriod = readPeriodOverride(userId);
+    if (savedNzp) setNzpActive(true);
+    if (savedPeriod) setPeriod(savedPeriod);
+    if (savedNzp || savedPeriod) void load(workshopId, savedNzp, savedPeriod);
     // Only on mount - a later storageKey change (a different logged-in
     // user) isn't a case this page needs to handle live.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -209,9 +210,26 @@ export function CockpitView({
   };
 
   const handlePeriodChange = (year: number, month: number) => {
+    // Picking the current month back from the calendar is the same as
+    // resetting - otherwise the reset lamp would stay lit for a month that
+    // is, in fact, the current one (per product ask, 2026-10-01: the lamp
+    // tracks "сейчас выбран не текущий месяц", not "the picker was ever
+    // touched").
+    const now = moscowYearMonth(new Date().toISOString());
+    if (year === now.year && month === now.month) {
+      handleResetPeriod();
+      return;
+    }
     const next = { year, month };
     setPeriod(next);
+    writePeriodOverride(userId, next);
     void load(workshopId, nzpActive, next);
+  };
+
+  const handleResetPeriod = () => {
+    setPeriod(null);
+    writePeriodOverride(userId, null);
+    void load(workshopId, nzpActive, null);
   };
 
   return (
@@ -237,6 +255,8 @@ export function CockpitView({
           periodLabel={formatMonthYear(snapshot)}
           periodYearMonth={period ?? moscowYearMonth(snapshot.period_start)}
           onPeriodChange={handlePeriodChange}
+          isCustomPeriod={period !== null}
+          onResetPeriod={handleResetPeriod}
           missedCallsCount={missedCallsCount}
           openLeadsCount={openLeadsCount}
           onRefresh={handleRefresh}

@@ -1,11 +1,16 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
 
+from app.models.body_car import BodyCar
+from app.models.body_car_stage import BodyCarStage
+from app.models.department import Department
 from app.models.work_order import WorkOrder
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
+from app.models.workshop import Workshop
+from app.models.workshop_job import WorkshopJob
 
 LIST_URL = "/api/v1/work-orders"
 SUMMARY_URL = "/api/v1/work-orders/summary/monthly"
@@ -531,6 +536,146 @@ def test_get_work_order_detail_missing_returns_404(client, auth_headers) -> None
     response = client.get(f"{LIST_URL}/00000000-0000-0000-0000-000000000000", headers=auth_headers)
 
     assert response.status_code == 404
+
+
+def _make_workshop(db_session, *, workshop_type: str) -> Workshop:
+    department = Department(name=f"Деп-{workshop_type}")
+    db_session.add(department)
+    db_session.flush()
+    workshop = Workshop(
+        department_id=department.id,
+        workshop_type=workshop_type,
+        posts_count=1,
+        start_time="07:00:00",
+        end_time="22:00:00",
+        working_days=[0, 1, 2, 3, 4, 5],
+    )
+    db_session.add(workshop)
+    db_session.flush()
+    return workshop
+
+
+# ---- "Запланирован" (is_scheduled) + "Перейти к записи" (planner_record) --
+# per product ask, 2026-10-01.
+
+
+def test_list_work_orders_reports_is_scheduled(client, db_session, auth_headers) -> None:
+    scheduled = _make_work_order(external_number="WO-SCHEDULED")
+    unscheduled = _make_work_order(external_number="WO-UNSCHEDULED")
+    db_session.add_all([scheduled, unscheduled])
+    db_session.commit()
+
+    workshop = _make_workshop(db_session, workshop_type="Слесарный")
+    db_session.add(
+        WorkshopJob(
+            workshop_id=workshop.id,
+            work_order_id=scheduled.id,
+            job_date=date(2026, 10, 1),
+            post_number=1,
+            start_time="09:00:00",
+            end_time="10:00:00",
+        )
+    )
+    db_session.commit()
+
+    response = client.get(LIST_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    by_number = {item["external_number"]: item for item in response.json()["items"]}
+    assert by_number["WO-SCHEDULED"]["is_scheduled"] is True
+    assert by_number["WO-UNSCHEDULED"]["is_scheduled"] is False
+
+
+def test_work_order_detail_planner_record_none_when_unscheduled(
+    client, db_session, auth_headers
+) -> None:
+    work_order = _make_work_order(external_number="WO-NONE")
+    db_session.add(work_order)
+    db_session.commit()
+
+    response = client.get(f"{LIST_URL}/{work_order.id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_scheduled"] is False
+    assert body["planner_record"] is None
+
+
+def test_work_order_detail_planner_record_mechanical_only(client, db_session, auth_headers) -> None:
+    work_order = _make_work_order(external_number="WO-MECH")
+    db_session.add(work_order)
+    db_session.commit()
+
+    workshop = _make_workshop(db_session, workshop_type="Слесарный")
+    db_session.add(
+        WorkshopJob(
+            workshop_id=workshop.id,
+            work_order_id=work_order.id,
+            job_date=date(2026, 10, 5),
+            post_number=1,
+            start_time="09:00:00",
+            end_time="10:00:00",
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"{LIST_URL}/{work_order.id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_scheduled"] is True
+    assert body["planner_record"] == {
+        "kind": "mechanical",
+        "workshop_id": str(workshop.id),
+        "date": "2026-10-05",
+    }
+
+
+def test_work_order_detail_planner_record_prefers_body_over_mechanical(
+    client, db_session, auth_headers
+) -> None:
+    """Product ask, 2026-10-01: "если есть и в слесарке и в кузове, то
+    всегда выбирать кузов"."""
+    work_order = _make_work_order(external_number="WO-BOTH")
+    db_session.add(work_order)
+    db_session.commit()
+
+    mechanical_workshop = _make_workshop(db_session, workshop_type="Слесарный")
+    db_session.add(
+        WorkshopJob(
+            workshop_id=mechanical_workshop.id,
+            work_order_id=work_order.id,
+            job_date=date(2026, 10, 5),
+            post_number=1,
+            start_time="09:00:00",
+            end_time="10:00:00",
+        )
+    )
+
+    body_workshop = _make_workshop(db_session, workshop_type="Кузовной")
+    body_car = BodyCar(workshop_id=body_workshop.id, work_order_id=work_order.id, color="#1f77b4")
+    db_session.add(body_car)
+    db_session.flush()
+    db_session.add(
+        BodyCarStage(
+            body_car_id=body_car.id,
+            stage_name="Приёмка",
+            start_date=date(2026, 10, 3),
+            end_date=date(2026, 10, 4),
+            sort_order=0,
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"{LIST_URL}/{work_order.id}", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["planner_record"] == {
+        "kind": "body",
+        "workshop_id": str(body_workshop.id),
+        "date": "2026-10-03",
+    }
 
 
 class _FakeSettingsWithRevenueStatuses:

@@ -26,6 +26,9 @@ export function PlannerShell({
   defaultWorkshopId,
   defaultRepairType,
   fivesystemsApiEnabled,
+  linkWorkshopId,
+  linkSearch,
+  linkDate,
 }: {
   departments: OrgDepartment[];
   workshops: Workshop[];
@@ -42,8 +45,17 @@ export function PlannerShell({
   /** Настройки → Интеграции → "Включить API" - gates the Planner's
    * "Получить ЗН" button in both dialogs below (see SettingsForm.tsx). */
   fivesystemsApiEnabled: boolean;
+  /** "Перейти к записи" deep link (see app/planner/page.tsx) - when given,
+   * wins over defaultWorkshopId for which цех opens, and seeds/positions
+   * BodyView's/MechanicalView's own search box exactly as if the operator
+   * had typed the ЗН number in themselves. */
+  linkWorkshopId?: string | null;
+  linkSearch?: string | null;
+  linkDate?: string | null;
 }) {
-  const initialWorkshop = defaultWorkshopId ? workshops.find((w) => w.id === defaultWorkshopId) : undefined;
+  const linkedWorkshop = linkWorkshopId ? workshops.find((w) => w.id === linkWorkshopId) : undefined;
+  const initialWorkshop =
+    linkedWorkshop ?? (defaultWorkshopId ? workshops.find((w) => w.id === defaultWorkshopId) : undefined);
   const initialDepartmentId =
     initialWorkshop?.department_id ??
     (defaultDepartmentId && departments.some((d) => d.id === defaultDepartmentId)
@@ -142,6 +154,8 @@ export function PlannerShell({
           statuses={statuses}
           employees={employees}
           fivesystemsApiEnabled={fivesystemsApiEnabled}
+          initialSearch={selectedWorkshop.id === linkedWorkshop?.id ? linkSearch ?? undefined : undefined}
+          initialDate={selectedWorkshop.id === linkedWorkshop?.id ? linkDate ?? undefined : undefined}
         />
       )}
       {selectedWorkshop && selectedWorkshop.workshop_type === "Кузовной" && (
@@ -150,6 +164,8 @@ export function PlannerShell({
           employees={employees}
           fivesystemsApiEnabled={fivesystemsApiEnabled}
           defaultRepairType={defaultRepairType}
+          initialSearch={selectedWorkshop.id === linkedWorkshop?.id ? linkSearch ?? undefined : undefined}
+          initialDate={selectedWorkshop.id === linkedWorkshop?.id ? linkDate ?? undefined : undefined}
         />
       )}
     </div>

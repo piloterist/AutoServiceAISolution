@@ -67,7 +67,17 @@ export default async function WorkOrderDetailPage({
 
       {workOrder && (
         <>
-          <h1>Заказ-наряд {workOrder.external_number}</h1>
+          <div className="detail-title-row">
+            <h1>Заказ-наряд {workOrder.external_number}</h1>
+            {workOrder.planner_record && (
+              <Link
+                href={`/planner?workshop=${workOrder.planner_record.workshop_id}&zn=${encodeURIComponent(workOrder.external_number)}&date=${workOrder.planner_record.date}`}
+                className="admin-btn admin-btn-primary"
+              >
+                Перейти к записи
+              </Link>
+            )}
+          </div>
 
           <div className="card detail-header">
             <div className="detail-field">

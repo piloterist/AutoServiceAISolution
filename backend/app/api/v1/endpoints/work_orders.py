@@ -26,6 +26,7 @@ from app.schemas.work_order import (
     PaymentHistoryItem,
     PaymentTrendItem,
     PaymentTrendResponse,
+    PlannerRecordOut,
     RepairTypeListResponse,
     RevenuePaidSummaryResponse,
     StatusHistoryItem,
@@ -39,6 +40,7 @@ from app.schemas.work_order import (
     WorkOrderListResponse,
     WorkOrderPartLineItem,
 )
+from app.services import planner_service
 from app.services.settings_service import get_app_settings
 from app.services.work_order_query_service import (
     delete_work_order,
@@ -101,6 +103,11 @@ def get_work_orders(
         limit=limit,
         offset=offset,
     )
+    scheduled_ids = planner_service.scheduled_work_order_ids(db, [item.id for item in items])
+    for item in items:
+        # Not a real column - see WorkOrderListItem.is_scheduled's own
+        # comment for why a plain transient attribute works fine here.
+        item.is_scheduled = item.id in scheduled_ids
     return WorkOrderListResponse(
         items=[WorkOrderListItem.model_validate(item) for item in items],
         total=total,
@@ -303,9 +310,17 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
     if work_order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
 
+    record = planner_service.find_planner_record(db, work_order_id)
+    work_order.is_scheduled = record is not None
+
     return WorkOrderDetail(
         **WorkOrderListItem.model_validate(work_order).model_dump(),
         vin=work_order.vin,
+        planner_record=PlannerRecordOut(
+            kind=record.kind, workshop_id=record.workshop_id, date=record.date
+        )
+        if record
+        else None,
         labor=[
             WorkOrderLaborLineItem.model_validate(line)
             for line in list_labor_lines(db, work_order_id)

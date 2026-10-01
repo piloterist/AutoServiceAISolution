@@ -14,6 +14,7 @@ docstring for which fields that excludes and why.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import date, time
 from decimal import Decimal
 
@@ -26,6 +27,7 @@ from app.models.body_car_stage import BodyCarStage
 from app.models.employee import Employee
 from app.models.planner_constants import BODY_CAR_COLORS
 from app.models.slesarka_status import SlesarkaStatus
+from app.models.user import User
 from app.models.work_order import WorkOrder
 from app.models.workshop import Workshop
 from app.models.workshop_job import WorkshopJob
@@ -578,3 +580,67 @@ def employee_lookup(db: Session, employee_ids: set[uuid.UUID]) -> dict[uuid.UUID
     if not employee_ids:
         return {}
     return {e.id: e for e in db.scalars(select(Employee).where(Employee.id.in_(employee_ids)))}
+
+
+def scheduled_work_order_ids(db: Session, work_order_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Which of these ЗН already have a Планировщик record, on either
+    цех - feeds the Work Orders list's "Запланирован" Да/Нет column/filter
+    (product ask, 2026-10-01)."""
+    if not work_order_ids:
+        return set()
+    body_ids = db.scalars(
+        select(BodyCar.work_order_id).where(BodyCar.work_order_id.in_(work_order_ids))
+    )
+    job_ids = db.scalars(
+        select(WorkshopJob.work_order_id).where(WorkshopJob.work_order_id.in_(work_order_ids))
+    )
+    return set(body_ids) | set(job_ids)
+
+
+@dataclass
+class PlannerRecordRef:
+    kind: str  # "body" | "mechanical"
+    workshop_id: uuid.UUID
+    date: date
+
+
+def find_planner_record(db: Session, work_order_id: uuid.UUID) -> PlannerRecordRef | None:
+    """Which Планировщик record (if any) a ЗН is scheduled on, for the Work
+    Order detail page's "Перейти к записи" button (product ask,
+    2026-10-01). Кузовной (BodyCar) always wins when a ЗН is scheduled on
+    both: "если есть и в слесарке и в кузове, то всегда выбирать кузов".
+    `date` is the day the frontend should position the planner's own date
+    window on - a BodyCar's earliest stage start (every BodyCar has >=1
+    stage, enforced by BodyCarWrite.stages's min_length=1), or a
+    WorkshopJob's own job_date.
+    """
+    car_row = db.execute(
+        select(BodyCar.workshop_id, func.min(BodyCarStage.start_date))
+        .join(BodyCarStage, BodyCarStage.body_car_id == BodyCar.id)
+        .where(BodyCar.work_order_id == work_order_id)
+        .group_by(BodyCar.workshop_id)
+        .limit(1)
+    ).first()
+    if car_row is not None:
+        return PlannerRecordRef(kind="body", workshop_id=car_row[0], date=car_row[1])
+
+    job_row = db.execute(
+        select(WorkshopJob.workshop_id, WorkshopJob.job_date)
+        .where(WorkshopJob.work_order_id == work_order_id)
+        .limit(1)
+    ).first()
+    if job_row is not None:
+        return PlannerRecordRef(kind="mechanical", workshop_id=job_row[0], date=job_row[1])
+
+    return None
+
+
+def user_lookup(db: Session, user_ids: set[uuid.UUID]) -> dict[uuid.UUID, User]:
+    """Resolves WorkshopJob/BodyCar.created_by_id to a display name - see
+    _job_out/_car_out's read-only "CreatedBy" field (per product ask,
+    2026-10-01: "RecId - внутренний номер записи... CreatedBy -
+    пользователь, который создал запись, чтобы всегда можно было
+    посмотреть")."""
+    if not user_ids:
+        return {}
+    return {u.id: u for u in db.scalars(select(User).where(User.id.in_(user_ids)))}

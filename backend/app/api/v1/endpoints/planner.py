@@ -130,6 +130,9 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
     employee = planner_service.employee_lookup(
         db, {job.employee_id} if job.employee_id else set()
     ).get(job.employee_id)
+    creator = planner_service.user_lookup(
+        db, {job.created_by_id} if job.created_by_id else set()
+    ).get(job.created_by_id)
     return WorkshopJobOut(
         id=job.id,
         workshop_id=job.workshop_id,
@@ -153,6 +156,7 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
         status_color=status_row.color if status_row else None,
         employee_id=job.employee_id,
         employee_name=employee.full_name if employee else None,
+        created_by_name=creator.full_name if creator else None,
     )
 
 
@@ -230,6 +234,9 @@ def _car_out(db: Session, car: BodyCar) -> BodyCarOut:
     employees = planner_service.employee_lookup(
         db, {s.employee_id for s in car.stages if s.employee_id}
     )
+    creator = planner_service.user_lookup(
+        db, {car.created_by_id} if car.created_by_id else set()
+    ).get(car.created_by_id)
     return BodyCarOut(
         id=car.id,
         workshop_id=car.workshop_id,
@@ -261,6 +268,7 @@ def _car_out(db: Session, car: BodyCar) -> BodyCarOut:
             for s in car.stages
         ],
         created_at=car.created_at,
+        created_by_name=creator.full_name if creator else None,
     )
 
 

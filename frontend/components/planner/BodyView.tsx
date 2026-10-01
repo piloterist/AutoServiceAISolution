@@ -157,6 +157,11 @@ export function BodyView(props: {
   employees: Employee[];
   fivesystemsApiEnabled: boolean;
   defaultRepairType: string;
+  /** "Перейти к записи" deep link (see PlannerShell.tsx) - seeds the
+   * search box and positions the date window on arrival, same as if the
+   * operator had typed the ЗН number in themselves. */
+  initialSearch?: string;
+  initialDate?: string;
 }) {
   const [instanceKey, setInstanceKey] = useState(0);
   return <BodyViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
@@ -167,17 +172,27 @@ function BodyViewInner({
   employees,
   fivesystemsApiEnabled,
   defaultRepairType,
+  initialSearch,
+  initialDate,
   onWritten,
 }: {
   workshop: Workshop;
   employees: Employee[];
   fivesystemsApiEnabled: boolean;
   defaultRepairType: string;
+  initialSearch?: string;
+  initialDate?: string;
   onWritten: () => void;
 }) {
-  const [currentDate, setCurrentDate] = useState(todayIso());
+  const [currentDate, setCurrentDate] = useState(initialDate ?? todayIso());
   const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(21);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch ?? "");
+  // Scrolls the matched row into view once it's actually on the page - see
+  // the effect right after `reload` below. A ref map (not one ref) since
+  // the vertical list can be long and which row needs it isn't known until
+  // `cars` loads.
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const didScrollToLinkRef = useRef(false);
   const [repairTypeFilter, setRepairTypeFilter] = useState<RepairTypeFilter>(
     REPAIR_TYPE_FILTERS.includes(defaultRepairType as RepairTypeFilter)
       ? (defaultRepairType as RepairTypeFilter)
@@ -232,6 +247,21 @@ function BodyViewInner({
   };
 
   useEffect(reload, [workshop.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "Перейти к записи" deep link (per product ask, 2026-10-01): once cars
+  // have loaded, scroll the matched row into view - `initialDate` already
+  // put its bar inside the visible date window on the very first render
+  // (see useState above), so this only needs to handle the vertical list
+  // position. Runs once per mount (didScrollToLinkRef), not on every later
+  // `cars` refresh (e.g. after an edit elsewhere triggers a reload).
+  useEffect(() => {
+    if (!initialSearch || didScrollToLinkRef.current || cars.length === 0) return;
+    const match = cars.find((car) => carMatches(car, initialSearch));
+    if (match) {
+      rowRefs.current.get(match.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      didScrollToLinkRef.current = true;
+    }
+  }, [cars, initialSearch]);
 
   const todayStr = todayIso();
   const hasSearch = search.trim().length > 0;
@@ -497,7 +527,15 @@ function BodyViewInner({
               const span = carDisplaySpan(car);
               const dim = search.trim() && !carMatches(car, search);
               return (
-                <tr key={car.id} className={dim ? "planner-job-dim" : ""} style={{ borderLeft: `7px solid ${car.color}` }}>
+                <tr
+                  key={car.id}
+                  ref={(el) => {
+                    if (el) rowRefs.current.set(car.id, el);
+                    else rowRefs.current.delete(car.id);
+                  }}
+                  className={dim ? "planner-job-dim" : ""}
+                  style={{ borderLeft: `7px solid ${car.color}` }}
+                >
                   <td className="carc" onClick={() => openEdit(car)}>
                     <div className="l1">
                       <span className="order">{car.work_order_number ?? "—"}</span>

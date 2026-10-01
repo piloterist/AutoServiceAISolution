@@ -1,6 +1,8 @@
 import Image from "next/image";
+import { Suspense } from "react";
 
 import { DashboardFilters } from "@/components/DashboardFilters";
+import { DashboardPeriodSync } from "@/components/DashboardPeriodSync";
 import { MonthlyBarChart } from "@/components/MonthlyRevenueChart";
 import { RankedList, type RankedItem } from "@/components/RankedList";
 import { RevenueTrendChart } from "@/components/RevenueTrendChart";
@@ -23,6 +25,7 @@ import {
   previousPeriod,
   resolveGranularity,
 } from "@/lib/period";
+import { getCurrentUser } from "@/lib/session";
 
 // Must never be statically prerendered: if the backend happens to be
 // reachable at build time, Next.js could otherwise freeze this page with
@@ -139,6 +142,7 @@ export default async function DashboardPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
+  const user = await getCurrentUser();
   const rawDateFrom = params.date_from || undefined;
   const rawDateTo = params.date_to || undefined;
   const rawPrevDateFrom = params.prev_date_from || undefined;
@@ -346,6 +350,12 @@ export default async function DashboardPage({
   return (
     <div className="wide-page">
       <WorkOrdersPrefetcher />
+      {/* useSearchParams() inside needs a Suspense boundary to avoid
+          opting the whole page into client-side rendering during build
+          (see Next.js's CSR bailout rule) - renders nothing either way. */}
+      <Suspense fallback={null}>
+        <DashboardPeriodSync userId={user?.id ?? "anon"} />
+      </Suspense>
 
       <div className="dashboard-header">
         <Image
@@ -364,6 +374,7 @@ export default async function DashboardPage({
           prevDateTo={previousRange.dateTo}
           selectedDepartment={selectedDepartments[0]}
           hasActiveFilters={hasActiveFilters}
+          userId={user?.id ?? "anon"}
         />
       </div>
 

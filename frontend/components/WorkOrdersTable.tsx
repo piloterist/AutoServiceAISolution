@@ -15,9 +15,9 @@ import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } fro
 // has to absolutely-position each row by a computed offset, which a native
 // <table>'s row-flow layout doesn't support.
 // 1 Дата документа | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
-// 5 Контрагент | 6 Статус | 7 Внутренний | 8 Подразделение | 9 Вид ремонта |
-// 10 Сумма | 11 Сумма оплаты | 12 % оплаты
-const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 14% 9% 7% 9% 9% 9% 7% 8% 7%";
+// 5 Контрагент | 6 Статус | 7 Внутренний | 8 Запланирован | 9 Подразделение |
+// 10 Вид ремонта | 11 Сумма | 12 Сумма оплаты | 13 % оплаты
+const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 12% 8% 7% 9% 6% 8% 8% 7% 7% 7%";
 
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
@@ -49,6 +49,7 @@ function formatPercentOrDash(percent: string | null): string {
 
 type PaymentFilter = "all" | "full" | "partial" | "none";
 type InternalFilter = "all" | "internal" | "external";
+type ScheduledFilter = "all" | "yes" | "no";
 
 /** "Внутренний" filter, analogous to the "Оплата" select above - a plain
  * boolean, so a 3-state dropdown reads more clearly here than a
@@ -57,6 +58,13 @@ type InternalFilter = "all" | "internal" | "external";
 function matchesInternalFilter(isInternal: boolean, filter: InternalFilter): boolean {
   if (filter === "all") return true;
   return filter === "internal" ? isInternal : !isInternal;
+}
+
+/** "Запланирован" filter - same 3-state shape as "Внутренний" above (per
+ * product ask, 2026-10-01). */
+function matchesScheduledFilter(isScheduled: boolean, filter: ScheduledFilter): boolean {
+  if (filter === "all") return true;
+  return filter === "yes" ? isScheduled : !isScheduled;
 }
 
 /** "Оплата" filter categories, derived from the same payment_percent 5S
@@ -104,6 +112,7 @@ type Row = {
   customer: string;
   status: string;
   internal: string;
+  scheduled: string;
   department: string;
   repairType: string;
   amount: string;
@@ -119,6 +128,7 @@ type ColumnKey =
   | "customer"
   | "status"
   | "internal"
+  | "scheduled"
   | "department"
   | "repairType"
   | "amount"
@@ -133,6 +143,7 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "customer", label: "Контрагент" },
   { key: "status", label: "Статус" },
   { key: "internal", label: "Внутренний" },
+  { key: "scheduled", label: "Запланирован" },
   { key: "department", label: "Подразделение" },
   { key: "repairType", label: "Вид ремонта" },
   { key: "amount", label: "Сумма", numeric: true },
@@ -150,6 +161,7 @@ type PersistedFilters = {
   closedTo: string;
   paymentFilter: PaymentFilter;
   internalFilter: InternalFilter;
+  scheduledFilter: ScheduledFilter;
 };
 
 const FILTERS_STORAGE_KEY = "work-orders-filters:v1";
@@ -214,6 +226,7 @@ function buildClipboardText(rows: Row[]): string {
       row.customer || "—",
       row.status || "—",
       row.internal,
+      row.scheduled,
       row.department || "—",
       row.repairType || "—",
       exportNumber(row.item.amount),
@@ -332,6 +345,7 @@ export function WorkOrdersTable({
     customer: persisted?.columnFilters.customer ?? "",
     status: "",
     internal: "",
+    scheduled: "",
     department: initialDepartment ?? persisted?.columnFilters.department ?? "",
     repairType: persisted?.columnFilters.repairType ?? "",
     amount: persisted?.columnFilters.amount ?? "",
@@ -356,6 +370,9 @@ export function WorkOrdersTable({
   const [internalFilter, setInternalFilter] = useState<InternalFilter>(
     () => persisted?.internalFilter ?? "all",
   );
+  const [scheduledFilter, setScheduledFilter] = useState<ScheduledFilter>(
+    () => persisted?.scheduledFilter ?? "all",
+  );
 
   useEffect(() => {
     writePersistedFilters({
@@ -368,6 +385,7 @@ export function WorkOrdersTable({
       closedTo,
       paymentFilter,
       internalFilter,
+      scheduledFilter,
     });
   }, [
     search,
@@ -379,6 +397,7 @@ export function WorkOrdersTable({
     closedTo,
     paymentFilter,
     internalFilter,
+    scheduledFilter,
   ]);
 
   const resetFilters = () => {
@@ -391,6 +410,7 @@ export function WorkOrdersTable({
       customer: "",
       status: "",
       internal: "",
+      scheduled: "",
       department: "",
       repairType: "",
       amount: "",
@@ -404,6 +424,7 @@ export function WorkOrdersTable({
     setClosedTo("");
     setPaymentFilter("all");
     setInternalFilter("all");
+    setScheduledFilter("all");
     clearPersistedFilters();
   };
 
@@ -418,6 +439,7 @@ export function WorkOrdersTable({
         customer: item.customer_name ?? "",
         status: item.status ?? "",
         internal: item.is_internal ? "Да" : "Нет",
+        scheduled: item.is_scheduled ? "Да" : "Нет",
         department: item.department ?? "",
         repairType: item.repair_type ?? "",
         amount: formatAmount(item.amount),
@@ -490,6 +512,7 @@ export function WorkOrdersTable({
       if (!isWithinDateRange(row.item.closed_date, closedFrom, closedTo)) return false;
       if (!matchesPaymentFilter(row.item.payment_percent, paymentFilter)) return false;
       if (!matchesInternalFilter(row.item.is_internal, internalFilter)) return false;
+      if (!matchesScheduledFilter(row.item.is_scheduled, scheduledFilter)) return false;
 
       return true;
     });
@@ -504,6 +527,7 @@ export function WorkOrdersTable({
     closedTo,
     paymentFilter,
     internalFilter,
+    scheduledFilter,
   ]);
 
   // Recomputes with filteredRows - the whole point is that it tracks
@@ -698,6 +722,18 @@ export function WorkOrdersTable({
                     <option value="external">Внешн.</option>
                   </select>
                 </div>
+              ) : col.key === "scheduled" ? (
+                <div key={col.key} className="vt-cell" role="columnheader">
+                  <select
+                    value={scheduledFilter}
+                    onChange={(event) => setScheduledFilter(event.target.value as ScheduledFilter)}
+                    aria-label="Фильтр по полю Запланирован"
+                  >
+                    <option value="all">Все</option>
+                    <option value="yes">Да</option>
+                    <option value="no">Нет</option>
+                  </select>
+                </div>
               ) : (
                 <div
                   key={col.key}
@@ -769,6 +805,9 @@ export function WorkOrdersTable({
                   </div>
                   <div className="vt-cell" role="gridcell">
                     {row.internal}
+                  </div>
+                  <div className="vt-cell" role="gridcell">
+                    {row.scheduled}
                   </div>
                   <div className="vt-cell" role="gridcell">
                     {row.department || "—"}

@@ -4,7 +4,7 @@ Separate from schemas/import_work_order.py (the write-side 1C contract) on
 purpose - the two evolve independently.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -48,6 +48,12 @@ class WorkOrderListItem(BaseModel):
     debt_amount: Decimal | None
     paid_amount: Decimal | None
     payment_percent: Decimal | None
+    # Whether this ЗН has any Планировщик record (WorkshopJob or BodyCar,
+    # either цех) - see services/planner_service.scheduled_work_order_ids.
+    # Not a real WorkOrder column - the endpoint attaches it as a plain
+    # instance attribute before validation (from_attributes just does a
+    # getattr, it doesn't care that it isn't a mapped SQLAlchemy column).
+    is_scheduled: bool
 
     model_config = {"from_attributes": True}
 
@@ -221,6 +227,17 @@ class InvoiceItem(BaseModel):
         )
 
 
+class PlannerRecordOut(BaseModel):
+    """Where this ЗН is scheduled, for the detail page's "Перейти к
+    записи" button - see services/planner_service.find_planner_record."""
+
+    kind: str  # "body" | "mechanical"
+    workshop_id: UUID
+    # The planner's own date window should open positioned on this day -
+    # see frontend app/planner/page.tsx's `date` query param.
+    date: date
+
+
 class WorkOrderDetail(WorkOrderListItem):
     """Single work order's header (same fields as the list, plus `vin`)
     plus its labor (Работы) and parts (Товары) tabular-section lines, its
@@ -242,3 +259,4 @@ class WorkOrderDetail(WorkOrderListItem):
     payment_history: list[PaymentHistoryItem]
     payment_events: list[PaymentEventItem]
     invoices: list[InvoiceItem]
+    planner_record: PlannerRecordOut | None

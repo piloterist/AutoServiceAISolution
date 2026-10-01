@@ -27,6 +27,9 @@ export type CarDraft = {
   status: string;
   onSite: boolean;
   stages: StageDraft[];
+  // Read-only, set only for an existing record - see carToDraft/
+  // emptyCarDraft below and WorkshopJobDialog's same field for why.
+  createdByName: string | null;
 };
 
 /** Restores "each stage must start no earlier than the previous one starts"
@@ -340,6 +343,13 @@ export function BodyCarDialog({
           )}
         </fieldset>
 
+        {form.carId && (
+          <div className="admin-form-meta">
+            <span>RecId: {form.carId}</span>
+            <span>Создал: {form.createdByName ?? "—"}</span>
+          </div>
+        )}
+
         {error && <p className="admin-form-error">{error}</p>}
         <div className="admin-form-actions">
           {form.carId && (
@@ -412,6 +422,7 @@ export function carToDraft(car: BodyCar): CarDraft {
       endDate: s.end_date,
       employeeId: s.employee_id ?? "",
     })),
+    createdByName: car.created_by_name,
   };
 }
 
@@ -429,5 +440,6 @@ export function emptyCarDraft(arriveDate: string): CarDraft {
     status: "К приёмке",
     onSite: false,
     stages: [newStageRow(undefined, arriveDate)],
+    createdByName: null,
   };
 }
