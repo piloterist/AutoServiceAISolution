@@ -91,6 +91,22 @@ class TelephonySettings(Base):
     # is safe to just run again later, already-finished files are skipped.
     speechkit_timeout_min: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
 
+    # --- Call topic classification via YandexGPT (see
+    # services/yandexgpt_client.py, services/call_transcription_relay.py) -
+    # a separate automatic pipeline from the SpeechKit settings above, off
+    # by default (an extra paid call per transcript). Reuses yc_api_key/
+    # yc_folder_id - Yandex Foundation Models accepts the same Api-Key auth
+    # SpeechKit does, just needs the ai.languageModels.user role added to
+    # that same service account.
+    classify_calls_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Suffix after "gpt://<folder_id>/" - e.g. "yandexgpt-lite/latest"
+    # (cheaper, used by default) vs "yandexgpt/latest" (full model).
+    yandexgpt_model: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="yandexgpt-lite/latest"
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

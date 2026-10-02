@@ -29,6 +29,8 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
   const [speechkitModel, setSpeechkitModel] = useState(initialSettings.speechkit_model);
   const [speechkitLanguage, setSpeechkitLanguage] = useState(initialSettings.speechkit_language);
   const [speechkitTimeoutMin, setSpeechkitTimeoutMin] = useState(String(initialSettings.speechkit_timeout_min));
+  const [classifyCallsEnabled, setClassifyCallsEnabled] = useState(initialSettings.classify_calls_enabled);
+  const [yandexgptModel, setYandexgptModel] = useState(initialSettings.yandexgpt_model);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -68,6 +70,8 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
         speechkit_model: speechkitModel,
         speechkit_language: speechkitLanguage,
         speechkit_timeout_min: Number(speechkitTimeoutMin) || 60,
+        classify_calls_enabled: classifyCallsEnabled,
+        yandexgpt_model: yandexgptModel,
       });
       setSaveState("saved");
     } catch (err) {
@@ -307,6 +311,30 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
               min={1}
               value={speechkitTimeoutMin}
               onChange={(e) => setSpeechkitTimeoutMin(e.target.value)}
+            />
+          </div>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={classifyCallsEnabled}
+              onChange={(e) => setClassifyCallsEnabled(e.target.checked)}
+            />
+            Определять тему звонка (YandexGPT)
+          </label>
+          <p className="settings-description">
+            Раз в несколько минут отправляет готовую расшифровку отвеченного звонка в YandexGPT и
+            помечает его темой «Кузовной» / «Слесарный» / «Не определено» — платный запрос
+            дополнительно к SpeechKit, использует тот же аккаунт Yandex Cloud (ключ/Folder ID выше).
+          </p>
+          <div className="settings-field">
+            <label htmlFor="tel-yandexgpt-model">Модель YandexGPT</label>
+            <input
+              id="tel-yandexgpt-model"
+              type="text"
+              value={yandexgptModel}
+              onChange={(e) => setYandexgptModel(e.target.value)}
+              placeholder="yandexgpt-lite/latest"
             />
           </div>
         </div>

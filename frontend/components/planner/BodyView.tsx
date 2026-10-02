@@ -151,7 +151,15 @@ function carMatchesRepairTypeFilter(car: BodyCar, filter: RepairTypeFilter): boo
 
 /** Wraps BodyViewInner and forces a full remount of it (fresh state,
  * fresh useEffect, fresh fetch) after every write, by bumping `key` - see
- * the identical wrapper on MechanicalView for the full reasoning. */
+ * the identical wrapper on MechanicalView for the full reasoning.
+ *
+ * `currentDate`/`daysCount` are lifted up here (not owned by BodyViewInner)
+ * for exactly the same reason as MechanicalView's `currentDate`/`viewSpan`:
+ * this wrapper itself never remounts, so scrolling several days over and
+ * then editing a record no longer snaps the view back to "today" as a
+ * side effect of the post-save remount (product ask, 2026-10-02) -
+ * positioning on today now only happens on first opening the Planner or
+ * clicking "Сегодня". */
 export function BodyView(props: {
   workshop: Workshop;
   employees: Employee[];
@@ -164,7 +172,26 @@ export function BodyView(props: {
   initialDate?: string;
 }) {
   const [instanceKey, setInstanceKey] = useState(0);
-  return <BodyViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
+  const [currentDate, setCurrentDate] = useState(props.initialDate ?? todayIso());
+  const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(21);
+  // Same "survive the post-write remount" reasoning as currentDate/
+  // daysCount above, for the *horizontal scroll position within* the
+  // currently rendered day window (daysCount can render wider than the
+  // viewport) - see MechanicalView's identical scrollLeftRef for the full
+  // explanation of why this needs its own, separate fix from currentDate.
+  const scrollLeftRef = useRef(0);
+  return (
+    <BodyViewInner
+      key={instanceKey}
+      {...props}
+      currentDate={currentDate}
+      setCurrentDate={setCurrentDate}
+      daysCount={daysCount}
+      setDaysCount={setDaysCount}
+      scrollLeftRef={scrollLeftRef}
+      onWritten={() => setInstanceKey((k) => k + 1)}
+    />
+  );
 }
 
 function BodyViewInner({
@@ -173,7 +200,11 @@ function BodyViewInner({
   fivesystemsApiEnabled,
   defaultRepairType,
   initialSearch,
-  initialDate,
+  currentDate,
+  setCurrentDate,
+  daysCount,
+  setDaysCount,
+  scrollLeftRef,
   onWritten,
 }: {
   workshop: Workshop;
@@ -181,11 +212,13 @@ function BodyViewInner({
   fivesystemsApiEnabled: boolean;
   defaultRepairType: string;
   initialSearch?: string;
-  initialDate?: string;
+  currentDate: string;
+  setCurrentDate: (date: string) => void;
+  daysCount: (typeof DAYS_OPTIONS)[number];
+  setDaysCount: (count: (typeof DAYS_OPTIONS)[number]) => void;
+  scrollLeftRef: { current: number };
   onWritten: () => void;
 }) {
-  const [currentDate, setCurrentDate] = useState(initialDate ?? todayIso());
-  const [daysCount, setDaysCount] = useState<(typeof DAYS_OPTIONS)[number]>(21);
   const [search, setSearch] = useState(initialSearch ?? "");
   // Scrolls the matched row into view once it's actually on the page - see
   // the effect right after `reload` below. A ref map (not one ref) since
@@ -507,7 +540,18 @@ function BodyViewInner({
 
       {stageDragError && <p className="admin-form-error">{stageDragError}</p>}
 
-      <div className="tw">
+      <div
+        className="tw"
+        ref={(el) => {
+          // Restores whatever horizontal scroll position the operator had
+          // the instant this container (re)mounts - see scrollLeftRef's
+          // own comment.
+          if (el) el.scrollLeft = scrollLeftRef.current;
+        }}
+        onScroll={(e) => {
+          scrollLeftRef.current = e.currentTarget.scrollLeft;
+        }}
+      >
         <table className="bt" style={{ width: CAR_COL_WIDTH + tableWidth }}>
           <thead>
             <tr>

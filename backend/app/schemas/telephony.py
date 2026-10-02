@@ -29,6 +29,8 @@ class TelephonySettingsResponse(BaseModel):
     speechkit_model: str
     speechkit_language: str
     speechkit_timeout_min: int
+    classify_calls_enabled: bool
+    yandexgpt_model: str
 
     model_config = {"from_attributes": True}
 
@@ -48,6 +50,8 @@ class TelephonySettingsUpdate(BaseModel):
     speechkit_model: str = "general"
     speechkit_language: str = "ru-RU"
     speechkit_timeout_min: int = Field(default=60, gt=0)
+    classify_calls_enabled: bool = False
+    yandexgpt_model: str = "yandexgpt-lite/latest"
 
     def validate_choices(self) -> None:
         if self.zeon_auth not in ZEON_AUTH_MODES:
@@ -145,6 +149,11 @@ class LineCallEventOut(BaseModel):
     answered: bool
     wait_sec: int
     talk_sec: int
+    # YandexGPT's guess at what the call was about - null until
+    # transcribed+classified (see services/call_transcription_relay.py), or
+    # always null for a call with no real talk time to transcribe.
+    topic_tag: str | None
+    transcript_text: str | None
 
     model_config = {"from_attributes": True}
 

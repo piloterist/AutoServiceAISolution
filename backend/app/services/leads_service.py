@@ -35,6 +35,7 @@ from app.models.website_lead import (
     SOURCE_QUIZ_MECHANICAL,
     WebsiteLead,
 )
+from app.services import lead_photos_service, telephony_settings_service
 from app.services.telephony_stats_service import MIN_REAL_TALK_SEC
 
 SETTINGS_ID = 1
@@ -135,12 +136,21 @@ def create_lead(db: Session, payload: dict[str, Any]) -> WebsiteLead:
     # client-side/by the site's own init.php, not worth storing.
     stored_payload = {k: v for k, v in payload.items() if k != "recaptcha_response"}
 
+    # The site's own /tmp_files/<folder>/<name> links are a short-lived
+    # upload scratch area, not durable storage - archive onto our own
+    # Yandex.Disk (see lead_photos_service) and store OUR serving paths
+    # instead, so the photo survives that folder being cleaned up.
+    lead_id = uuid.uuid4()
+    source_photo_urls = _extract_photos(payload) or []
+    disk_token = telephony_settings_service.get_telephony_settings(db).yandex_disk_token
+    photos = lead_photos_service.archive_photos(source_photo_urls, lead_id, disk_token) or None
+
     lead = WebsiteLead(
-        id=uuid.uuid4(),
+        id=lead_id,
         source=_classify_source(payload),
         phone=phone,
         name=(str(payload.get("user_name")).strip() or None) if payload.get("user_name") else None,
-        photos=_extract_photos(payload),
+        photos=photos,
         raw_payload=stored_payload,
     )
     db.add(lead)

@@ -42,6 +42,25 @@ def test_write_settings_rejects_unknown_auth_mode(client, auth_headers) -> None:
     assert response.status_code == 422
 
 
+def test_write_settings_persists_classify_calls_fields(client, auth_headers) -> None:
+    """Call-topic classification (YandexGPT, product ask 2026-10-02) - off
+    by default, and the model is editable without a redeploy (same
+    pattern as speechkit_model)."""
+    response = client.get(SETTINGS_URL, headers=auth_headers)
+    assert response.json()["classify_calls_enabled"] is False
+    assert response.json()["yandexgpt_model"] == "yandexgpt-lite/latest"
+
+    response = client.put(
+        SETTINGS_URL,
+        headers=auth_headers,
+        json={"classify_calls_enabled": True, "yandexgpt_model": "yandexgpt/latest"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["classify_calls_enabled"] is True
+    assert body["yandexgpt_model"] == "yandexgpt/latest"
+
+
 def test_ping_fails_gracefully_when_unconfigured(client, auth_headers) -> None:
     response = client.post(PING_URL, headers=auth_headers)
 

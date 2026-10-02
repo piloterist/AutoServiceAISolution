@@ -238,6 +238,18 @@ async function backendGet<T>(path: string, params?: Record<string, string>): Pro
   return res.json() as Promise<T>;
 }
 
+export async function fetchLeadPhoto(
+  leadId: string,
+  filename: string,
+): Promise<{ body: ArrayBuffer; contentType: string } | null> {
+  const res = await fetch(new URL(`/api/v1/leads/${leadId}/photos/${filename}`, API_URL), {
+    headers: { Authorization: `Bearer ${backendToken()}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  return { body: await res.arrayBuffer(), contentType: res.headers.get("content-type") ?? "application/octet-stream" };
+}
+
 async function backendPut<T>(
   path: string,
   body: unknown,
@@ -977,6 +989,11 @@ export type TelephonySettings = {
   speechkit_model: string;
   speechkit_language: string;
   speechkit_timeout_min: number;
+  // Call-topic classification (YandexGPT) - see backend
+  // services/call_transcription_relay.py. Off by default - an extra paid
+  // call per transcript, on top of SpeechKit's own.
+  classify_calls_enabled: boolean;
+  yandexgpt_model: string;
 };
 
 export type TelephonySettingsWrite = {
@@ -994,6 +1011,8 @@ export type TelephonySettingsWrite = {
   speechkit_model: string;
   speechkit_language: string;
   speechkit_timeout_min: number;
+  classify_calls_enabled: boolean;
+  yandexgpt_model: string;
 };
 
 export function getTelephonySettings(): Promise<TelephonySettings> {
@@ -1115,6 +1134,12 @@ export type LineCallEvent = {
   answered: boolean;
   wait_sec: number;
   talk_sec: number;
+  // YandexGPT's call-topic guess ("Кузовной" | "Слесарный" | "Не
+  // определено") - null until transcribed+classified (see backend
+  // services/call_transcription_relay.py) or always null for a call with
+  // no real talk time to transcribe.
+  topic_tag: string | null;
+  transcript_text: string | null;
 };
 
 export type LineCallsResponse = {

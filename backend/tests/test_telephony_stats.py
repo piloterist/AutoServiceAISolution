@@ -275,6 +275,50 @@ def test_list_line_calls_surfaces_rang_not_answered(db_session: Session) -> None
     assert events[0].rang_not_answered == ["302", "300", "308"]
 
 
+def test_list_line_calls_surfaces_topic_tag_and_transcript(db_session: Session) -> None:
+    """YandexGPT's call-topic classification (product ask, 2026-10-02) -
+    see services/call_transcription_service.py, which is what actually
+    populates these two columns; here only the passthrough into
+    LineCallEvent matters."""
+    call = _call(
+        db_session,
+        external_id="1",
+        hour_msk=10,
+        call_type="IN",
+        client="9990000099",
+        line="pan",
+        talk_sec=42,
+    )
+    call.transcript_status = "classified"
+    call.topic_tag = "Кузовной"
+    call.transcript_text = "Говорящий 1: нужна покраска бампера"
+    db_session.commit()
+
+    events = stats.list_line_calls(db_session, DAY, DAY, "pan")
+
+    assert len(events) == 1
+    assert events[0].topic_tag == "Кузовной"
+    assert events[0].transcript_text == "Говорящий 1: нужна покраска бампера"
+
+
+def test_list_line_calls_topic_tag_is_none_before_classification(db_session: Session) -> None:
+    _call(
+        db_session,
+        external_id="1",
+        hour_msk=10,
+        call_type="IN",
+        client="9990000099",
+        line="pan",
+        talk_sec=42,
+    )
+    db_session.commit()
+
+    events = stats.list_line_calls(db_session, DAY, DAY, "pan")
+
+    assert events[0].topic_tag is None
+    assert events[0].transcript_text is None
+
+
 def test_compute_source_summary_defaults_to_no_reaction_when_never_followed_up(
     db_session: Session, scenario: None
 ) -> None:

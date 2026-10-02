@@ -135,9 +135,72 @@ def test_full_lead_lifecycle(client, db_session, auth_headers) -> None:
     lead = leads[0]
     assert lead["source"] == "quiz_body"
     assert lead["phone"] == "9000000002"
-    assert lead["photos"] == ["https://pan-motors.ru/tmp_files/438730/img1.jpg"]
+    # No yandex_disk_token configured in this test DB -> nothing to archive
+    # to, so the dead pan-motors.ru link is dropped rather than stored (see
+    # lead_photos_service.archive_photos) - photo archiving itself is
+    # covered by test_lead_photos_service.py and
+    # test_intake_archives_photos_when_disk_token_configured below.
+    assert lead["photos"] is None
     assert "recaptcha_response" not in lead["raw_payload"]
     assert lead["status"] == "open"
+
+
+def test_intake_archives_photos_when_disk_token_configured(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    import httpx
+
+    from app.services.telephony_settings_service import get_telephony_settings
+    from app.services.yandex_disk_client import API_BASE
+
+    _enable_intake(db_session)
+    settings = get_telephony_settings(db_session)
+    settings.yandex_disk_token = "a-disk-token"
+    db_session.commit()
+
+    photo_url = "https://pan-motors.ru/tmp_files/555/img1.jpg"
+    upload_href = "https://uploader.disk.yandex.net/fake"
+    # TestClient itself is httpx-backed, so patching httpx.Client.get/.put
+    # at the class level also intercepts the test's OWN requests to the
+    # app - anything that isn't one of our two real external targets must
+    # fall through to the original implementation.
+    original_get = httpx.Client.get
+    original_put = httpx.Client.put
+
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        url_str = str(url)
+        if url_str == photo_url:
+            return httpx.Response(
+                200,
+                content=b"bytes",
+                headers={"content-type": "image/jpeg"},
+                request=httpx.Request("GET", url_str),
+            )
+        if url_str == f"{API_BASE}/resources/upload":
+            return httpx.Response(
+                200, json={"href": upload_href}, request=httpx.Request("GET", url_str)
+            )
+        return original_get(self, url, **kwargs)
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        url_str = str(url)
+        if url_str == upload_href or url_str.startswith(f"{API_BASE}/resources"):
+            return httpx.Response(201, request=httpx.Request("PUT", url_str))
+        return original_put(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+    response = client.post(
+        INTAKE_URL,
+        json={"files": "img1.jpg;", "folder": "555", "user_phone": "+7 (900) 000-00-09"},
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+    assert response.status_code == 201
+    lead_id = response.json()["id"]
+
+    lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+    assert lead["photos"] == [f"/api/leads/{lead_id}/photos/img1.jpg"]
 
 
 def test_source_classification(client, db_session, auth_headers) -> None:

@@ -73,6 +73,12 @@ class _Rec:
     lost: list[str]
     wait: int
     talk: int
+    # YandexGPT's call-topic guess (see models.call_record.CALL_TOPICS) and
+    # the transcript it was read from - both null until
+    # services/call_transcription_relay.py gets to this call, or always
+    # null for one with no real talk time to transcribe.
+    topic_tag: str | None
+    transcript_text: str | None
 
     @property
     def answered(self) -> bool:
@@ -90,6 +96,8 @@ def _row_to_rec(row: CallRecord) -> _Rec:
         lost=list(row.rang_not_answered or []),
         wait=row.wait_sec,
         talk=row.talk_sec,
+        topic_tag=row.topic_tag,
+        transcript_text=row.transcript_text,
     )
 
 
@@ -590,6 +598,8 @@ class LineCallEvent:
     answered: bool
     wait_sec: int
     talk_sec: int
+    topic_tag: str | None
+    transcript_text: str | None
 
 
 def list_line_calls(
@@ -632,6 +642,8 @@ def list_line_calls(
                 answered=rec.answered,
                 wait_sec=rec.wait,
                 talk_sec=rec.talk,
+                topic_tag=rec.topic_tag,
+                transcript_text=rec.transcript_text,
             )
         )
 

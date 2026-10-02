@@ -110,6 +110,8 @@ def write_telephony_settings(
         speechkit_model=payload.speechkit_model,
         speechkit_language=payload.speechkit_language,
         speechkit_timeout_min=payload.speechkit_timeout_min,
+        classify_calls_enabled=payload.classify_calls_enabled,
+        yandexgpt_model=payload.yandexgpt_model,
     )
     return TelephonySettingsResponse.model_validate(settings)
 

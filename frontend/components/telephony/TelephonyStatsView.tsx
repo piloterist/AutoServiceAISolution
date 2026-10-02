@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
+import { AdminModal } from "@/components/settings/AdminModal";
 import type { LineCallEvent, SourceSummaryResponse, SourceSummaryRow } from "@/lib/backend-api";
 import { getLineCallsClient, getSourceSummaryClient } from "@/lib/telephony-client";
 
@@ -86,6 +87,17 @@ function extensionsCell(event: LineCallEvent): string {
   return rang.length > 0 ? rang.join(", ") : "—";
 }
 
+// YandexGPT's call-topic guess (see backend services/call_transcription_relay.py) -
+// a neutral badge per tag, distinct from the ok/warn/down semantics
+// pctBadgeClass above uses (this isn't a quality signal, just a label).
+// Only ever called with a non-null tag - see the `event.topic_tag &&` guard
+// at the call site, which renders nothing at all until classified.
+function topicBadgeClass(tag: string): string {
+  if (tag === "Кузовной") return "telephony-topic-badge telephony-topic-badge--body";
+  if (tag === "Слесарный") return "telephony-topic-badge telephony-topic-badge--mechanical";
+  return "telephony-topic-badge telephony-topic-badge--unknown";
+}
+
 function eventRowClass(event: LineCallEvent): string {
   if (!event.answered) return "telephony-event-row telephony-event-row--missed";
   if (event.role !== "incoming") return "telephony-event-row telephony-event-row--callback";
@@ -124,6 +136,13 @@ function LineCallsPanel({
   const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<EventSortKey>("time");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  // Full transcript, opened explicitly by clicking a call's own topic
+  // cell - a hover-only tooltip wasn't discoverable enough (per product
+  // feedback, 2026-10-02: "как в интерфейсе посмотреть весь текст
+  // расшифровки... ты куда-то вывел это?"). Shown whenever a transcript
+  // exists at all, even before it's been classified into a topic tag (or
+  // when classification is switched off entirely).
+  const [transcriptEvent, setTranscriptEvent] = useState<LineCallEvent | null>(null);
 
   const toggleSort = (key: EventSortKey) => {
     if (key === sortKey) {
@@ -161,38 +180,85 @@ function LineCallsPanel({
   const sortArrow = (key: EventSortKey) => (key === sortKey ? (sortDir === "asc" ? " ▲" : " ▼") : "");
 
   return (
-    <table className="data-table telephony-events-table">
-      <thead>
-        <tr>
-          <th>
-            <button type="button" className="telephony-sort-btn" onClick={() => toggleSort("time")}>
-              Время{sortArrow("time")}
-            </button>
-          </th>
-          <th>Событие</th>
-          <th>
-            <button type="button" className="telephony-sort-btn" onClick={() => toggleSort("client")}>
-              Номер{sortArrow("client")}
-            </button>
-          </th>
-          <th>Добавочные</th>
-          <th className="telephony-num">Ожидание</th>
-          <th className="telephony-num">Разговор</th>
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((event, index) => (
-          <tr key={`${event.time}-${index}`} className={eventRowClass(event)}>
-            <td>{formatEventTime(event.time)}</td>
-            <td>{eventLabel(event)}</td>
-            <td>{formatClient(event.client)}</td>
-            <td>{extensionsCell(event)}</td>
-            <td className="telephony-num">{event.wait_sec} с</td>
-            <td className="telephony-num">{event.answered ? `${event.talk_sec} с` : "—"}</td>
+    <>
+      <table className="data-table telephony-events-table">
+        <thead>
+          <tr>
+            <th>
+              <button type="button" className="telephony-sort-btn" onClick={() => toggleSort("time")}>
+                Время{sortArrow("time")}
+              </button>
+            </th>
+            <th>Событие</th>
+            <th>
+              <button type="button" className="telephony-sort-btn" onClick={() => toggleSort("client")}>
+                Номер{sortArrow("client")}
+              </button>
+            </th>
+            <th>Добавочные</th>
+            <th className="telephony-num">Ожидание</th>
+            <th className="telephony-num">Разговор</th>
+            <th>Тема</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {sorted.map((event, index) => (
+            <tr key={`${event.time}-${index}`} className={eventRowClass(event)}>
+              <td>{formatEventTime(event.time)}</td>
+              <td>{eventLabel(event)}</td>
+              <td>{formatClient(event.client)}</td>
+              <td>{extensionsCell(event)}</td>
+              <td className="telephony-num">{event.wait_sec} с</td>
+              <td className="telephony-num">{event.answered ? `${event.talk_sec} с` : "—"}</td>
+              <td>
+                {event.transcript_text ? (
+                  <button
+                    type="button"
+                    className="telephony-topic-cell-btn"
+                    onClick={() => setTranscriptEvent(event)}
+                    title="Показать расшифровку"
+                  >
+                    {event.topic_tag ? (
+                      <span className={topicBadgeClass(event.topic_tag)}>{event.topic_tag}</span>
+                    ) : (
+                      <span className="telephony-topic-badge telephony-topic-badge--unknown">
+                        Расшифровка
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  event.topic_tag && (
+                    <span className={topicBadgeClass(event.topic_tag)}>{event.topic_tag}</span>
+                  )
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <AdminModal
+        open={transcriptEvent !== null}
+        title={
+          transcriptEvent
+            ? `Расшифровка · ${formatClient(transcriptEvent.client)} · ${formatEventTime(transcriptEvent.time)}`
+            : "Расшифровка"
+        }
+        onClose={() => setTranscriptEvent(null)}
+        closeOnBackdropClick
+        wide
+      >
+        {transcriptEvent?.topic_tag && (
+          <p className="settings-description">
+            Тема:{" "}
+            <span className={topicBadgeClass(transcriptEvent.topic_tag)}>
+              {transcriptEvent.topic_tag}
+            </span>
+          </p>
+        )}
+        <p className="telephony-transcript-text">{transcriptEvent?.transcript_text}</p>
+      </AdminModal>
+    </>
   );
 }
 

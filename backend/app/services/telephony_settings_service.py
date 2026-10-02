@@ -43,6 +43,8 @@ def update_telephony_settings(
     speechkit_model: str,
     speechkit_language: str,
     speechkit_timeout_min: int,
+    classify_calls_enabled: bool,
+    yandexgpt_model: str,
 ) -> TelephonySettings:
     settings = get_telephony_settings(db)
     settings.enabled = enabled
@@ -59,6 +61,8 @@ def update_telephony_settings(
     settings.speechkit_model = speechkit_model
     settings.speechkit_language = speechkit_language
     settings.speechkit_timeout_min = speechkit_timeout_min
+    settings.classify_calls_enabled = classify_calls_enabled
+    settings.yandexgpt_model = yandexgpt_model
     db.commit()
     db.refresh(settings)
     return settings

@@ -3420,6 +3420,63 @@ table.bt {
   color: var(--down);
 }
 
+/* YandexGPT call-topic tag (see components/telephony/TelephonyStatsView.tsx's
+   topicBadgeClass) - a plain label, not a quality signal, so it uses its
+   own neutral accent colors rather than the ok/warn/down ones
+   .telephony-badge above carries. Full transcript shows as a native
+   tooltip (title attribute) on hover - see topicTitle(). */
+.telephony-topic-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Wraps the badge when a transcript exists at all (see
+   TelephonyStatsView.tsx) - click opens the full-text modal, not just a
+   hover tooltip (per product feedback, 2026-10-02: a tooltip alone wasn't
+   discoverable). */
+.telephony-topic-cell-btn {
+  all: unset;
+  cursor: pointer;
+}
+
+.telephony-topic-cell-btn:hover .telephony-topic-badge,
+.telephony-topic-cell-btn:focus-visible .telephony-topic-badge {
+  filter: brightness(1.15);
+}
+
+.telephony-topic-cell-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.telephony-transcript-text {
+  white-space: pre-wrap;
+  max-height: 60vh;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+.telephony-topic-badge--body {
+  background: color-mix(in srgb, #8b5cf6 16%, transparent);
+  color: #8b5cf6;
+}
+
+.telephony-topic-badge--mechanical {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.telephony-topic-badge--unknown {
+  background: var(--surface2);
+  color: var(--text-muted);
+}
+
 .telephony-totals-row td {
   font-weight: 700;
   border-top: 2px solid var(--border);

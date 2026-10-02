@@ -18,7 +18,7 @@ API directly made that unnecessary.
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -29,6 +29,31 @@ CALL_TYPE_OUT = "OUT"
 CALL_TYPE_LOCAL = "LOCAL"
 CALL_TYPE_TRANSIT = "TRANSIT"
 CALL_TYPES = (CALL_TYPE_IN, CALL_TYPE_OUT, CALL_TYPE_LOCAL, CALL_TYPE_TRANSIT)
+
+# services/call_transcription_service.py's own pipeline state - distinct
+# from any Zeon-side field. NULL = not attempted yet (default for every
+# existing/new row); "failed" is terminal only for a call with no usable
+# recording (too short/placeholder) - a transient SpeechKit/YandexGPT error
+# just leaves the row as-is so the next relay cycle retries it.
+TRANSCRIPT_STATUS_TRANSCRIBED = "transcribed"
+TRANSCRIPT_STATUS_CLASSIFIED = "classified"
+TRANSCRIPT_STATUS_FAILED = "failed"
+TRANSCRIPT_STATUSES = (
+    TRANSCRIPT_STATUS_TRANSCRIBED,
+    TRANSCRIPT_STATUS_CLASSIFIED,
+    TRANSCRIPT_STATUS_FAILED,
+)
+
+# YandexGPT's classification of what a call was about - see
+# services/yandexgpt_client.py. Deliberately NOT the same concept/values as
+# WorkOrder.repair_type (1C's own "ВидРемонта" - insurance/warranty/etc,
+# see models/work_order.py) - this is a *shop* guess from a phone
+# conversation, named `topic_tag` to keep the two unrelated vocabularies
+# from colliding.
+TOPIC_BODY = "Кузовной"
+TOPIC_MECHANICAL = "Слесарный"
+TOPIC_UNKNOWN = "Не определено"
+CALL_TOPICS = (TOPIC_BODY, TOPIC_MECHANICAL, TOPIC_UNKNOWN)
 
 
 class CallRecord(Base):
@@ -84,6 +109,24 @@ class CallRecord(Base):
     # Whatever the provider returned for this call, kept verbatim for
     # troubleshooting/future fields - same convention as WorkOrder.raw_payload.
     raw_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # --- Transcript + topic classification (see
+    # services/call_transcription_relay.py's background loop and
+    # services/call_transcription_service.py) - a separate, automatic,
+    # DB-tracked pipeline from call_recording_service.py's own manual
+    # Yandex.Disk export/archive button, which this doesn't touch or
+    # depend on. Only ever populated for answered calls with real talk
+    # time (see telephony_stats_service.MIN_REAL_TALK_SEC's own "a real
+    # conversation" threshold, reused here) - a missed/zero-talk call has
+    # nothing to transcribe.
+    transcript_status: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # One of CALL_TOPICS above - set only once transcript_status is
+    # "classified".
+    topic_tag: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Last error message, for troubleshooting a stuck/failed row from
+    # Settings - cleared again on a later successful attempt.
+    transcript_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

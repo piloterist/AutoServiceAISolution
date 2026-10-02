@@ -325,6 +325,17 @@ function MainGauge({
 
   const displayAngle = blipDone ? needleAngle : revealAngle;
 
+  // The money readout sits dead-center under the hub (x=cx), but early in
+  // the sweep the needle's own long tip points almost straight down
+  // through that exact spot, covering part of the sum - per product
+  // feedback ("так бывает в начале месяца, когда цифра маленькая"). A
+  // shift that faded in/out with the needle's own position made the sum
+  // visibly hop left/right as it moved (per follow-up feedback: "не
+  // нравится что скачет") - simpler and steadier to just always sit it off
+  // to the right, clear of the needle in every position.
+  const MONEY_SHIFT_PX = 90;
+  const moneyOffsetStyle = { transform: `translateX(${MONEY_SHIFT_PX}px)` };
+
   return (
     <g aria-hidden="true">
       <ChromeRing cx={cx} cy={cy} r={r} width={14} id={`${id}-chrome-outer`} />
@@ -459,7 +470,15 @@ function MainGauge({
           product feedback that it was getting partly covered. The needle
           is still the primary reading; this is a legible central digital
           readout, not a dominant overlay. */}
-      <text x={cx} y={cy + 75} textAnchor="middle" dominantBaseline="middle" className="cockpit-money-main" fill="#eafcff">
+      <text
+        x={cx}
+        y={cy + 75}
+        textAnchor="middle"
+        dominantBaseline="middle"
+        className="cockpit-money-main"
+        fill="#eafcff"
+        style={moneyOffsetStyle}
+      >
         {formatRub(displayValue)} ₽
       </text>
       {gauge.overflow && (
@@ -471,6 +490,7 @@ function MainGauge({
           fill="#3ebecc"
           role="img"
           aria-label="Перевыполнение плана"
+          style={moneyOffsetStyle}
         >
           ↑
         </text>
@@ -484,6 +504,7 @@ function MainGauge({
           fill="#ff6b5e"
           role="img"
           aria-label="Отрицательная сумма"
+          style={moneyOffsetStyle}
         >
           ↓
         </text>

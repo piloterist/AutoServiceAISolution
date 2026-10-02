@@ -84,7 +84,40 @@ export function MechanicalView(props: {
   initialDate?: string;
 }) {
   const [instanceKey, setInstanceKey] = useState(0);
-  return <MechanicalViewInner key={instanceKey} {...props} onWritten={() => setInstanceKey((k) => k + 1)} />;
+  // Lifted out of MechanicalViewInner (which otherwise fully remounts after
+  // every write - see that component's own comment) so a post-save remount
+  // keeps whatever date window/span the operator had scrolled to, instead
+  // of resetting to "today" every time (per product ask, 2026-10-02:
+  // positioning on today should only happen on first opening the Planner
+  // or clicking "Сегодня", never as a side effect of saving an edit). This
+  // wrapper itself never remounts, so this state survives `instanceKey`
+  // bumping underneath it.
+  const [viewSpan, setViewSpan] = useState<ViewSpan>(7);
+  // По умолчанию неделя открывается со вчерашнего дня (не с понедельника) -
+  // самый ходовой вариант: видно "что было вчера" и весь ближайший план.
+  // `initialDate` (deep link) instead puts the linked record's own day
+  // first in the window, guaranteeing it's actually fetched/rendered - see
+  // MechanicalViewInner's scroll-into-view effect.
+  const [currentDate, setCurrentDate] = useState(() => props.initialDate ?? addDaysIso(todayIso(), -1));
+  // Same "survive the post-write remount" reasoning as currentDate/viewSpan
+  // above, for a *different* axis: viewSpan can show more days than fit
+  // the viewport at once (many posts × 7 days), so the operator can be
+  // scrolled right within the *same* rendered day window without having
+  // changed currentDate at all - a plain ref (not state) is enough since
+  // nothing here needs to re-render when it changes, only survive remounts.
+  const scrollLeftRef = useRef(0);
+  return (
+    <MechanicalViewInner
+      key={instanceKey}
+      {...props}
+      viewSpan={viewSpan}
+      setViewSpan={setViewSpan}
+      currentDate={currentDate}
+      setCurrentDate={setCurrentDate}
+      scrollLeftRef={scrollLeftRef}
+      onWritten={() => setInstanceKey((k) => k + 1)}
+    />
+  );
 }
 
 function MechanicalViewInner({
@@ -93,7 +126,11 @@ function MechanicalViewInner({
   employees,
   fivesystemsApiEnabled,
   initialSearch,
-  initialDate,
+  viewSpan,
+  setViewSpan,
+  currentDate,
+  setCurrentDate,
+  scrollLeftRef,
   onWritten,
 }: {
   workshop: Workshop;
@@ -101,16 +138,13 @@ function MechanicalViewInner({
   employees: Employee[];
   fivesystemsApiEnabled: boolean;
   initialSearch?: string;
-  initialDate?: string;
+  viewSpan: ViewSpan;
+  setViewSpan: (span: ViewSpan) => void;
+  currentDate: string;
+  setCurrentDate: (date: string) => void;
+  scrollLeftRef: { current: number };
   onWritten: () => void;
 }) {
-  const [viewSpan, setViewSpan] = useState<ViewSpan>(7);
-  // По умолчанию неделя открывается со вчерашнего дня (не с понедельника) -
-  // самый ходовой вариант: видно "что было вчера" и весь ближайший план.
-  // `initialDate` (deep link) instead puts the linked record's own day
-  // first in the window, guaranteeing it's actually fetched/rendered - see
-  // the scroll-into-view effect below.
-  const [currentDate, setCurrentDate] = useState(() => initialDate ?? addDaysIso(todayIso(), -1));
   const [search, setSearch] = useState(initialSearch ?? "");
   const jobElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const didScrollToLinkRef = useRef(false);
@@ -473,7 +507,19 @@ function MechanicalViewInner({
 
       {dragError && <p className="admin-form-error">{dragError}</p>}
 
-      <div className="mscroll">
+      <div
+        className="mscroll"
+        ref={(el) => {
+          // Restores whatever horizontal scroll position the operator had
+          // the instant this container (re)mounts - see scrollLeftRef's
+          // own comment on why this needs to survive the post-write
+          // remount separately from currentDate/viewSpan.
+          if (el) el.scrollLeft = scrollLeftRef.current;
+        }}
+        onScroll={(e) => {
+          scrollLeftRef.current = e.currentTarget.scrollLeft;
+        }}
+      >
         <div
           className="mgrid"
           style={{ gridTemplateColumns: `62px repeat(${days.length * workshop.posts_count}, minmax(150px, 1fr))` }}

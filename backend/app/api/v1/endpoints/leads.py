@@ -9,11 +9,16 @@ services/leads_service.py's module docstring for why). Every other route
 here still uses the normal `verify_api_token`, same as the rest of the app.
 """
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+import asyncio
+import mimetypes
+import uuid
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
 from app.db.session import get_db
+from app.models.website_lead import WebsiteLead
 from app.schemas.leads import (
     LeadsIntakeTokenOut,
     LeadsSettingsOut,
@@ -22,8 +27,14 @@ from app.schemas.leads import (
     WebsiteLeadOut,
     WebsiteLeadsResponse,
 )
-from app.services import leads_service
+from app.services import (
+    lead_photos_service,
+    leads_service,
+    telephony_settings_service,
+    yandex_disk_client,
+)
 from app.services.leads_service import LeadRejected
+from app.services.yandex_disk_client import YaDiskError
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -70,7 +81,10 @@ async def intake_lead(
         )
 
     try:
-        lead = leads_service.create_lead(db, payload)
+        # Archives any attached photos to Yandex.Disk inline (see
+        # lead_photos_service) - potentially several seconds of outbound
+        # HTTP per photo, so this must not block the event loop.
+        lead = await asyncio.to_thread(leads_service.create_lead, db, payload)
     except LeadRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
@@ -93,6 +107,37 @@ def open_leads(db: Session = Depends(get_db)) -> OpenLeadsResponse:
     items = [item for item in leads_service.list_leads(db) if item.status == "open"]
     leads = [_lead_out(item) for item in items]
     return OpenLeadsResponse(count=len(leads), leads=leads)
+
+
+@router.get("/{lead_id}/photos/{filename}", dependencies=[Depends(verify_api_token)])
+def get_lead_photo(lead_id: uuid.UUID, filename: str, db: Session = Depends(get_db)) -> Response:
+    """Streams one of this lead's photos from our own Yandex.Disk archive
+    (see services/lead_photos_service.py) - the browser never talks to
+    pan-motors.ru or Yandex.Disk directly."""
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found")
+
+    lead = db.get(WebsiteLead, lead_id)
+    if lead is None or not lead.photos:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead or photo not found")
+
+    settings = telephony_settings_service.get_telephony_settings(db)
+    if not settings.yandex_disk_token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Photo storage not configured"
+        )
+
+    path = lead_photos_service.photo_disk_path(lead_id, filename)
+    try:
+        with yandex_disk_client.new_client() as client:
+            data = yandex_disk_client.download(client, settings.yandex_disk_token, path)
+    except YaDiskError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found"
+        ) from exc
+
+    media_type, _ = mimetypes.guess_type(filename)
+    return Response(content=data, media_type=media_type or "application/octet-stream")
 
 
 @router.get("/settings", response_model=LeadsSettingsOut, dependencies=[Depends(verify_api_token)])
