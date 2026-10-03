@@ -5,6 +5,7 @@ autogenerate and for `Base.metadata.create_all()` in tests.
 from app.models.app_settings import AppSettings
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
+from app.models.budget_entry import BudgetEntry
 from app.models.call_record import CallRecord
 from app.models.department import Department
 from app.models.employee import Employee
@@ -53,4 +54,5 @@ __all__ = [
     "WorkshopSourceDepartment",
     "LeadsSettings",
     "WebsiteLead",
+    "BudgetEntry",
 ]

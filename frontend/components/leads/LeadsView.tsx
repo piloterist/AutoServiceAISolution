@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import type { LeadStatus, WebsiteLead } from "@/lib/backend-api";
 
@@ -84,9 +84,28 @@ function LeadDetail({ lead }: { lead: WebsiteLead }) {
   );
 }
 
-export function LeadsView({ initialLeads }: { initialLeads: WebsiteLead[] }) {
+export function LeadsView({
+  initialLeads,
+  initialOpenId,
+}: {
+  initialLeads: WebsiteLead[];
+  /** Set via the planner's envelope-icon lead list (LeadsBadge.tsx) ->
+   * /leads?id=... deep link - opens and scrolls to this one lead on
+   * arrival. Filter always starts at "all" in that case, since the lead
+   * could be in any status (resolved/stale leads would otherwise be
+   * hidden by a non-"all" default). */
+  initialOpenId?: string;
+}) {
   const [filter, setFilter] = useState<LeadStatus | "all">("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(initialOpenId ?? null);
+  const openedRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    openedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Runs once on mount only - a later click toggling expandedId shouldn't
+    // re-trigger an auto-scroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(
     () => (filter === "all" ? initialLeads : initialLeads.filter((lead) => lead.status === filter)),
@@ -126,6 +145,7 @@ export function LeadsView({ initialLeads }: { initialLeads: WebsiteLead[] }) {
           {filtered.map((lead) => (
             <Fragment key={lead.id}>
               <tr
+                ref={lead.id === initialOpenId ? openedRowRef : undefined}
                 className="admin-row"
                 onClick={() => setExpandedId((prev) => (prev === lead.id ? null : lead.id))}
               >

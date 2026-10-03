@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     auth,
+    budget,
     cockpit,
     import_work_orders,
     leads,
@@ -24,3 +25,4 @@ api_router.include_router(planner.router)
 api_router.include_router(telephony.router)
 api_router.include_router(cockpit.router)
 api_router.include_router(leads.router)
+api_router.include_router(budget.router)

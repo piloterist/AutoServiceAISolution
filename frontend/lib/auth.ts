@@ -39,12 +39,45 @@ export type SessionUser = {
   // staleness tradeoff `role` itself already has (no revocation short of
   // re-login or the cookie expiring).
   allowedTabs: string[];
+  // Epoch ms of the next daily auto-logout boundary (AppSettings.
+  // daily_logout_time, Moscow time) at/after login - see
+  // nextDailyBoundary below and middleware.ts, which redirects to /login
+  // once Date.now() reaches this, for every role except Admin. Baked in at
+  // login like allowedTabs - a settings change only takes effect for
+  // logins after it, not already-open sessions.
+  logoutAt: number;
 };
 
 type SessionPayload = SessionUser & { exp: number };
 
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 export const SESSION_MAX_AGE_SECONDS = SESSION_DURATION_MS / 1000;
+
+// Russia has observed a single fixed UTC+3 offset (no DST) since 2014 -
+// same simplification the backend already makes (see services/
+// call_transcription_service.py's `_MSK = timezone(timedelta(hours=3))`),
+// so plain arithmetic on a shifted Date is enough; no Intl/timeZone
+// handling needed.
+const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/** Next occurrence (at or after `now`) of `hhmm` ("HH:MM") in Moscow time,
+ * as an epoch-ms timestamp - e.g. logging in at 10:00 with hhmm="23:30"
+ * returns today's 23:30 MSK; logging in at 23:45 returns tomorrow's. */
+export function nextDailyBoundary(hhmm: string, now: Date = new Date()): number {
+  const [hours, minutes] = hhmm.split(":").map(Number);
+  const mskNow = new Date(now.getTime() + MSK_OFFSET_MS);
+  const boundaryMsk = Date.UTC(
+    mskNow.getUTCFullYear(),
+    mskNow.getUTCMonth(),
+    mskNow.getUTCDate(),
+    hours,
+    minutes,
+    0,
+    0,
+  );
+  const withTomorrow = boundaryMsk <= mskNow.getTime() ? boundaryMsk + 24 * 60 * 60 * 1000 : boundaryMsk;
+  return withTomorrow - MSK_OFFSET_MS;
+}
 
 function getSecret(): string {
   const secret = process.env.AUTH_SECRET;
@@ -128,6 +161,7 @@ export async function readSessionToken(
       workshopId: payload.workshopId,
       defaultRepairType: payload.defaultRepairType,
       allowedTabs: payload.allowedTabs,
+      logoutAt: payload.logoutAt,
     };
   } catch {
     return null;

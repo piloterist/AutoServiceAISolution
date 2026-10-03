@@ -38,6 +38,29 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Daily auto-logout (Settings -> Общие -> "Автовыход в") - every role
+  // except Admin gets bounced back to /login once Date.now() reaches the
+  // boundary baked into their session at login (see lib/auth.ts's
+  // nextDailyBoundary). Checked before anything else below, same as the
+  // "no cookie at all" branch above - an expired-by-this-rule session is
+  // otherwise indistinguishable from any other logged-out visitor.
+  if (user.role !== ROLE_ADMIN && Date.now() >= user.logoutAt) {
+    // An API route gets a clean 401, not an HTML redirect response - a
+    // background poll (e.g. LeadsBadge's 60s interval) would otherwise
+    // auto-follow the redirect and choke on the login page's HTML where it
+    // expects JSON. Same branch shape as the allowedTabs check below.
+    if (request.nextUrl.pathname.startsWith("/api/")) {
+      const response = NextResponse.json({ error: "Сессия истекла" }, { status: 401 });
+      response.cookies.delete(SESSION_COOKIE_NAME);
+      return response;
+    }
+    const loginUrl = absoluteUrl("/login", request);
+    loginUrl.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
+    const response = NextResponse.redirect(loginUrl);
+    response.cookies.delete(SESSION_COOKIE_NAME);
+    return response;
+  }
+
   const { pathname } = request.nextUrl;
 
   // Falls back to "no tabs allowed" (not "every tab allowed") for a cookie

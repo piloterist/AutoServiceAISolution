@@ -16,6 +16,7 @@ def test_get_settings_returns_defaults_on_first_access(client, auth_headers) -> 
     assert body["exclude_internal_orders"] is False
     assert body["hide_internal_orders"] is False
     assert body["fivesystems_api_enabled"] is False
+    assert body["daily_logout_time"] == "23:30"
 
 
 def test_put_settings_persists_values(client, auth_headers) -> None:
@@ -28,6 +29,7 @@ def test_put_settings_persists_values(client, auth_headers) -> None:
             "exclude_internal_orders": True,
             "hide_internal_orders": True,
             "fivesystems_api_enabled": True,
+            "daily_logout_time": "22:00",
         },
     )
 
@@ -38,10 +40,16 @@ def test_put_settings_persists_values(client, auth_headers) -> None:
     assert body["exclude_internal_orders"] is True
     assert body["hide_internal_orders"] is True
     assert body["fivesystems_api_enabled"] is True
+    assert body["daily_logout_time"] == "22:00"
 
     # A later GET reflects the saved values, not fresh defaults.
     follow_up = client.get(SETTINGS_URL, headers=auth_headers)
     assert follow_up.json() == body
+
+
+def test_put_settings_rejects_malformed_daily_logout_time(client, auth_headers) -> None:
+    response = client.put(SETTINGS_URL, headers=auth_headers, json={"daily_logout_time": "25:99"})
+    assert response.status_code == 422
 
 
 def test_put_settings_can_clear_the_repair_type(client, auth_headers) -> None:

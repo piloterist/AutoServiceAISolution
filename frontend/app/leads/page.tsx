@@ -5,7 +5,17 @@ import { getLeads } from "@/lib/backend-api";
 // this always needs a fresh backend read.
 export const dynamic = "force-dynamic";
 
-export default async function LeadsPage() {
+type SearchParams = { id?: string };
+
+export default async function LeadsPage({
+  searchParams,
+}: {
+  // Set by LeadsBadge.tsx's row click (planner's envelope icon) - opens
+  // this one lead on arrival, same "?id=" deep-link shape as
+  // app/planner/page.tsx's own zn/workshop/date search params.
+  searchParams: Promise<SearchParams>;
+}) {
+  const { id: openLeadId } = await searchParams;
   let leads;
   let error: string | null = null;
 
@@ -25,7 +35,7 @@ export default async function LeadsPage() {
         </div>
       )}
 
-      {leads && <LeadsView initialLeads={leads} />}
+      {leads && <LeadsView initialLeads={leads} initialOpenId={openLeadId} />}
     </div>
   );
 }

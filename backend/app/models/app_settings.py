@@ -61,6 +61,18 @@ class AppSettings(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # "HH:MM" (Moscow time) - every non-Admin session is force-logged-out
+    # once it's still active at/after this time (see frontend/middleware.ts
+    # and lib/auth.ts's nextDailyBoundary; baked into the session cookie at
+    # login, so changing this takes effect for sessions created AFTER the
+    # change, same staleness tradeoff as allowedTabs). Kept as a plain
+    # string, not SQL TIME - nothing here ever does time arithmetic in SQL,
+    # and a string avoids datetime.time (de)serialization across the
+    # Pydantic/JSON boundary for no benefit.
+    daily_logout_time: Mapped[str] = mapped_column(
+        String(5), nullable=False, default="23:30", server_default="23:30"
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

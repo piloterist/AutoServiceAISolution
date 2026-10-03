@@ -111,6 +111,9 @@ export type AppSettings = {
   // plate lookup - see backend/app/models/app_settings.py for how this
   // differs from ENABLE_FIVESYSTEMS_LOOKUP (the env var).
   fivesystems_api_enabled: boolean;
+  // "ЧЧ:ММ", Moscow time - every non-Admin session still active at/after
+  // this time gets force-logged-out (see lib/auth.ts's nextDailyBoundary).
+  daily_logout_time: string;
 };
 
 export type StatusSummaryItem = {
@@ -1284,6 +1287,8 @@ export type CockpitSnapshot = {
   nzp_rub: string | null;
   effective_revenue_rub: string;
   payments_rub: string;
+  receivables_rub: string;
+  budget_plan_revenue_rub: string;
   plan: CockpitPlan;
   revenue_gauge: GaugeReading;
   payments_gauge: GaugeReading;
@@ -1315,4 +1320,60 @@ export type WorkshopOption = {
  * fuller admin shape; this is the same data, just typed for the filter). */
 export function getWorkshopOptions(): Promise<WorkshopOption[]> {
   return backendGet<WorkshopOption[]>("/api/v1/settings/workshops");
+}
+
+// ---- Бюджет ----------------------------------------------------------------
+
+export type BudgetMonthValues = {
+  month: number; // 1-12
+  plan_revenue: string; // manually entered
+  fact_revenue: string; // closed work orders, by closed_date
+  expenses: string; // manually entered
+  profit: string; // fact_revenue - expenses
+  payments: string; // received payments, by paid_at
+  money: string; // payments - expenses
+};
+
+export type BudgetWorkshopRow = {
+  workshop_id: string;
+  workshop_label: string; // "<Подразделение> — <Тип цеха>"
+  months: BudgetMonthValues[]; // always 12, index 0 = January
+};
+
+export type BudgetYear = {
+  year: number;
+  workshops: BudgetWorkshopRow[];
+};
+
+export function getBudgetYear(year: number): Promise<BudgetYear> {
+  return backendGet<BudgetYear>("/api/v1/budget", { year: String(year) });
+}
+
+export type BudgetField = "plan_revenue" | "expenses";
+
+/** Upserts one cell - the backend only ever stores the two manually-entered
+ * fields (see models/budget_entry.py), so this is the only write this page
+ * ever makes. No response body (backend returns 204). */
+export async function updateBudgetValue(params: {
+  workshopId: string;
+  year: number;
+  month: number;
+  field: BudgetField;
+  value: number;
+}): Promise<void> {
+  const res = await fetch(new URL("/api/v1/budget", API_URL), {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${backendToken()}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workshop_id: params.workshopId,
+      year: params.year,
+      month: params.month,
+      field: params.field,
+      value: params.value,
+    }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Backend request failed: ${res.status} ${await res.text()}`);
+  }
 }

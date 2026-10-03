@@ -2501,6 +2501,27 @@ table.admin-data-table td.audit-changes-cell {
   border-left: 3px solid var(--down);
 }
 
+/* The row is now a real <button> (click -> navigate to its lead on the
+   Заявки page, see LeadsBadge.tsx) - .leads-badge-row above already sets
+   the box's own display/padding/background/border-left; this just strips
+   the browser's own button chrome (border/font/outline) the UA stylesheet
+   would otherwise add on top, plus a hover/focus cue since it's
+   interactive now. */
+.leads-badge-row-btn {
+  width: 100%;
+  border: none;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.leads-badge-row-btn:hover,
+.leads-badge-row-btn:focus-visible {
+  filter: brightness(1.15);
+}
+
 .leads-badge-row-client {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -3896,13 +3917,6 @@ main:has(.cockpit-page) {
   font-variant-numeric: tabular-nums;
 }
 
-.cockpit-row-sub {
-  font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
-  font-size: 16px;
-  fill: #8a999e;
-  font-variant-numeric: tabular-nums;
-}
-
 /* No transform-origin here on purpose: the needle rotates via its own SVG
    attribute transform="rotate(angle cx cy)" (see Needle in
    InstrumentCluster.tsx), which already bakes in its exact pivot point.
@@ -4252,20 +4266,68 @@ main:has(.cockpit-page) {
   pointer-events: none;
 }
 
-.cockpit-strip {
+/* All three bars (Выручка, ДЗ, КЗ) grouped together on one side (per
+   product feedback, 2026-10-03: "надо чтобы все три полоски были справа и
+   выстроены как дерево", after a couple of rounds that instead kept
+   swapping two separate groups between the two sides) - one positioned
+   container under the big "D" letter (starts at x=1235 of the 1648-wide
+   viewBox -> 74.9%) and the revenue/plan digital row (y=395 of the
+   650-tall viewBox -> 60.8%), staircased top-to-bottom via each row's own
+   margin-left instead of three independently-positioned blocks on the
+   page. */
+.cockpit-right-stack {
   position: absolute;
+  left: 75%;
+  top: 65%;
+  width: 23%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
 }
 
-.cockpit-strip--receivables {
-  left: 27.6%;
-  top: 87.7%;
-  width: 14.87%;
+.cockpit-right-stack-row {
+  width: 62%;
 }
 
-.cockpit-strip--payables {
-  left: 73.4%;
-  top: 78.5%;
-  width: 13.35%;
+.cockpit-right-stack-row--dz {
+  margin-left: 15%;
+}
+
+.cockpit-right-stack-row--kz {
+  margin-left: 30%;
+}
+
+.cockpit-debt-capsule {
+  position: relative;
+}
+
+.cockpit-debt-capsule-label {
+  position: absolute;
+  left: -1.4em;
+  top: -2px;
+  font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.cockpit-debt-capsule--receivable .cockpit-debt-capsule-label {
+  color: #3ecc7a;
+}
+
+.cockpit-debt-capsule--payable .cockpit-debt-capsule-label {
+  color: #f3202d;
+}
+
+.cockpit-debt-capsule--receivable .cockpit-capsule-fill {
+  background: linear-gradient(90deg, #1f8a4c, #3ecc7a);
+  box-shadow: 0 0 8px #3ecc7a;
+}
+
+.cockpit-debt-capsule--payable .cockpit-capsule-fill {
+  background: linear-gradient(90deg, #8a1016, #f3202d);
+  box-shadow: 0 0 8px #f3202d;
 }
 
 .cockpit-strip-segments {
@@ -4423,4 +4485,100 @@ main:has(.cockpit-page) {
     margin: -1rem -0.75rem;
     padding: 1rem 0.75rem 2rem;
   }
+}
+
+/* --- Бюджет page --- */
+
+.budget-card {
+  overflow: hidden;
+}
+
+.budget-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.budget-year {
+  font-weight: 700;
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5rem;
+  text-align: center;
+}
+
+.budget-scroll {
+  overflow-x: auto;
+}
+
+.budget-table {
+  width: 100%;
+  min-width: 1300px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  table-layout: fixed;
+}
+
+.budget-table th,
+.budget-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0.6rem;
+}
+
+.budget-th-workshop,
+.budget-td-workshop {
+  width: 11rem;
+  font-weight: 600;
+  vertical-align: top;
+  border-right: 1px solid var(--border);
+}
+
+.budget-th-metric,
+.budget-td-metric {
+  width: 8rem;
+  color: var(--text-muted);
+}
+
+.budget-th-month,
+.budget-td-month {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.budget-th-month {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.budget-th-month--current,
+.budget-td-month--current {
+  background: var(--today);
+}
+
+.budget-td-month--negative {
+  color: var(--down);
+}
+
+.budget-cell-input {
+  width: 100%;
+  min-width: 5.5rem;
+  text-align: right;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+  color: inherit;
+}
+
+.budget-cell-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }

@@ -49,8 +49,10 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
+from app.models.budget_entry import BudgetEntry
 from app.models.department import Department
 from app.models.work_order import WorkOrder
+from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
@@ -256,6 +258,78 @@ def _payments(
     return total or Decimal("0")
 
 
+def _budget_plan_revenue(
+    db: Session, *, workshop_id: uuid.UUID | None, year: int, month: int
+) -> Decimal:
+    """Выручка план for this scope's own month, straight from the Бюджет
+    page (models/budget_entry.py) rather than Workshop.target_revenue (the
+    separate, static plan the gauge's own scale/needle use) - per product
+    ask, 2026-10-03, the revenue progress strip's right edge should track
+    the Бюджет page's own plan number instead. A specific workshop reads
+    its own cell for the month; company-wide sums every workshop's cell (a
+    workshop with no entry yet simply contributes 0, same as any missing
+    BudgetEntry row)."""
+    query = select(func.sum(BudgetEntry.plan_revenue)).where(
+        BudgetEntry.year == year, BudgetEntry.month == month
+    )
+    if workshop_id is not None:
+        query = query.where(BudgetEntry.workshop_id == workshop_id)
+    total = db.execute(query).scalar_one()
+    return total or Decimal("0")
+
+
+def _receivables(
+    db: Session,
+    *,
+    source_departments: list[str] | None,
+    revenue_statuses: list[str],
+    exclude_internal: bool,
+) -> Decimal:
+    """ДЗ (дебиторская задолженность) - a running total, not scoped to a
+    period (unlike revenue/payments above): the sum of (1) issued invoices
+    with no payment against them yet (WorkOrderInvoice.paid_amount null/0 -
+    see that model's own docstring for why this is read at query time
+    instead of a stored status) plus (2) closed work orders that have
+    neither a payment nor an invoice at all (money owed that was never even
+    invoiced). A work order with SOME payment or SOME invoice is accounted
+    for by (1) above instead (or is simply settled) - counting it again
+    here under (2) would double it."""
+    invoiced_filters = [
+        or_(WorkOrderInvoice.paid_amount.is_(None), WorkOrderInvoice.paid_amount == 0)
+    ]
+    invoiced_query = select(func.sum(WorkOrderInvoice.amount)).select_from(WorkOrderInvoice)
+    if source_departments is not None or exclude_internal:
+        invoiced_query = invoiced_query.join(
+            WorkOrder, WorkOrder.id == WorkOrderInvoice.work_order_id
+        )
+        if source_departments is not None:
+            invoiced_filters.append(WorkOrder.department.in_(source_departments))
+        if exclude_internal:
+            invoiced_filters.append(WorkOrder.is_internal.is_(False))
+    unpaid_invoiced = db.execute(invoiced_query.where(*invoiced_filters)).scalar_one() or Decimal(
+        "0"
+    )
+
+    has_payment = select(WorkOrderPaymentEvent.work_order_id).distinct()
+    has_invoice = select(WorkOrderInvoice.work_order_id).distinct()
+    uninvoiced_filters = [
+        WorkOrder.closed_date.is_not(None),
+        WorkOrder.id.not_in(has_payment),
+        WorkOrder.id.not_in(has_invoice),
+    ]
+    if source_departments is not None:
+        uninvoiced_filters.append(WorkOrder.department.in_(source_departments))
+    if revenue_statuses:
+        uninvoiced_filters.append(WorkOrder.status.in_(revenue_statuses))
+    if exclude_internal:
+        uninvoiced_filters.append(WorkOrder.is_internal.is_(False))
+    uninvoiced_closed = db.execute(
+        select(func.sum(WorkOrder.amount)).where(*uninvoiced_filters)
+    ).scalar_one() or Decimal("0")
+
+    return unpaid_invoiced + uninvoiced_closed
+
+
 def _nzp_body(
     db: Session,
     *,
@@ -346,6 +420,8 @@ class CockpitSnapshot:
     nzp_rub: Decimal | None  # None when NZP wasn't requested
     effective_revenue_rub: Decimal  # revenue (+ nzp, when requested)
     payments_rub: Decimal
+    receivables_rub: Decimal  # ДЗ - a running total, not period-scoped, see _receivables
+    budget_plan_revenue_rub: Decimal  # Бюджет page's own "Выручка план" for this month/scope
 
     plan: PlanResult
     revenue_gauge: GaugeReading
@@ -393,6 +469,18 @@ def get_snapshot(
         period_start=period_start,
         period_end=period_end,
         exclude_internal=exclude_internal,
+    )
+
+    receivables = _receivables(
+        db,
+        source_departments=source_departments,
+        revenue_statuses=revenue_statuses,
+        exclude_internal=exclude_internal,
+    )
+
+    period_start_msk = period_start.astimezone(MSK)
+    budget_plan_revenue = _budget_plan_revenue(
+        db, workshop_id=workshop_id, year=period_start_msk.year, month=period_start_msk.month
     )
 
     nzp_total: Decimal | None = None
@@ -446,6 +534,8 @@ def get_snapshot(
         nzp_rub=nzp_total,
         effective_revenue_rub=effective_revenue,
         payments_rub=payments,
+        receivables_rub=receivables,
+        budget_plan_revenue_rub=budget_plan_revenue,
         plan=plan,
         revenue_gauge=revenue_gauge,
         payments_gauge=payments_gauge,

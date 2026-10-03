@@ -27,6 +27,14 @@ function formatRub(value: number): string {
   return value.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Rubles -> millions, 2 decimals, Russian comma - e.g. 813217 -> "0,81".
+function formatMillions(value: number): string {
+  return (value / 1_000_000).toLocaleString("ru-RU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 function DialFace({
   id,
   cx,
@@ -1008,12 +1016,21 @@ function StripEdgeMark({ align }: { align: "start" | "end" }) {
   return <span className={`cockpit-strip-edge cockpit-strip-edge--${align}`} />;
 }
 
-function ReceivablesStrip() {
+/** Month-to-date revenue vs. this scope's own Бюджет-page plan (per product
+ * ask, 2026-10-03: replaces the old fixed "2 400 000 ₽" demo fixture with
+ * real data, then switched from the dial's own gauge-scale ceiling to the
+ * Бюджет page's "Выручка план" cell for this month/scope - see
+ * cockpit_service._budget_plan_revenue) - 0 at the left edge, that plan at
+ * the right, filled to however much of it is already real (closed)
+ * revenue. Neither end is labeled with a number (per that same ask) - the
+ * actual fact value is printed small below instead. No plan entered yet on
+ * the Бюджет page has nothing to divide by, so the strip just reads empty
+ * rather than guessing a scale. */
+function RevenueProgressStrip({ revenue, planRub }: { revenue: number; planRub: number }) {
   const segments = 9;
-  const filledFraction = 0.6; // demo fixture - see product spec section 8
+  const filledFraction = planRub > 0 ? Math.min(1, Math.max(0, revenue / planRub)) : 0;
   return (
-    <div className="cockpit-strip cockpit-strip--receivables" aria-hidden="true">
-      <span className="cockpit-demo-tag cockpit-demo-tag--corner">DEMO</span>
+    <div className="cockpit-strip">
       <div className="cockpit-strip-segments">
         {Array.from({ length: segments }, (_, i) => (
           <span key={i} className={i / segments < filledFraction ? "cockpit-seg cockpit-seg--on" : "cockpit-seg"} />
@@ -1021,25 +1038,76 @@ function ReceivablesStrip() {
       </div>
       <div className="cockpit-strip-footer">
         <StripEdgeMark align="start" />
-        <span className="cockpit-strip-value">2 400 000 ₽</span>
+        <span className="cockpit-strip-value">{formatRub(revenue)} ₽</span>
         <StripEdgeMark align="end" />
       </div>
     </div>
   );
 }
 
-function PayablesCapsule() {
-  const filledFraction = 0.425; // demo fixture - see product spec section 8
+/** ДЗ/КЗ - per product spec, 2026-10-03: these never represent a real 0..100%
+ * scale (there's no natural "max" to compare either figure against), so the
+ * fill is always a fixed 70% regardless of the real amount - only the
+ * printed figure below is real data. ДЗ (receivables) is real (see
+ * cockpit_service._receivables); КЗ (payables) has no data source defined
+ * yet and stays a placeholder, flagged with the same DEMO tag the whole
+ * block used to carry. */
+const DEBT_CAPSULE_FIXED_FILL = 0.7;
+const KZ_PLACEHOLDER_RUB = 1_700_000;
+
+function DebtCapsule({
+  label,
+  value,
+  tone,
+  demo,
+}: {
+  label: string;
+  value: number;
+  tone: "receivable" | "payable";
+  demo?: boolean;
+}) {
   return (
-    <div className="cockpit-strip cockpit-strip--payables" aria-hidden="true">
-      <span className="cockpit-demo-tag cockpit-demo-tag--corner">DEMO</span>
+    <div className={`cockpit-debt-capsule cockpit-debt-capsule--${tone}`}>
+      {demo && <span className="cockpit-demo-tag cockpit-demo-tag--corner">DEMO</span>}
+      <span className="cockpit-debt-capsule-label">{label}</span>
       <div className="cockpit-capsule">
-        <div className="cockpit-capsule-fill" style={{ width: `${filledFraction * 100}%` }} />
+        <div className="cockpit-capsule-fill" style={{ width: `${DEBT_CAPSULE_FIXED_FILL * 100}%` }} />
       </div>
       <div className="cockpit-strip-footer">
         <StripEdgeMark align="start" />
-        <span className="cockpit-strip-value">1 700 000 ₽</span>
+        <span className="cockpit-strip-value">{formatRub(value)} ₽</span>
         <StripEdgeMark align="end" />
+      </div>
+    </div>
+  );
+}
+
+/** All three bars grouped on one side now (per product feedback,
+ * 2026-10-03: "надо чтобы все три полоски были справа и выстроены как
+ * дерево" - after a couple of rounds that instead swapped two separate
+ * groups back and forth between the two sides), staircased top-to-bottom
+ * (Выручка, then ДЗ shifted right of it, then КЗ shifted right again) via
+ * each row's own CSS margin-left - not three independently-positioned
+ * blocks on the page anymore. */
+function RightSideStack({
+  revenue,
+  planRub,
+  receivables,
+}: {
+  revenue: number;
+  planRub: number;
+  receivables: number;
+}) {
+  return (
+    <div className="cockpit-right-stack" aria-hidden="true">
+      <div className="cockpit-right-stack-row cockpit-right-stack-row--revenue">
+        <RevenueProgressStrip revenue={revenue} planRub={planRub} />
+      </div>
+      <div className="cockpit-right-stack-row cockpit-right-stack-row--dz">
+        <DebtCapsule label="ДЗ" value={receivables} tone="receivable" />
+      </div>
+      <div className="cockpit-right-stack-row cockpit-right-stack-row--kz">
+        <DebtCapsule label="КЗ" value={KZ_PLACEHOLDER_RUB} tone="payable" demo />
       </div>
     </div>
   );
@@ -1053,6 +1121,8 @@ export function InstrumentCluster({
   revenue,
   effectiveRevenue,
   payments,
+  receivables,
+  budgetPlanRevenue,
   revenueGauge,
   paymentsGauge,
   nzpActive,
@@ -1075,6 +1145,8 @@ export function InstrumentCluster({
   revenue: number;
   effectiveRevenue: number;
   payments: number;
+  receivables: number;
+  budgetPlanRevenue: number;
   revenueGauge: GaugeReading;
   paymentsGauge: GaugeReading;
   nzpActive: boolean;
@@ -1183,17 +1255,15 @@ export function InstrumentCluster({
           your business
         </text>
         <g className="cockpit-digital-rows" aria-hidden="true">
+          {/* Was decorative trip-computer filler ("TOTAL 14852.2 km" / "A
+              862.2" / "B 1438.9" / "8.2 л/100км") per spec section 9, until
+              product feedback, 2026-10-03: real data now, month-to-date
+              revenue over this scope's Бюджет-page plan, both in millions
+              of ₽ - moved up under the "D"/tagline instead of down at the
+              row this whole group used to fill (a tried "CASH <payments>"
+              row above it didn't read well and was dropped). */}
           <text x={1200} y={395} className="cockpit-row-line">
-            TOTAL 14852.2 km
-          </text>
-          <text x={1200} y={430} className="cockpit-row-sub">
-            A 862.2
-          </text>
-          <text x={1345} y={430} className="cockpit-row-sub">
-            B 1438.9
-          </text>
-          <text x={1200} y={470} className="cockpit-row-line">
-            8.2 л/100км
+            {formatMillions(revenue)} / {formatMillions(budgetPlanRevenue)} млн
           </text>
         </g>
       </svg>
@@ -1263,8 +1333,7 @@ export function InstrumentCluster({
       />
 
       <div className="cockpit-strips">
-        <ReceivablesStrip />
-        <PayablesCapsule />
+        <RightSideStack revenue={revenue} planRub={budgetPlanRevenue} receivables={receivables} />
       </div>
     </>
   );

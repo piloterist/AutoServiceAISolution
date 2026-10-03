@@ -11,8 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
+from app.models.budget_entry import BudgetEntry
 from app.models.department import Department
 from app.models.work_order import WorkOrder
+from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
@@ -364,6 +366,197 @@ def test_payments_scoped_to_workshop_via_mapping(
     )
 
     assert snapshot.payments_rub == Decimal("111.00")
+
+
+# ---- get_snapshot: ДЗ (receivables) ----------------------------------------
+
+
+def test_receivables_counts_unpaid_invoice(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(closed_date=None)
+    db_session.add(wo)
+    db_session.flush()
+    db_session.add(
+        WorkOrderInvoice(work_order_id=wo.id, source_document_id="inv-1", amount=Decimal("5000.00"))
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("5000.00")
+
+
+def test_receivables_excludes_invoice_already_paid(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(closed_date=None)
+    db_session.add(wo)
+    db_session.flush()
+    db_session.add(
+        WorkOrderInvoice(
+            work_order_id=wo.id,
+            source_document_id="inv-1",
+            amount=Decimal("5000.00"),
+            paid_amount=Decimal("5000.00"),
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("0")
+
+
+def test_receivables_counts_closed_work_order_with_no_invoice_and_no_payment(
+    db_session: Session, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(closed_date=datetime(2026, 9, 1, tzinfo=UTC), amount=Decimal("7000.00"))
+    db_session.add(wo)
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("7000.00")
+
+
+def test_receivables_excludes_closed_work_order_with_a_payment_but_no_invoice(
+    db_session: Session, monkeypatch
+) -> None:
+    """A payment against a work order with no invoice on file still counts
+    as settled - it must not also show up as outstanding ДЗ."""
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(closed_date=datetime(2026, 9, 1, tzinfo=UTC), amount=Decimal("7000.00"))
+    db_session.add(wo)
+    db_session.flush()
+    db_session.add(
+        WorkOrderPaymentEvent(
+            work_order_id=wo.id,
+            paid_at=datetime(2026, 9, 2, tzinfo=UTC),
+            amount=Decimal("7000.00"),
+            source_document_id="pay-1",
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("0")
+
+
+def test_receivables_excludes_open_work_order_with_no_invoice(
+    db_session: Session, monkeypatch
+) -> None:
+    """Not yet closed - too early to count as outstanding receivables."""
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(closed_date=None, amount=Decimal("7000.00"))
+    db_session.add(wo)
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("0")
+
+
+def test_receivables_scoped_to_workshop_via_mapping(
+    db_session: Session, mechanical_workshop: Workshop, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    wo_in = _make_work_order(department=MECHANICAL_DEPT, closed_date=None)
+    wo_out = _make_work_order(department="Кузовной цех_Солнцево", closed_date=None)
+    db_session.add_all([wo_in, wo_out])
+    db_session.flush()
+    db_session.add_all(
+        [
+            WorkOrderInvoice(
+                work_order_id=wo_in.id, source_document_id="inv-in", amount=Decimal("100")
+            ),
+            WorkOrderInvoice(
+                work_order_id=wo_out.id, source_document_id="inv-out", amount=Decimal("200")
+            ),
+        ]
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=mechanical_workshop.id, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("100")
+
+
+# ---- get_snapshot: budget_plan_revenue_rub ---------------------------------
+
+
+def test_budget_plan_revenue_reads_this_months_cell(
+    db_session: Session, mechanical_workshop: Workshop, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        BudgetEntry(
+            workshop_id=mechanical_workshop.id, year=2026, month=9, plan_revenue=Decimal("500000")
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=mechanical_workshop.id, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.budget_plan_revenue_rub == Decimal("500000")
+
+
+def test_budget_plan_revenue_ignores_other_months(
+    db_session: Session, mechanical_workshop: Workshop, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        BudgetEntry(
+            workshop_id=mechanical_workshop.id, year=2026, month=8, plan_revenue=Decimal("500000")
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=mechanical_workshop.id, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.budget_plan_revenue_rub == Decimal("0")
+
+
+def test_budget_plan_revenue_sums_across_workshops_for_company_wide(
+    db_session: Session, mechanical_workshop: Workshop, body_workshop: Workshop, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add_all(
+        [
+            BudgetEntry(
+                workshop_id=mechanical_workshop.id,
+                year=2026,
+                month=9,
+                plan_revenue=Decimal("500000"),
+            ),
+            BudgetEntry(
+                workshop_id=body_workshop.id, year=2026, month=9, plan_revenue=Decimal("300000")
+            ),
+        ]
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.budget_plan_revenue_rub == Decimal("800000")
 
 
 # ---- get_snapshot: НЗП ----------------------------------------------------

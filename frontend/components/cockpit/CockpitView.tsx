@@ -243,6 +243,8 @@ export function CockpitView({
           revenue={Number(snapshot.revenue_rub)}
           effectiveRevenue={Number(snapshot.effective_revenue_rub)}
           payments={Number(snapshot.payments_rub)}
+          receivables={Number(snapshot.receivables_rub)}
+          budgetPlanRevenue={Number(snapshot.budget_plan_revenue_rub)}
           revenueGauge={snapshot.revenue_gauge}
           paymentsGauge={snapshot.payments_gauge}
           nzpActive={nzpActive}

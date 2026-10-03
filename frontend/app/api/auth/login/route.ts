@@ -3,11 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   absoluteUrl,
   createSessionToken,
+  nextDailyBoundary,
   safeNextPath,
   SESSION_COOKIE_NAME,
   SESSION_MAX_AGE_SECONDS,
 } from "@/lib/auth";
-import { loginUser } from "@/lib/backend-api";
+import { getAppSettings, loginUser } from "@/lib/backend-api";
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
@@ -25,6 +26,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.redirect(loginUrl, { status: 303 });
   }
 
+  // Falls back to the product default (23:30) if the settings read fails -
+  // a backend hiccup here must never block login itself.
+  let dailyLogoutTime = "23:30";
+  try {
+    dailyLogoutTime = (await getAppSettings()).daily_logout_time;
+  } catch {
+    // keep the default
+  }
+
   const token = await createSessionToken({
     id: user.id,
     fullName: user.full_name,
@@ -36,6 +46,7 @@ export async function POST(request: NextRequest) {
     workshopId: user.workshop_id,
     defaultRepairType: user.default_repair_type,
     allowedTabs: user.allowed_tabs,
+    logoutAt: nextDailyBoundary(dailyLogoutTime),
   });
   const response = NextResponse.redirect(absoluteUrl(next, request), { status: 303 });
   response.cookies.set(SESSION_COOKIE_NAME, token, {

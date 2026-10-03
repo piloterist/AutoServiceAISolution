@@ -47,6 +47,8 @@ class CockpitSnapshotOut(BaseModel):
     nzp_rub: Decimal | None
     effective_revenue_rub: Decimal
     payments_rub: Decimal
+    receivables_rub: Decimal
+    budget_plan_revenue_rub: Decimal
 
     plan: CockpitPlanOut
     revenue_gauge: GaugeReadingOut

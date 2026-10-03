@@ -40,6 +40,13 @@ export function SettingsForm({
   const [fivesystemsApiEnabled, setFivesystemsApiEnabled] = useState(
     initialSettings.fivesystems_api_enabled,
   );
+  // Every non-Admin session still open at/after this time (Moscow) gets
+  // force-logged-out - see lib/auth.ts's nextDailyBoundary and
+  // middleware.ts. Baked into the session cookie at login, so a change
+  // here takes effect for logins AFTER the save, same staleness tradeoff
+  // allowedTabs already has (no mid-session push, no server-side session
+  // store to revoke from - see lib/auth.ts's module comment).
+  const [dailyLogoutTime, setDailyLogoutTime] = useState(initialSettings.daily_logout_time);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
   const handleSave = async () => {
@@ -54,6 +61,7 @@ export function SettingsForm({
           exclude_internal_orders: excludeInternalOrders,
           hide_internal_orders: hideInternalOrders,
           fivesystems_api_enabled: fivesystemsApiEnabled,
+          daily_logout_time: dailyLogoutTime,
         } satisfies AppSettings),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -136,6 +144,26 @@ export function SettingsForm({
           Галка «Исключить внутренние» выше влияет только на показатели дашборда (плашки,
           диаграммы) — как будто таких заказ-нарядов не существует; на список заказ-нарядов не
           влияет, там есть отдельный фильтр «Внутренний».
+        </p>
+      </div>
+
+      <div className="card settings-card">
+        <h2 className="chart-title">Сессия</h2>
+
+        <div className="settings-field">
+          <label htmlFor="daily-logout-time">Автовыход в</label>
+          <input
+            id="daily-logout-time"
+            type="time"
+            value={dailyLogoutTime}
+            onChange={(event) => setDailyLogoutTime(event.target.value)}
+          />
+        </div>
+
+        <p className="settings-description">
+          Ежедневно в указанное время (по Москве) все пользователи, кроме Админа, автоматически
+          разлогиниваются при следующем действии в системе. Изменение применяется к новым входам —
+          уже открытые сессии выйдут по старому времени, пока не перелогинятся.
         </p>
       </div>
 

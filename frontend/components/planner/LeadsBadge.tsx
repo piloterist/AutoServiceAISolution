@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { AdminModal } from "@/components/settings/AdminModal";
 import type { WebsiteLead } from "@/lib/backend-api";
@@ -53,6 +54,7 @@ function formatCreatedAt(createdAt: string): string {
  * reality. The full history (open, resolved and stale) lives on the
  * separate /leads page. */
 export function LeadsBadge() {
+  const router = useRouter();
   const [leads, setLeads] = useState<WebsiteLead[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -108,13 +110,22 @@ export function LeadsBadge() {
         {leads.length > 0 && (
           <ul className="leads-badge-list">
             {leads.map((lead) => (
-              <li key={lead.id} className="leads-badge-row">
-                <span className="leads-badge-row-client">
-                  {formatPhone(lead.phone)}
-                  {lead.name && <span className="leads-badge-row-name"> — {lead.name}</span>}
-                </span>
-                <span className="leads-badge-row-label">{sourceLabel(lead.source)}</span>
-                <span className="leads-badge-row-meta">{formatCreatedAt(lead.created_at)}</span>
+              <li key={lead.id}>
+                <button
+                  type="button"
+                  className="leads-badge-row leads-badge-row-btn"
+                  onClick={() => {
+                    setOpen(false);
+                    router.push(`/leads?id=${lead.id}`);
+                  }}
+                >
+                  <span className="leads-badge-row-client">
+                    {formatPhone(lead.phone)}
+                    {lead.name && <span className="leads-badge-row-name"> — {lead.name}</span>}
+                  </span>
+                  <span className="leads-badge-row-label">{sourceLabel(lead.source)}</span>
+                  <span className="leads-badge-row-meta">{formatCreatedAt(lead.created_at)}</span>
+                </button>
               </li>
             ))}
           </ul>
