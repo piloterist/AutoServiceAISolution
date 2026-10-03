@@ -79,11 +79,25 @@ function matchesPaymentFilter(percent: string | null, filter: PaymentFilter): bo
   return value >= 100; // "full"
 }
 
+// A bare "YYYY-MM-DD" from a plain <input type="date"> picker means a
+// Moscow-local calendar day (every other date boundary in this app - e.g.
+// backend services/work_order_query_service.py's _naive_msk_to_utc, which
+// the dashboard's own date-range filters go through - already treats it
+// that way). `new Date("YYYY-MM-DD")` parses it as UTC midnight instead,
+// which is 3 hours off from Moscow midnight - exactly wrong enough to drop
+// an order closed between 00:00 and 03:00 MSK from "today" while the
+// dashboard still counts it (seen live, 2026-10-03: dashboard said 4
+// closed today, this list showed only 2). Appending the MSK offset
+// explicitly is the fix, not a UTC guess.
+function mskMidnightUtcMs(dateStr: string): number {
+  return new Date(`${dateStr}T00:00:00+03:00`).getTime();
+}
+
 /** `iso` falls within [dateFrom, dateTo] - dateTo is treated as inclusive of
- * that whole day (a plain <input type="date"> picker gives no time
- * component, and "по 13.09" should include everything on the 13th). A null
- * `iso` (not closed yet) never matches an active range - there's no date to
- * fall inside it. */
+ * that whole (Moscow-local) day (a plain <input type="date"> picker gives no
+ * time component, and "по 13.09" should include everything on the 13th MSK).
+ * A null `iso` (not closed yet) never matches an active range - there's no
+ * date to fall inside it. */
 function isWithinDateRange(iso: string | null, dateFrom: string, dateTo: string): boolean {
   if (!dateFrom && !dateTo) return true;
   if (!iso) return false;
@@ -91,12 +105,12 @@ function isWithinDateRange(iso: string | null, dateFrom: string, dateTo: string)
   const orderTime = new Date(iso).getTime();
 
   if (dateFrom) {
-    const fromTime = new Date(dateFrom).getTime();
+    const fromTime = mskMidnightUtcMs(dateFrom);
     if (!Number.isNaN(fromTime) && orderTime < fromTime) return false;
   }
 
   if (dateTo) {
-    const toTime = new Date(dateTo).getTime() + 24 * 60 * 60 * 1000;
+    const toTime = mskMidnightUtcMs(dateTo) + 24 * 60 * 60 * 1000;
     if (!Number.isNaN(toTime) && orderTime >= toTime) return false;
   }
 
