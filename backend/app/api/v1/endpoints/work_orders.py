@@ -41,6 +41,7 @@ from app.schemas.work_order import (
     WorkOrderPartLineItem,
 )
 from app.services import planner_service
+from app.services.cockpit_service import _mapped_source_departments
 from app.services.settings_service import get_app_settings
 from app.services.work_order_query_service import (
     delete_work_order,
@@ -83,6 +84,14 @@ def get_work_orders(
         default=None, description="Restrict to work orders with a real payment (paid_at) in range"
     ),
     paid_to: datetime | None = Query(default=None),
+    only_receivables: bool = Query(
+        default=False,
+        description="Restrict to exactly the work orders behind Cockpit's ДЗ figure",
+    ),
+    workshop_id: UUID | None = Query(
+        default=None,
+        description="Scopes only_receivables to one workshop, like Cockpit's own filter",
+    ),
     # The work orders list page fetches everything in one call and filters
     # client-side (see WorkOrdersTable) so its own filters stay correct
     # across the whole dataset - it needs a limit comfortably above the
@@ -93,13 +102,23 @@ def get_work_orders(
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> WorkOrderListResponse:
+    resolved_departments = _split_departments(departments)
+    if only_receivables and workshop_id is not None:
+        # Same workshop -> raw-department-string resolution Cockpit's own
+        # ДЗ figure uses - see cockpit_service._receivables/
+        # _mapped_source_departments. Overrides a manual `departments` param
+        # since a receivables click-through always comes from Cockpit's own
+        # цех scope, never a hand-picked department list.
+        resolved_departments = _mapped_source_departments(db, workshop_id=workshop_id)
+
     items, total = list_work_orders(
         db,
         date_from=date_from,
         date_to=date_to,
-        departments=_split_departments(departments),
+        departments=resolved_departments,
         paid_from=paid_from,
         paid_to=paid_to,
+        only_receivables=only_receivables,
         limit=limit,
         offset=offset,
     )

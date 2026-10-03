@@ -15,6 +15,8 @@ export async function GET(request: NextRequest) {
     const data = await getWorkOrders({
       paidFrom: params.get("paid_from") || undefined,
       paidTo: params.get("paid_to") || undefined,
+      onlyReceivables: params.get("only_receivables") === "true",
+      workshopId: params.get("workshop_id") || undefined,
       limit: params.get("limit") ? Number(params.get("limit")) : undefined,
       offset: params.get("offset") ? Number(params.get("offset")) : undefined,
     });

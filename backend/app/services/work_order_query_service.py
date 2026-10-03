@@ -11,15 +11,17 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, delete, func, select
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models.work_order import WorkOrder
 from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
+from app.services.settings_service import get_app_settings
 
 # Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
 # convention already used throughout this codebase (see
@@ -90,6 +92,7 @@ def list_work_orders(
     departments: list[str] | None = None,
     paid_from: datetime | None = None,
     paid_to: datetime | None = None,
+    only_receivables: bool = False,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[WorkOrder], int]:
@@ -104,6 +107,18 @@ def list_work_orders(
     in that range - this is what the dashboard's "Оплаты за период" tile
     links to, so clicking it shows exactly the orders that make up that
     figure, not orders merely opened/closed in the period.
+
+    `only_receivables`, when true, restricts this to exactly the work orders
+    that make up Cockpit's own ДЗ figure (see cockpit_service._receivables,
+    which this mirrors as a row-filter instead of a SUM - kept as a small
+    separate copy rather than a shared helper, since a filter condition and
+    an aggregate query aren't the same shape to reuse cleanly): an unpaid
+    (or partially paid) invoice, or a closed work order with neither an
+    invoice nor a payment on file at all. This is what Cockpit's ДЗ bar
+    links to, so clicking it shows exactly the orders behind that number -
+    `departments` here is expected to already be resolved from a workshop
+    via cockpit_service._mapped_source_departments (see endpoints/
+    work_orders.py), same as ДЗ's own workshop scoping.
     """
     filters = _date_range_filters(WorkOrder.document_date, date_from, date_to)
     if departments:
@@ -115,6 +130,35 @@ def list_work_orders(
             .where(WorkOrderPaymentEvent.work_order_id == WorkOrder.id, *payment_filters)
             .exists()
         )
+    if only_receivables:
+        settings = get_settings()
+        app_settings = get_app_settings(db)
+        has_unpaid_invoice = (
+            select(WorkOrderInvoice.id)
+            .where(
+                WorkOrderInvoice.work_order_id == WorkOrder.id,
+                or_(WorkOrderInvoice.paid_amount.is_(None), WorkOrderInvoice.paid_amount == 0),
+            )
+            .exists()
+        )
+        has_payment = (
+            select(WorkOrderPaymentEvent.id)
+            .where(WorkOrderPaymentEvent.work_order_id == WorkOrder.id)
+            .exists()
+        )
+        has_invoice = (
+            select(WorkOrderInvoice.id)
+            .where(WorkOrderInvoice.work_order_id == WorkOrder.id)
+            .exists()
+        )
+        closed_uninvoiced_unpaid = and_(
+            WorkOrder.closed_date.is_not(None), ~has_payment, ~has_invoice
+        )
+        filters.append(or_(has_unpaid_invoice, closed_uninvoiced_unpaid))
+        if settings.revenue_statuses_list:
+            filters.append(WorkOrder.status.in_(settings.revenue_statuses_list))
+        if app_settings.exclude_internal_orders:
+            filters.append(WorkOrder.is_internal.is_(False))
 
     base_query = select(WorkOrder).where(*filters)
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { useRouter } from "next/navigation";
 
 import { NzpToggle } from "@/components/cockpit/NzpToggle";
 import {
@@ -1060,14 +1061,19 @@ function DebtCapsule({
   value,
   tone,
   demo,
+  onClick,
 }: {
   label: string;
   value: number;
   tone: "receivable" | "payable";
   demo?: boolean;
+  /** Present only for ДЗ (see RightSideStack) - renders this as a real
+   * <button> instead of decorative markup, since КЗ has no real underlying
+   * data/drill-down to link to yet. */
+  onClick?: () => void;
 }) {
-  return (
-    <div className={`cockpit-debt-capsule cockpit-debt-capsule--${tone}`}>
+  const inner = (
+    <>
       {demo && <span className="cockpit-demo-tag cockpit-demo-tag--corner">DEMO</span>}
       <span className="cockpit-debt-capsule-label">{label}</span>
       <div className="cockpit-capsule">
@@ -1078,6 +1084,25 @@ function DebtCapsule({
         <span className="cockpit-strip-value">{formatRub(value)} ₽</span>
         <StripEdgeMark align="end" />
       </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        className={`cockpit-debt-capsule cockpit-debt-capsule--${tone} cockpit-debt-capsule--clickable`}
+        onClick={onClick}
+        aria-label={`Открыть заказ-наряды, формирующие ${label}`}
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <div className={`cockpit-debt-capsule cockpit-debt-capsule--${tone}`} aria-hidden="true">
+      {inner}
     </div>
   );
 }
@@ -1088,23 +1113,37 @@ function DebtCapsule({
  * groups back and forth between the two sides), staircased top-to-bottom
  * (Выручка, then ДЗ shifted right of it, then КЗ shifted right again) via
  * each row's own CSS margin-left - not three independently-positioned
- * blocks on the page anymore. */
+ * blocks on the page anymore. ДЗ is clickable (per follow-up feedback,
+ * 2026-10-04) - opens the Work Orders list filtered to exactly the orders
+ * behind that figure (see backend work_order_query_service.list_work_orders's
+ * only_receivables); КЗ has no real data source yet, so it stays
+ * decorative. */
 function RightSideStack({
   revenue,
   planRub,
   receivables,
+  workshopId,
 }: {
   revenue: number;
   planRub: number;
   receivables: number;
+  workshopId: string;
 }) {
+  const router = useRouter();
+
+  const openReceivables = () => {
+    const params = new URLSearchParams({ only_receivables: "1" });
+    if (workshopId) params.set("workshop_id", workshopId);
+    router.push(`/work-orders?${params.toString()}`);
+  };
+
   return (
-    <div className="cockpit-right-stack" aria-hidden="true">
-      <div className="cockpit-right-stack-row cockpit-right-stack-row--revenue">
+    <div className="cockpit-right-stack">
+      <div className="cockpit-right-stack-row cockpit-right-stack-row--revenue" aria-hidden="true">
         <RevenueProgressStrip revenue={revenue} planRub={planRub} />
       </div>
       <div className="cockpit-right-stack-row cockpit-right-stack-row--dz">
-        <DebtCapsule label="ДЗ" value={receivables} tone="receivable" />
+        <DebtCapsule label="ДЗ" value={receivables} tone="receivable" onClick={openReceivables} />
       </div>
       <div className="cockpit-right-stack-row cockpit-right-stack-row--kz">
         <DebtCapsule label="КЗ" value={KZ_PLACEHOLDER_RUB} tone="payable" demo />
@@ -1333,7 +1372,12 @@ export function InstrumentCluster({
       />
 
       <div className="cockpit-strips">
-        <RightSideStack revenue={revenue} planRub={budgetPlanRevenue} receivables={receivables} />
+        <RightSideStack
+          revenue={revenue}
+          planRub={budgetPlanRevenue}
+          receivables={receivables}
+          workshopId={workshopId}
+        />
       </div>
     </>
   );

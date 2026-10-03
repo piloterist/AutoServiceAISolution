@@ -260,6 +260,8 @@ export function WorkOrdersTable({
   initialDepartment,
   paidFrom,
   paidTo,
+  onlyReceivables,
+  workshopId,
 }: {
   /** Pre-applied filters, e.g. arriving from a click on the dashboard's
    * status chips (/work-orders?status=...&date_from=...&date_to=...) or the
@@ -280,6 +282,13 @@ export function WorkOrdersTable({
    * banner below. */
   paidFrom?: string;
   paidTo?: string;
+  /** Restricts to exactly the work orders behind Cockpit's ДЗ bar (see
+   * backend work_order_query_service.list_work_orders's only_receivables) -
+   * same server-side-filter treatment as paidFrom/paidTo above, not a
+   * client-side re-filter of `rows`. `workshopId` scopes it like Cockpit's
+   * own цех filter; omitted means company-wide. */
+  onlyReceivables?: boolean;
+  workshopId?: string;
 }) {
   const router = useRouter();
 
@@ -302,9 +311,9 @@ export function WorkOrdersTable({
       setTotal(partialTotal);
     };
 
-    const hasPaidFilter = Boolean(paidFrom || paidTo);
+    const hasServerFilter = Boolean(paidFrom || paidTo || onlyReceivables);
 
-    if (!hasPaidFilter) {
+    if (!hasServerFilter) {
       const cached = getCachedWorkOrders();
       if (cached) {
         setItems(cached.items);
@@ -317,8 +326,8 @@ export function WorkOrdersTable({
       setLoading(true);
     }
 
-    const task = hasPaidFilter
-      ? loadWorkOrdersFiltered({ paidFrom, paidTo }, onProgress)
+    const task = hasServerFilter
+      ? loadWorkOrdersFiltered({ paidFrom, paidTo, onlyReceivables, workshopId }, onProgress)
       : loadWorkOrdersCached(onProgress);
 
     task
@@ -337,7 +346,7 @@ export function WorkOrdersTable({
     return () => {
       cancelled = true;
     };
-  }, [paidFrom, paidTo]);
+  }, [paidFrom, paidTo, onlyReceivables, workshopId]);
 
   // A link with real filter params (e.g. a dashboard status chip or the
   // revenue tile) always wins for this visit; otherwise restore whatever
@@ -601,6 +610,12 @@ export function WorkOrdersTable({
       {(paidFrom || paidTo) && (
         <p className="chart-subtitle">
           Показаны заказ-наряды с оплатами за период {paidFrom || "…"} – {paidTo || "…"}
+        </p>
+      )}
+      {onlyReceivables && (
+        <p className="chart-subtitle">
+          Показаны заказ-наряды, формирующие ДЗ: по счетам без полной оплаты и закрытые без счетов и
+          оплат
         </p>
       )}
 

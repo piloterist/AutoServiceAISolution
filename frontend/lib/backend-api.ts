@@ -345,6 +345,12 @@ export function getWorkOrders(
      * from dateFrom/dateTo, which filter by document_date. */
     paidFrom?: string;
     paidTo?: string;
+    /** Restricts to exactly the work orders behind Cockpit's ДЗ figure (see
+     * work_order_query_service.list_work_orders's only_receivables) - what
+     * the ДЗ bar on Cockpit links to. `workshopId` scopes it the same way
+     * Cockpit's own цех filter does; omitted means company-wide. */
+    onlyReceivables?: boolean;
+    workshopId?: string;
     limit?: number;
     offset?: number;
   },
@@ -355,6 +361,8 @@ export function getWorkOrders(
     departments: departmentsParam(params?.departments),
     paid_from: params?.paidFrom ?? "",
     paid_to: dateToParam(params?.paidTo),
+    only_receivables: params?.onlyReceivables ? "true" : "",
+    workshop_id: params?.workshopId ?? "",
     limit: params?.limit ? String(params.limit) : "",
     offset: params?.offset ? String(params.offset) : "",
   });

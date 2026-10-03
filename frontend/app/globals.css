@@ -4300,14 +4300,43 @@ main:has(.cockpit-page) {
 
 .cockpit-debt-capsule {
   position: relative;
+  /* ДЗ renders as a real <button> (see InstrumentCluster.tsx's
+     DebtCapsule) - reset the browser's own button chrome so it keeps
+     looking like the plain (КЗ, still a <div>) version. */
+  display: block;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+}
+
+.cockpit-debt-capsule--clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.cockpit-debt-capsule--clickable:hover .cockpit-capsule-fill,
+.cockpit-debt-capsule--clickable:focus-visible .cockpit-capsule-fill {
+  filter: brightness(1.25);
+}
+
+.cockpit-debt-capsule--clickable:focus-visible {
+  outline: 2px solid #3ebecc;
+  outline-offset: 2px;
 }
 
 .cockpit-debt-capsule-label {
   position: absolute;
-  left: -1.4em;
-  top: -2px;
+  left: -1.6em;
+  top: -5px;
   font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
-  font-size: 0.68rem;
+  /* ~2x the original 0.68rem (per product feedback, 2026-10-04: "немного
+     крупнее, раза в два"). */
+  font-size: 1.3rem;
   font-weight: 700;
   letter-spacing: 0.02em;
 }

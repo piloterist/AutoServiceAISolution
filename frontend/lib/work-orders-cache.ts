@@ -73,7 +73,7 @@ export function getCachedWorkOrders(): CacheEntry | null {
  * did (see the 2026-09-17 5000-row truncation fix). Calls onProgress after
  * every page. */
 async function fetchAllWorkOrders(
-  params: { paidFrom?: string; paidTo?: string },
+  params: { paidFrom?: string; paidTo?: string; onlyReceivables?: boolean; workshopId?: string },
   onProgress?: (items: WorkOrderListItem[], total: number) => void,
 ): Promise<{ items: WorkOrderListItem[]; total: number }> {
   let items: WorkOrderListItem[] = [];
@@ -84,6 +84,8 @@ async function fetchAllWorkOrders(
     const query = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
     if (params.paidFrom) query.set("paid_from", params.paidFrom);
     if (params.paidTo) query.set("paid_to", params.paidTo);
+    if (params.onlyReceivables) query.set("only_receivables", "true");
+    if (params.workshopId) query.set("workshop_id", params.workshopId);
 
     const res = await fetch(`/api/work-orders?${query.toString()}`);
     if (!res.ok) throw new Error(`Не удалось загрузить заказ-наряды (${res.status})`);
@@ -134,9 +136,10 @@ export function loadWorkOrdersCached(
 }
 
 /** Always fetches fresh - see loadWorkOrdersCached's doc comment for why
- * a paid_from/paid_to view doesn't go through the cache. */
+ * a paid_from/paid_to (or only_receivables) view doesn't go through the
+ * cache. */
 export function loadWorkOrdersFiltered(
-  params: { paidFrom?: string; paidTo?: string },
+  params: { paidFrom?: string; paidTo?: string; onlyReceivables?: boolean; workshopId?: string },
   onProgress?: (items: WorkOrderListItem[], total: number) => void,
 ): Promise<{ items: WorkOrderListItem[]; total: number }> {
   return fetchAllWorkOrders(params, onProgress);

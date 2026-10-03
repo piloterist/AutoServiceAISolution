@@ -20,6 +20,11 @@ type SearchParams = {
   // fetch itself (see lib/work-orders-cache.ts loadWorkOrdersFiltered).
   paid_from?: string;
   paid_to?: string;
+  // Arriving from Cockpit's ДЗ bar (see components/cockpit/
+  // InstrumentCluster.tsx) - same server-side-filter treatment as
+  // paid_from/paid_to above.
+  only_receivables?: string;
+  workshop_id?: string;
 };
 
 export default async function WorkOrdersPage({
@@ -42,6 +47,8 @@ export default async function WorkOrdersPage({
         initialDepartment={params.departments}
         paidFrom={params.paid_from}
         paidTo={params.paid_to}
+        onlyReceivables={params.only_receivables === "1"}
+        workshopId={params.workshop_id}
       />
     </div>
   );
