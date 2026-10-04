@@ -58,6 +58,45 @@ function formatClient(client: string | null): string {
   return client;
 }
 
+// Same shape as formatClient above, but for a raw value that isn't
+// guaranteed to be an exactly-10-digit phone (CallRecord.dst, and the
+// phone half of a workshop_phone_mappings pair) - an advertising line code
+// like "pan2" or "0005348" has no 10/11-digit phone shape at all and is
+// returned unchanged, same as "если звонил на рекламную линию, то просто
+// линию" calls for.
+function formatPhoneOrLine(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `+7 ${digits.slice(0, 3)} ${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8, 10)}`;
+  }
+  if (digits.length === 11 && (digits[0] === "7" || digits[0] === "8")) {
+    return formatPhoneOrLine(digits.slice(1));
+  }
+  return value;
+}
+
+// "Куда звонили" - the line/number the client dialed (dst), with its
+// paired добавочный in parens when Settings -> IP-телефония's "Цех —
+// Телефон — Добавочный" table has one (dst_extension) - an advertising
+// line with no specific добавочный configured, or dst with nothing in
+// that table matching at all, just shows the raw line/number alone.
+function calledLineCell(event: LineCallEvent): string {
+  if (!event.dst) return "—";
+  const base = formatPhoneOrLine(event.dst);
+  return event.dst_extension ? `${base} (${event.dst_extension})` : base;
+}
+
+// "Кто ответил" - the extension that picked up, with its paired phone
+// number in parens when that same mapping table has one (answered_phone) -
+// an extension with no phone configured for it just shows the добавочный
+// alone, same as calledLineCell's own fallback.
+function answeredByCell(event: LineCallEvent): string {
+  if (!event.operator) return "—";
+  return event.answered_phone
+    ? `${formatPhoneOrLine(event.answered_phone)} (${event.operator})`
+    : event.operator;
+}
+
 function formatEventTime(time: string): string {
   // "YYYY-MM-DD HH:MM:SS" -> "ДД.ММ ЧЧ:ММ:СС"
   const [datePart, timePart] = time.split(" ");
@@ -76,26 +115,26 @@ function eventLabel(event: LineCallEvent): string {
   return event.answered ? "Клиент перезвонил" : "Клиент перезвонил (пропущен)";
 }
 
-// Which internal extension(s) this call actually rang on - `operator`
-// (whoever answered, if it was) plus `rang_not_answered` (everyone else in
-// the ring group who didn't) together give the full picture; per product
-// feedback, this wasn't visible before (only who eventually answered).
-function extensionsCell(event: LineCallEvent): string {
-  const rang = event.operator
-    ? [event.operator, ...event.rang_not_answered]
-    : event.rang_not_answered;
-  return rang.length > 0 ? rang.join(", ") : "—";
+// YandexGPT's short free-text call summary (see backend
+// services/call_transcription_relay.py / models.call_record.CallRecord.
+// topic_tag) - a plain label, not a quality signal (distinct from the
+// ok/warn/down semantics pctBadgeClass above uses). Only ever called with a
+// non-null tag - see the `event.topic_tag &&` guard at the call site, which
+// renders nothing at all until the call has been summarized.
+const TOPIC_UNDETERMINED = "Тема не определена";
+
+function topicBadgeClass(tag: string): string {
+  if (tag === TOPIC_UNDETERMINED) return "telephony-topic-badge telephony-topic-badge--unknown";
+  return "telephony-topic-badge telephony-topic-badge--summary";
 }
 
-// YandexGPT's call-topic guess (see backend services/call_transcription_relay.py) -
-// a neutral badge per tag, distinct from the ok/warn/down semantics
-// pctBadgeClass above uses (this isn't a quality signal, just a label).
-// Only ever called with a non-null tag - see the `event.topic_tag &&` guard
-// at the call site, which renders nothing at all until classified.
-function topicBadgeClass(tag: string): string {
-  if (tag === "Кузовной") return "telephony-topic-badge telephony-topic-badge--body";
-  if (tag === "Слесарный") return "telephony-topic-badge telephony-topic-badge--mechanical";
-  return "telephony-topic-badge telephony-topic-badge--unknown";
+// YandexGPT's QA rating (see TelephonySettings.assess_quality_enabled) -
+// banded the same way as the written methodology (9-10 / 7-8 / 4-6 / 1-3).
+function scoreBadgeClass(score: number): string {
+  if (score >= 9) return "telephony-badge telephony-badge--ok";
+  if (score >= 7) return "telephony-badge telephony-badge--ok";
+  if (score >= 4) return "telephony-badge telephony-badge--warn";
+  return "telephony-badge telephony-badge--down";
 }
 
 function eventRowClass(event: LineCallEvent): string {
@@ -195,10 +234,13 @@ function LineCallsPanel({
                 Номер{sortArrow("client")}
               </button>
             </th>
-            <th>Добавочные</th>
+            <th>Куда звонили</th>
+            <th>Кто ответил</th>
+            <th>Цех</th>
             <th className="telephony-num">Ожидание</th>
             <th className="telephony-num">Разговор</th>
             <th>Тема</th>
+            <th>Оценка</th>
           </tr>
         </thead>
         <tbody>
@@ -207,7 +249,9 @@ function LineCallsPanel({
               <td>{formatEventTime(event.time)}</td>
               <td>{eventLabel(event)}</td>
               <td>{formatClient(event.client)}</td>
-              <td>{extensionsCell(event)}</td>
+              <td>{calledLineCell(event)}</td>
+              <td>{answeredByCell(event)}</td>
+              <td>{event.workshop_label ?? "—"}</td>
               <td className="telephony-num">{event.wait_sec} с</td>
               <td className="telephony-num">{event.answered ? `${event.talk_sec} с` : "—"}</td>
               <td>
@@ -230,6 +274,20 @@ function LineCallsPanel({
                   event.topic_tag && (
                     <span className={topicBadgeClass(event.topic_tag)}>{event.topic_tag}</span>
                   )
+                )}
+              </td>
+              <td>
+                {event.quality_score !== null ? (
+                  <button
+                    type="button"
+                    className="telephony-topic-cell-btn"
+                    onClick={() => setTranscriptEvent(event)}
+                    title="Показать разбор звонка"
+                  >
+                    <span className={scoreBadgeClass(event.quality_score)}>{event.quality_score}/10</span>
+                  </button>
+                ) : (
+                  "—"
                 )}
               </td>
             </tr>
@@ -255,6 +313,17 @@ function LineCallsPanel({
               {transcriptEvent.topic_tag}
             </span>
           </p>
+        )}
+        {transcriptEvent?.quality_score !== null && transcriptEvent?.quality_score !== undefined && (
+          <div className="settings-description">
+            <p>
+              Оценка:{" "}
+              <span className={scoreBadgeClass(transcriptEvent.quality_score)}>
+                {transcriptEvent.quality_score}/10
+              </span>
+            </p>
+            {transcriptEvent.quality_review && <p>{transcriptEvent.quality_review}</p>}
+          </div>
         )}
         <p className="telephony-transcript-text">{transcriptEvent?.transcript_text}</p>
       </AdminModal>

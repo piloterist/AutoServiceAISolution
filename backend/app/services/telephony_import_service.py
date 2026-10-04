@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.models.call_record import CallRecord
 from app.models.telephony_settings import PROVIDER_ZEON, TelephonySettings
 from app.services import zeon_client
+from app.services.call_workshop_service import WorkshopIndex, determine_workshop
 from app.services.zeon_client import NormalizedCall, ZeonError, ZeonSettings
 
 
@@ -54,26 +55,45 @@ def zeon_settings_from(settings: TelephonySettings) -> ZeonSettings:
 def _upsert_calls(db: Session, provider: str, calls: list[NormalizedCall]) -> int:
     if not calls:
         return 0
-    rows = [
-        {
-            "id": uuid.uuid4(),
-            "provider": provider,
-            "external_id": call.external_id,
-            "linkedid": call.linkedid,
-            "call_date": date.fromisoformat(call.call_date_iso),
-            "occurred_at": call.occurred_at,
-            "call_type": call.call_type,
-            "client": call.client,
-            "line": call.line,
-            "operator": call.operator,
-            "rang_not_answered": call.rang_not_answered or None,
-            "wait_sec": call.wait_sec,
-            "talk_sec": call.talk_sec,
-            "answered": call.answered,
-            "raw_payload": call.raw,
-        }
-        for call in calls
-    ]
+
+    # Loaded once for the whole batch, not once per call - see
+    # call_workshop_service.WorkshopIndex. Цех determination is a pure
+    # function of fields already on `calls`, so it happens right here
+    # rather than needing a separate pass/relay loop afterwards.
+    workshop_index = WorkshopIndex(db)
+    rows = []
+    for call in calls:
+        workshop_id, workshop_source = determine_workshop(
+            call_type=call.call_type,
+            dst=call.dst,
+            exten=call.exten,
+            rang_extensions=call.rang_extensions,
+            index=workshop_index,
+        )
+        rows.append(
+            {
+                "id": uuid.uuid4(),
+                "provider": provider,
+                "external_id": call.external_id,
+                "linkedid": call.linkedid,
+                "call_date": date.fromisoformat(call.call_date_iso),
+                "occurred_at": call.occurred_at,
+                "call_type": call.call_type,
+                "client": call.client,
+                "line": call.line,
+                "operator": call.operator,
+                "rang_not_answered": call.rang_not_answered or None,
+                "wait_sec": call.wait_sec,
+                "talk_sec": call.talk_sec,
+                "answered": call.answered,
+                "raw_payload": call.raw,
+                "dst": call.dst,
+                "exten": call.exten,
+                "rang_extensions": call.rang_extensions or None,
+                "workshop_id": workshop_id,
+                "workshop_source": workshop_source,
+            }
+        )
 
     # Core table, not the ORM class - same reasoning as
     # import_service._upsert_work_order: ORM onupdate=func.now() never
@@ -96,6 +116,11 @@ def _upsert_calls(db: Session, provider: str, calls: list[NormalizedCall]) -> in
             "talk_sec": stmt.excluded.talk_sec,
             "answered": stmt.excluded.answered,
             "raw_payload": stmt.excluded.raw_payload,
+            "dst": stmt.excluded.dst,
+            "exten": stmt.excluded.exten,
+            "rang_extensions": stmt.excluded.rang_extensions,
+            "workshop_id": stmt.excluded.workshop_id,
+            "workshop_source": stmt.excluded.workshop_source,
             "updated_at": func.now(),
         },
     )

@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.models.phone_source import PhoneSource
 from app.models.telephony_settings import ZEON_AUTH_BEARER, TelephonySettings
+from app.models.workshop_phone_mapping import WorkshopPhoneMapping
+from app.services.call_workshop_service import normalize_phone_or_line
 
 SETTINGS_ID = 1
 
@@ -45,6 +47,9 @@ def update_telephony_settings(
     speechkit_timeout_min: int,
     classify_calls_enabled: bool,
     yandexgpt_model: str,
+    assess_quality_enabled: bool,
+    transcription_poll_interval_minutes: int,
+    transcription_batch_size: int,
 ) -> TelephonySettings:
     settings = get_telephony_settings(db)
     settings.enabled = enabled
@@ -63,6 +68,9 @@ def update_telephony_settings(
     settings.speechkit_timeout_min = speechkit_timeout_min
     settings.classify_calls_enabled = classify_calls_enabled
     settings.yandexgpt_model = yandexgpt_model
+    settings.assess_quality_enabled = assess_quality_enabled
+    settings.transcription_poll_interval_minutes = transcription_poll_interval_minutes
+    settings.transcription_batch_size = transcription_batch_size
     db.commit()
     db.refresh(settings)
     return settings
@@ -121,5 +129,60 @@ def delete_phone_source(db: Session, source_id: uuid.UUID) -> bool:
     if source is None:
         return False
     db.delete(source)
+    db.commit()
+    return True
+
+
+# ---- Цех — Телефон — Добавочный (workshop_phone_mappings) -----------------
+#
+# A separate, narrower table from phone_sources above - see models/
+# workshop_phone_mapping.py's own docstring for why they're not the same
+# concept. Writes here don't themselves recompute any CallRecord.workshop_id
+# - see endpoints/telephony.py's own explicit "Пересчитать цеха" action,
+# which calls call_workshop_service.recompute_all after any add/edit/delete.
+
+
+def list_workshop_phone_mappings(db: Session) -> list[WorkshopPhoneMapping]:
+    return list(db.scalars(select(WorkshopPhoneMapping).order_by(WorkshopPhoneMapping.created_at)))
+
+
+def create_workshop_phone_mapping(
+    db: Session, *, workshop_id: uuid.UUID, phone: str | None, extension: str | None
+) -> WorkshopPhoneMapping:
+    mapping = WorkshopPhoneMapping(
+        workshop_id=workshop_id,
+        phone=normalize_phone_or_line(phone) if phone else None,
+        extension=extension.strip() if extension else None,
+    )
+    db.add(mapping)
+    db.commit()
+    db.refresh(mapping)
+    return mapping
+
+
+def update_workshop_phone_mapping(
+    db: Session,
+    mapping_id: uuid.UUID,
+    *,
+    workshop_id: uuid.UUID,
+    phone: str | None,
+    extension: str | None,
+) -> WorkshopPhoneMapping | None:
+    mapping = db.get(WorkshopPhoneMapping, mapping_id)
+    if mapping is None:
+        return None
+    mapping.workshop_id = workshop_id
+    mapping.phone = normalize_phone_or_line(phone) if phone else None
+    mapping.extension = extension.strip() if extension else None
+    db.commit()
+    db.refresh(mapping)
+    return mapping
+
+
+def delete_workshop_phone_mapping(db: Session, mapping_id: uuid.UUID) -> bool:
+    mapping = db.get(WorkshopPhoneMapping, mapping_id)
+    if mapping is None:
+        return False
+    db.delete(mapping)
     db.commit()
     return True

@@ -1,9 +1,16 @@
 """Tests for Settings -> IP-телефония: the connection-settings singleton
 and the phone-source directory (see app/api/v1/endpoints/telephony.py)."""
 
+from datetime import UTC, datetime
+
+from app.models.call_record import CALL_TYPE_IN, CallRecord
+from app.models.department import Department
+from app.models.workshop import Workshop
+
 SETTINGS_URL = "/api/v1/telephony/settings"
 SOURCES_URL = "/api/v1/telephony/sources"
 PING_URL = "/api/v1/telephony/ping"
+WORKSHOP_PHONES_URL = "/api/v1/telephony/workshop-phones"
 
 
 def test_read_settings_creates_defaults_on_first_access(client, auth_headers) -> None:
@@ -150,3 +157,131 @@ def test_delete_phone_source(client, auth_headers) -> None:
 
     listed = client.get(SOURCES_URL, headers=auth_headers).json()
     assert listed == []
+
+
+# ---- Цех — Телефон — Добавочный (workshop_phone_mappings) ------------------
+
+
+def _make_workshop(db_session, workshop_type: str = "Слесарный") -> Workshop:
+    department = Department(name="Каховка")
+    db_session.add(department)
+    db_session.commit()
+    workshop = Workshop(
+        department_id=department.id,
+        workshop_type=workshop_type,
+        posts_count=2,
+        start_time="08:00:00",
+        end_time="20:00:00",
+        working_days=[0, 1, 2, 3, 4],
+    )
+    db_session.add(workshop)
+    db_session.commit()
+    return workshop
+
+
+def test_create_and_list_workshop_phone_mapping(client, db_session, auth_headers) -> None:
+    workshop = _make_workshop(db_session)
+
+    response = client.post(
+        WORKSHOP_PHONES_URL,
+        headers=auth_headers,
+        json={"workshop_id": str(workshop.id), "phone": "+7 926 153-72-27", "extension": None},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["phone"] == "79261537227"  # normalized on save
+    assert "Слесарный" in body["workshop_label"]
+
+    listed = client.get(WORKSHOP_PHONES_URL, headers=auth_headers).json()
+    assert len(listed) == 1
+    assert listed[0]["id"] == body["id"]
+
+
+def test_create_workshop_phone_mapping_requires_phone_or_extension(
+    client, db_session, auth_headers
+) -> None:
+    workshop = _make_workshop(db_session)
+
+    response = client.post(
+        WORKSHOP_PHONES_URL,
+        headers=auth_headers,
+        json={"workshop_id": str(workshop.id), "phone": None, "extension": None},
+    )
+
+    assert response.status_code == 422
+
+
+def test_update_workshop_phone_mapping(client, db_session, auth_headers) -> None:
+    workshop = _make_workshop(db_session)
+    created = client.post(
+        WORKSHOP_PHONES_URL,
+        headers=auth_headers,
+        json={"workshop_id": str(workshop.id), "phone": "pan2", "extension": None},
+    ).json()
+
+    response = client.put(
+        f"{WORKSHOP_PHONES_URL}/{created['id']}",
+        headers=auth_headers,
+        json={"workshop_id": str(workshop.id), "phone": None, "extension": "305"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["phone"] is None
+    assert body["extension"] == "305"
+
+
+def test_update_missing_workshop_phone_mapping_returns_404(
+    client, db_session, auth_headers
+) -> None:
+    workshop = _make_workshop(db_session)
+    response = client.put(
+        f"{WORKSHOP_PHONES_URL}/00000000-0000-0000-0000-000000000000",
+        headers=auth_headers,
+        json={"workshop_id": str(workshop.id), "phone": "pan2", "extension": None},
+    )
+    assert response.status_code == 404
+
+
+def test_delete_workshop_phone_mapping(client, db_session, auth_headers) -> None:
+    workshop = _make_workshop(db_session)
+    created = client.post(
+        WORKSHOP_PHONES_URL,
+        headers=auth_headers,
+        json={"workshop_id": str(workshop.id), "phone": "pan2", "extension": None},
+    ).json()
+
+    response = client.delete(f"{WORKSHOP_PHONES_URL}/{created['id']}", headers=auth_headers)
+    assert response.status_code == 204
+
+    listed = client.get(WORKSHOP_PHONES_URL, headers=auth_headers).json()
+    assert listed == []
+
+
+def test_recompute_assigns_workshop_to_matching_calls(client, db_session, auth_headers) -> None:
+    workshop = _make_workshop(db_session)
+    client.post(
+        WORKSHOP_PHONES_URL,
+        headers=auth_headers,
+        json={"workshop_id": str(workshop.id), "phone": "pan2", "extension": None},
+    )
+    call = CallRecord(
+        provider="zeon",
+        external_id="ext-1",
+        call_date=datetime(2026, 9, 1, tzinfo=UTC).date(),
+        occurred_at=datetime(2026, 9, 1, 10, 0, 0, tzinfo=UTC),
+        call_type=CALL_TYPE_IN,
+        dst="pan2",
+        raw_payload={},
+    )
+    db_session.add(call)
+    db_session.commit()
+
+    response = client.post(f"{WORKSHOP_PHONES_URL}/recompute", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["processed"] == 1
+    db_session.refresh(call)
+    assert call.workshop_id == workshop.id
+    assert call.workshop_source == "line"

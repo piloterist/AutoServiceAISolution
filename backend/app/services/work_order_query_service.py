@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, and_, delete, func, or_, select
+from sqlalchemy import ColumnElement, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -112,13 +112,13 @@ def list_work_orders(
     that make up Cockpit's own ДЗ figure (see cockpit_service._receivables,
     which this mirrors as a row-filter instead of a SUM - kept as a small
     separate copy rather than a shared helper, since a filter condition and
-    an aggregate query aren't the same shape to reuse cleanly): an unpaid
-    (or partially paid) invoice, or a closed work order with neither an
-    invoice nor a payment on file at all. This is what Cockpit's ДЗ bar
-    links to, so clicking it shows exactly the orders behind that number -
-    `departments` here is expected to already be resolved from a workshop
-    via cockpit_service._mapped_source_departments (see endpoints/
-    work_orders.py), same as ДЗ's own workshop scoping.
+    an aggregate query aren't the same shape to reuse cleanly): closed work
+    orders where `debt_amount` (1C's own already-computed settlement
+    balance - see WorkOrder's own docstring) is still positive. This is
+    what Cockpit's ДЗ bar links to, so clicking it shows exactly the orders
+    behind that number - `departments` here is expected to already be
+    resolved from a workshop via cockpit_service._mapped_source_departments
+    (see endpoints/work_orders.py), same as ДЗ's own workshop scoping.
     """
     filters = _date_range_filters(WorkOrder.document_date, date_from, date_to)
     if departments:
@@ -133,28 +133,8 @@ def list_work_orders(
     if only_receivables:
         settings = get_settings()
         app_settings = get_app_settings(db)
-        has_unpaid_invoice = (
-            select(WorkOrderInvoice.id)
-            .where(
-                WorkOrderInvoice.work_order_id == WorkOrder.id,
-                or_(WorkOrderInvoice.paid_amount.is_(None), WorkOrderInvoice.paid_amount == 0),
-            )
-            .exists()
-        )
-        has_payment = (
-            select(WorkOrderPaymentEvent.id)
-            .where(WorkOrderPaymentEvent.work_order_id == WorkOrder.id)
-            .exists()
-        )
-        has_invoice = (
-            select(WorkOrderInvoice.id)
-            .where(WorkOrderInvoice.work_order_id == WorkOrder.id)
-            .exists()
-        )
-        closed_uninvoiced_unpaid = and_(
-            WorkOrder.closed_date.is_not(None), ~has_payment, ~has_invoice
-        )
-        filters.append(or_(has_unpaid_invoice, closed_uninvoiced_unpaid))
+        filters.append(WorkOrder.closed_date.is_not(None))
+        filters.append(WorkOrder.debt_amount > 0)
         if settings.revenue_statuses_list:
             filters.append(WorkOrder.status.in_(settings.revenue_statuses_list))
         if app_settings.exclude_internal_orders:

@@ -52,7 +52,6 @@ from app.models.body_car_stage import BodyCarStage
 from app.models.budget_entry import BudgetEntry
 from app.models.department import Department
 from app.models.work_order import WorkOrder
-from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
@@ -286,48 +285,33 @@ def _receivables(
     exclude_internal: bool,
 ) -> Decimal:
     """ДЗ (дебиторская задолженность) - a running total, not scoped to a
-    period (unlike revenue/payments above): the sum of (1) issued invoices
-    with no payment against them yet (WorkOrderInvoice.paid_amount null/0 -
-    see that model's own docstring for why this is read at query time
-    instead of a stored status) plus (2) closed work orders that have
-    neither a payment nor an invoice at all (money owed that was never even
-    invoiced). A work order with SOME payment or SOME invoice is accounted
-    for by (1) above instead (or is simply settled) - counting it again
-    here under (2) would double it."""
-    invoiced_filters = [
-        or_(WorkOrderInvoice.paid_amount.is_(None), WorkOrderInvoice.paid_amount == 0)
-    ]
-    invoiced_query = select(func.sum(WorkOrderInvoice.amount)).select_from(WorkOrderInvoice)
-    if source_departments is not None or exclude_internal:
-        invoiced_query = invoiced_query.join(
-            WorkOrder, WorkOrder.id == WorkOrderInvoice.work_order_id
-        )
-        if source_departments is not None:
-            invoiced_filters.append(WorkOrder.department.in_(source_departments))
-        if exclude_internal:
-            invoiced_filters.append(WorkOrder.is_internal.is_(False))
-    unpaid_invoiced = db.execute(invoiced_query.where(*invoiced_filters)).scalar_one() or Decimal(
-        "0"
-    )
+    period (unlike revenue/payments above): the sum of WorkOrder.debt_amount
+    for every closed work order that still owes something.
 
-    has_payment = select(WorkOrderPaymentEvent.work_order_id).distinct()
-    has_invoice = select(WorkOrderInvoice.work_order_id).distinct()
-    uninvoiced_filters = [
-        WorkOrder.closed_date.is_not(None),
-        WorkOrder.id.not_in(has_payment),
-        WorkOrder.id.not_in(has_invoice),
-    ]
+    Originally this inferred "unpaid" from the ABSENCE of a
+    WorkOrderPaymentEvent/WorkOrderInvoice row (see git history before
+    2026-10-04) - dropped after a live example (ЗН СЦН0002701, confirmed via
+    its own detail page: "Оплачено 100%, Остаток долга 0 ₽") showed that
+    rule flagging a fully-paid order as outstanding, because the payment
+    that settled it was never recorded as its own work_order_payment_events
+    row (and work_order_invoices turned out to have zero rows at all,
+    company-wide - invoices from 1C were never wired up). `debt_amount`
+    instead is 1C's OWN already-computed running settlement balance
+    (ВзаиморасчетыКомпании.Остатки(), see WorkOrder's own docstring) - the
+    exact number the Work Order detail page's own "Остаток долга" shows, so
+    this can never disagree with what the operator sees on one order up
+    close. Still scoped to CLOSED orders only (an open order isn't
+    "receivable" yet, per the original product rule), but no longer needs
+    the invoice/payment-event tables at all."""
+    filters = [WorkOrder.closed_date.is_not(None), WorkOrder.debt_amount > 0]
     if source_departments is not None:
-        uninvoiced_filters.append(WorkOrder.department.in_(source_departments))
+        filters.append(WorkOrder.department.in_(source_departments))
     if revenue_statuses:
-        uninvoiced_filters.append(WorkOrder.status.in_(revenue_statuses))
+        filters.append(WorkOrder.status.in_(revenue_statuses))
     if exclude_internal:
-        uninvoiced_filters.append(WorkOrder.is_internal.is_(False))
-    uninvoiced_closed = db.execute(
-        select(func.sum(WorkOrder.amount)).where(*uninvoiced_filters)
-    ).scalar_one() or Decimal("0")
-
-    return unpaid_invoiced + uninvoiced_closed
+        filters.append(WorkOrder.is_internal.is_(False))
+    total = db.execute(select(func.sum(WorkOrder.debt_amount)).where(*filters)).scalar_one()
+    return total or Decimal("0")
 
 
 def _nzp_body(

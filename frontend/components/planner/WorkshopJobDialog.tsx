@@ -32,9 +32,21 @@ export type JobDraft = {
   // Read-only, set only for an existing record (see jobToDraft/
   // emptyJobDraft below) - per product ask, 2026-10-01: a grey "RecId"/
   // "CreatedBy" footer so a record is always traceable in the audit log,
-  // even when the ЗН/car fields are empty.
+  // even when the ЗН/car fields are empty. "Создан" (createdAt) added
+  // 2026-10-04.
+  createdAt: string | null;
   createdByName: string | null;
 };
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 function timeOptions(startTime: string, endTime: string): string[] {
   const start = timeToMinutes(startTime);
@@ -318,6 +330,7 @@ export function WorkshopJobDialog({
         {form.jobId && (
           <div className="admin-form-meta">
             <span>RecId: {form.jobId}</span>
+            <span>Создан: {form.createdAt ? formatDateTime(form.createdAt) : "—"}</span>
             <span>Создал: {form.createdByName ?? "—"}</span>
           </div>
         )}
@@ -395,6 +408,7 @@ export function jobToDraft(job: WorkshopJob): JobDraft {
     endTime: job.end_time.slice(0, 5),
     normHours: job.norm_hours ?? "",
     statusId: job.status_id,
+    createdAt: job.created_at,
     createdByName: job.created_by_name,
   };
 }
@@ -427,6 +441,7 @@ export function emptyJobDraft(
     // more (see the status <select> above), so a new job must always get
     // a real status from the moment it's created.
     statusId: statuses.find((s) => s.name === "Запись")?.id ?? statuses[0]?.id ?? null,
+    createdAt: null,
     createdByName: null,
   };
 }

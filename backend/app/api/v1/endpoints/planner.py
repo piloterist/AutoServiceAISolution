@@ -156,6 +156,7 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
         status_color=status_row.color if status_row else None,
         employee_id=job.employee_id,
         employee_name=employee.full_name if employee else None,
+        created_at=job.created_at,
         created_by_name=creator.full_name if creator else None,
     )
 

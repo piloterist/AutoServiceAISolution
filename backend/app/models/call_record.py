@@ -18,7 +18,17 @@ API directly made that unnecessary.
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -44,16 +54,34 @@ TRANSCRIPT_STATUSES = (
     TRANSCRIPT_STATUS_FAILED,
 )
 
-# YandexGPT's classification of what a call was about - see
-# services/yandexgpt_client.py. Deliberately NOT the same concept/values as
-# WorkOrder.repair_type (1C's own "ВидРемонта" - insurance/warranty/etc,
-# see models/work_order.py) - this is a *shop* guess from a phone
-# conversation, named `topic_tag` to keep the two unrelated vocabularies
-# from colliding.
-TOPIC_BODY = "Кузовной"
-TOPIC_MECHANICAL = "Слесарный"
-TOPIC_UNKNOWN = "Не определено"
-CALL_TOPICS = (TOPIC_BODY, TOPIC_MECHANICAL, TOPIC_UNKNOWN)
+# YandexGPT's short free-text summary of what a call was about (e.g.
+# "Стоимость замены колодок на Chery Tiggo 8") - see
+# services/yandexgpt_client.py.summarize_call_topic. Used to be a fixed
+# Кузовной/Слесарный/Не определено tag (a *цех* guess from the
+# conversation), but цех is now determined from the telephony data itself
+# (see services/call_workshop_service.py / workshop_id below), so this
+# field was freed up to carry a plain one-line description instead (product
+# ask, 2026-10-04). Deliberately NOT the same concept as WorkOrder.repair_type
+# (1C's own "ВидРемонта" - insurance/warranty/etc, see models/work_order.py).
+TOPIC_UNDETERMINED = "Тема не определена"
+
+# services/call_workshop_service.py's own determination source - which rule
+# (if any) assigned workshop_id below. None = not computed yet (e.g. a row
+# imported before this feature existed - see that service's recompute_all).
+WORKSHOP_SOURCE_LINE = "line"  # matched by dst (куда звонили)
+WORKSHOP_SOURCE_OPERATOR = "operator"  # matched by exten (кто ответил / с кого звонили)
+WORKSHOP_SOURCE_RING_GROUP = "ring_group"  # matched by the set of extensions that rang
+WORKSHOP_SOURCE_NO_MATCH = "no_match"  # nothing in workshop_phone_mappings matched
+WORKSHOP_SOURCE_MULTIPLE = "multiple_workshops"  # matched rows disagree on the workshop
+WORKSHOP_SOURCE_IVR_NO_ANSWER = "ivr_no_answer"  # IVR/queue, no staff extension ever answered
+WORKSHOP_SOURCES = (
+    WORKSHOP_SOURCE_LINE,
+    WORKSHOP_SOURCE_OPERATOR,
+    WORKSHOP_SOURCE_RING_GROUP,
+    WORKSHOP_SOURCE_NO_MATCH,
+    WORKSHOP_SOURCE_MULTIPLE,
+    WORKSHOP_SOURCE_IVR_NO_ANSWER,
+)
 
 
 class CallRecord(Base):
@@ -121,12 +149,43 @@ class CallRecord(Base):
     # nothing to transcribe.
     transcript_status: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # One of CALL_TOPICS above - set only once transcript_status is
-    # "classified".
-    topic_tag: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # A short free-text summary of the call (see TOPIC_UNDETERMINED above) -
+    # set only once transcript_status is "classified".
+    topic_tag: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Last error message, for troubleshooting a stuck/failed row from
     # Settings - cleared again on a later successful attempt.
     transcript_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # YandexGPT's QA review of this one call (product ask, 2026-10-04) - a
+    # separate opt-in step from topic_tag above (see TelephonySettings.
+    # assess_quality_enabled), tracked by its own presence rather than
+    # transcript_status (which only models the transcribe->classify
+    # progression) - None simply means "not assessed yet (or not enabled)".
+    quality_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quality_review: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # --- Цех determination (see services/call_workshop_service.py) - raw
+    # Zeon fields kept verbatim (not normalized - matching normalizes at
+    # lookup time) specifically for this, decoupled from the pre-existing
+    # `line`/`operator` above (which have their own, narrower, IN-only/
+    # display-oriented semantics - see their own comments - and must keep
+    # behaving exactly as before). Backfilled for already-imported rows
+    # straight from `raw_payload` (confirmed present there for every call
+    # already on file), no re-fetch from Zeon needed - see
+    # call_workshop_service.recompute_all.
+    dst: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    exten: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # De-duplicated union of Zeon's `members` + `lost` (every extension the
+    # call rang on, answered or not) - the "кому звонило" fallback rule.
+    rang_extensions: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+
+    workshop_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workshops.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    workshop_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

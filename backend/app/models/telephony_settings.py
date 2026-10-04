@@ -107,6 +107,28 @@ class TelephonySettings(Base):
         String(50), nullable=False, default="yandexgpt-lite/latest"
     )
 
+    # --- QA review + 1-10 score via YandexGPT (product ask, 2026-10-04) -
+    # independent opt-in from classify_calls_enabled above (either can run
+    # without the other; see call_transcription_relay.poll_once's gate),
+    # reusing the same yc_api_key/yc_folder_id/yandexgpt_model.
+    assess_quality_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # How often services/call_transcription_relay.py re-runs (once there is
+    # something to do - transcribe/classify_calls_enabled/
+    # assess_quality_enabled), and how many pending calls it takes on per
+    # run - see that module's own poll_once. Used to be fixed constants
+    # (POLL_INTERVAL_SECONDS=600, MAX_CALLS_PER_CYCLE=20) - product ask,
+    # 2026-10-04, pulled out into settings so the operator can retune them
+    # without a redeploy, same reasoning as poll_interval_minutes above.
+    transcription_poll_interval_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10, server_default="10"
+    )
+    transcription_batch_size: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=20, server_default="20"
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

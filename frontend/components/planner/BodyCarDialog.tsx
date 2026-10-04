@@ -29,8 +29,20 @@ export type CarDraft = {
   stages: StageDraft[];
   // Read-only, set only for an existing record - see carToDraft/
   // emptyCarDraft below and WorkshopJobDialog's same field for why.
+  // "Создан" (createdAt) added 2026-10-04.
+  createdAt: string | null;
   createdByName: string | null;
 };
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 /** Restores "each stage must start no earlier than the previous one starts"
  * (product brief: даты этапов могут совпадать/пересекаться, но не быть
@@ -346,6 +358,7 @@ export function BodyCarDialog({
         {form.carId && (
           <div className="admin-form-meta">
             <span>RecId: {form.carId}</span>
+            <span>Создан: {form.createdAt ? formatDateTime(form.createdAt) : "—"}</span>
             <span>Создал: {form.createdByName ?? "—"}</span>
           </div>
         )}
@@ -422,6 +435,7 @@ export function carToDraft(car: BodyCar): CarDraft {
       endDate: s.end_date,
       employeeId: s.employee_id ?? "",
     })),
+    createdAt: car.created_at,
     createdByName: car.created_by_name,
   };
 }
@@ -440,6 +454,7 @@ export function emptyCarDraft(arriveDate: string): CarDraft {
     status: "К приёмке",
     onSite: false,
     stages: [newStageRow(undefined, arriveDate)],
+    createdAt: null,
     createdByName: null,
   };
 }

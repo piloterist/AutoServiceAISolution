@@ -14,15 +14,18 @@
 //     (right), leaving the bottom-right quadrant open, per the product
 //     spec ("дуга примерно на 270°... нижняя правая четверть остаётся
 //     свободной").
-//   payments: starts at 150 (~5 o'clock), sweeps 270 -> ends at 60
-//     (~2 o'clock), leaving roughly the right side open - the side the
-//     main gauge overlaps it from anyway.
+//   payments: starts at 180 (bottom), same as the main gauge - sweeps 270
+//     -> ends at 90 (right), leaving the bottom-right quadrant open too
+//     (per product feedback, 2026-10-04: "я просил ноль внизу, как и у
+//     выручки" - a previous reading of "0 на 270 градусов" as this
+//     module's own clockwise-from-12 convention put 0 at 9 o'clock/left
+//     instead, which was wrong; was 150 before that).
 
 export type Point = { x: number; y: number };
 
 export const MAIN_GAUGE_START_ANGLE = 180;
 export const MAIN_GAUGE_SWEEP = 270;
-export const PAYMENTS_GAUGE_START_ANGLE = 150;
+export const PAYMENTS_GAUGE_START_ANGLE = 180;
 export const PAYMENTS_GAUGE_SWEEP = 270;
 
 // Rounded to a precision far below anything visible (a fraction of a

@@ -26,6 +26,7 @@ from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
 from app.models.workshop import Workshop
 from app.models.workshop_job import WorkshopJob
+from app.models.workshop_phone_mapping import WorkshopPhoneMapping
 from app.models.workshop_source_department import WorkshopSourceDepartment
 
 __all__ = [
@@ -52,6 +53,7 @@ __all__ = [
     "PhoneSource",
     "CallRecord",
     "WorkshopSourceDepartment",
+    "WorkshopPhoneMapping",
     "LeadsSettings",
     "WebsiteLead",
     "BudgetEntry",

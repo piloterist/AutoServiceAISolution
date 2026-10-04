@@ -14,6 +14,8 @@ import type {
   TelephonyPingResult,
   TelephonySettings,
   TelephonySettingsWrite,
+  WorkshopPhoneMapping,
+  WorkshopPhoneMappingWrite,
 } from "@/lib/backend-api";
 
 async function proxyFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
@@ -70,6 +72,25 @@ export const phoneSourcesApi = {
       body: JSON.stringify(payload),
     }),
   remove: (id: string) => proxyFetch<void>(`/api/telephony/sources/${id}`, { method: "DELETE" }),
+};
+
+export const workshopPhonesApi = {
+  list: () => proxyFetch<WorkshopPhoneMapping[]>(bust("/api/telephony/workshop-phones"), noStoreFresh),
+  create: (payload: WorkshopPhoneMappingWrite) =>
+    proxyFetch<WorkshopPhoneMapping>("/api/telephony/workshop-phones", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  update: (id: string, payload: WorkshopPhoneMappingWrite) =>
+    proxyFetch<WorkshopPhoneMapping>(`/api/telephony/workshop-phones/${id}`, {
+      method: "PUT",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
+  remove: (id: string) => proxyFetch<void>(`/api/telephony/workshop-phones/${id}`, { method: "DELETE" }),
+  recompute: () =>
+    proxyFetch<{ processed: number }>("/api/telephony/workshop-phones/recompute", { method: "POST" }),
 };
 
 export function getSourceSummaryClient(params: { startDate: string; endDate: string }): Promise<SourceSummaryResponse> {

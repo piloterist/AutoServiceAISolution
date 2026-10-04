@@ -4,11 +4,15 @@ import { useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
 import { PHONE_SOURCE_GROUPS, ZEON_AUDIO_METHODS, ZEON_AUTH_MODES } from "@/lib/admin-constants";
-import type { PhoneSource, TelephonySettings } from "@/lib/backend-api";
+import type { PhoneSource, TelephonySettings, Workshop, WorkshopPhoneMapping } from "@/lib/backend-api";
 import { mskToday } from "@/lib/period";
-import { phoneSourcesApi, telephonySettingsApi } from "@/lib/telephony-client";
+import { phoneSourcesApi, telephonySettingsApi, workshopPhonesApi } from "@/lib/telephony-client";
 
 import { AdminModal } from "./AdminModal";
+
+function workshopLabel(workshop: Workshop): string {
+  return `${workshop.department_name} — ${workshop.workshop_type}`;
+}
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -31,6 +35,13 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
   const [speechkitTimeoutMin, setSpeechkitTimeoutMin] = useState(String(initialSettings.speechkit_timeout_min));
   const [classifyCallsEnabled, setClassifyCallsEnabled] = useState(initialSettings.classify_calls_enabled);
   const [yandexgptModel, setYandexgptModel] = useState(initialSettings.yandexgpt_model);
+  const [assessQualityEnabled, setAssessQualityEnabled] = useState(initialSettings.assess_quality_enabled);
+  const [transcriptionPollIntervalMinutes, setTranscriptionPollIntervalMinutes] = useState(
+    String(initialSettings.transcription_poll_interval_minutes),
+  );
+  const [transcriptionBatchSize, setTranscriptionBatchSize] = useState(
+    String(initialSettings.transcription_batch_size),
+  );
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -72,6 +83,9 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
         speechkit_timeout_min: Number(speechkitTimeoutMin) || 60,
         classify_calls_enabled: classifyCallsEnabled,
         yandexgpt_model: yandexgptModel,
+        assess_quality_enabled: assessQualityEnabled,
+        transcription_poll_interval_minutes: Number(transcriptionPollIntervalMinutes) || 10,
+        transcription_batch_size: Number(transcriptionBatchSize) || 20,
       });
       setSaveState("saved");
     } catch (err) {
@@ -324,8 +338,9 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
           </label>
           <p className="settings-description">
             Раз в несколько минут отправляет готовую расшифровку отвеченного звонка в YandexGPT и
-            помечает его темой «Кузовной» / «Слесарный» / «Не определено» — платный запрос
-            дополнительно к SpeechKit, использует тот же аккаунт Yandex Cloud (ключ/Folder ID выше).
+            записывает короткое резюме о чём был разговор (например, «Стоимость замены колодок на
+            Chery Tiggo 8») — платный запрос дополнительно к SpeechKit, использует тот же аккаунт
+            Yandex Cloud (ключ/Folder ID выше).
           </p>
           <div className="settings-field">
             <label htmlFor="tel-yandexgpt-model">Модель YandexGPT</label>
@@ -337,6 +352,48 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
               placeholder="yandexgpt-lite/latest"
             />
           </div>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={assessQualityEnabled}
+              onChange={(e) => setAssessQualityEnabled(e.target.checked)}
+            />
+            Оценивать качество звонка (YandexGPT)
+          </label>
+          <p className="settings-description">
+            Для каждого отвеченного звонка с расшифровкой запрашивает у YandexGPT краткий разбор и
+            оценку по 10-балльной шкале — работает независимо от определения темы выше, использует
+            тот же аккаунт Yandex Cloud.
+          </p>
+
+          <div className="admin-form-actions">
+            <div className="settings-field">
+              <label htmlFor="tel-transcription-interval">Расшифровка/тема/оценка — раз в (мин)</label>
+              <input
+                id="tel-transcription-interval"
+                type="number"
+                min={1}
+                value={transcriptionPollIntervalMinutes}
+                onChange={(e) => setTranscriptionPollIntervalMinutes(e.target.value)}
+              />
+            </div>
+            <div className="settings-field">
+              <label htmlFor="tel-transcription-batch">Звонков за один проход</label>
+              <input
+                id="tel-transcription-batch"
+                type="number"
+                min={1}
+                value={transcriptionBatchSize}
+                onChange={(e) => setTranscriptionBatchSize(e.target.value)}
+              />
+            </div>
+          </div>
+          <p className="settings-description">
+            Как часто фоновый процесс берёт в работу расшифровку/тему/оценку (пока включено хотя бы
+            одно из двух выше) и сколько звонков обрабатывает за один заход — большой проход
+            растягивает цикл и стоит дороже за раз, но быстрее разбирает накопившееся.
+          </p>
         </div>
 
         <div className="telephony-connect-col">
@@ -596,17 +653,276 @@ function SourcesTable({ initialSources }: { initialSources: PhoneSource[] }) {
   );
 }
 
+type MappingFormState = {
+  workshop_id: string;
+  phone: string;
+  extension: string;
+};
+
+function emptyMappingForm(defaultWorkshopId: string): MappingFormState {
+  return { workshop_id: defaultWorkshopId, phone: "", extension: "" };
+}
+
+/** Settings -> IP-телефония -> "Цех — Телефон — Добавочный": maps a Zeon
+ * dialed number/line (`dst`, e.g. "79261537227" or "pan2") and/or
+ * добавочный (`exten`) to a Workshop, so every imported call can be
+ * attributed to a цех - see backend app/services/call_workshop_service.py
+ * for the matching algorithm this feeds, and models/workshop_phone_mapping.py
+ * for why a phone/extension isn't unique on its own (several rows can
+ * legitimately point at the same цех, or disagree - the backend treats
+ * disagreement as "не определён", not a config error here). Same
+ * row-click-to-select shape as WorkshopSourceDepartmentsTab. */
+function WorkshopPhonesTable({
+  initialMappings,
+  workshops,
+}: {
+  initialMappings: WorkshopPhoneMapping[];
+  workshops: Workshop[];
+}) {
+  const [mappings, setMappings] = useState(initialMappings);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<WorkshopPhoneMapping | "new" | null>(null);
+  const [form, setForm] = useState<MappingFormState>(emptyMappingForm(workshops[0]?.id ?? ""));
+  const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<WorkshopPhoneMapping | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [recomputeState, setRecomputeState] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [recomputeMessage, setRecomputeMessage] = useState<string | null>(null);
+
+  const selected = mappings.find((m) => m.id === selectedId) ?? null;
+  const toggleSelect = (mapping: WorkshopPhoneMapping) =>
+    setSelectedId((prev) => (prev === mapping.id ? null : mapping.id));
+
+  const openNew = () => {
+    setForm(emptyMappingForm(workshops[0]?.id ?? ""));
+    setError(null);
+    setEditing("new");
+  };
+  const openEdit = () => {
+    if (!selected) return;
+    setForm({
+      workshop_id: selected.workshop_id,
+      phone: selected.phone ?? "",
+      extension: selected.extension ?? "",
+    });
+    setError(null);
+    setEditing(selected);
+  };
+  const close = () => setEditing(null);
+
+  const save = async () => {
+    if (!form.workshop_id) return setError("Выберите цех");
+    if (!form.phone.trim() && !form.extension.trim()) {
+      return setError("Укажите телефон/линию или добавочный (хотя бы одно поле)");
+    }
+    const payload = {
+      workshop_id: form.workshop_id,
+      phone: form.phone.trim() || null,
+      extension: form.extension.trim() || null,
+    };
+    try {
+      if (editing === "new") {
+        const created = await workshopPhonesApi.create(payload);
+        setMappings((prev) => [...prev, created]);
+      } else if (editing) {
+        const updated = await workshopPhonesApi.update(editing.id, payload);
+        setMappings((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+      }
+      close();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить");
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    try {
+      await workshopPhonesApi.remove(pendingDelete.id);
+      setMappings((prev) => prev.filter((m) => m.id !== pendingDelete.id));
+      setSelectedId(null);
+      setPendingDelete(null);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Не удалось удалить");
+    }
+  };
+
+  const handleRecompute = async () => {
+    setRecomputeState("running");
+    setRecomputeMessage(null);
+    try {
+      const result = await workshopPhonesApi.recompute();
+      setRecomputeState("done");
+      setRecomputeMessage(`Пересчитано звонков: ${result.processed}`);
+    } catch (err) {
+      setRecomputeState("error");
+      setRecomputeMessage(err instanceof Error ? err.message : "Не удалось пересчитать");
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="admin-toolbar">
+        <h2 className="chart-title">Цех — Телефон — Добавочный</h2>
+        <div className="admin-toolbar-actions">
+          <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
+            Изменить
+          </button>
+          <button
+            type="button"
+            className="admin-btn admin-btn-danger"
+            disabled={!selected}
+            onClick={() => {
+              setDeleteError(null);
+              if (selected) setPendingDelete(selected);
+            }}
+          >
+            Удалить
+          </button>
+          <button type="button" className="admin-btn admin-btn-primary" onClick={openNew}>
+            + Добавить
+          </button>
+        </div>
+      </div>
+
+      <p className="settings-description">
+        Определяет цех для каждого звонка: по номеру/линии, на которую звонили, по добавочному,
+        который ответил (или звонил сам, для исходящих), а для пропущенных — по всем добавочным,
+        которые звонили. Если правила не совпадают однозначно, звонок помечается «Не определён».
+      </p>
+
+      <table className="data-table admin-data-table">
+        <thead>
+          <tr>
+            <th>Цех</th>
+            <th>Телефон / линия</th>
+            <th>Добавочный</th>
+          </tr>
+        </thead>
+        <tbody>
+          {mappings.map((mapping) => (
+            <tr
+              key={mapping.id}
+              className={mapping.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+              onClick={() => toggleSelect(mapping)}
+            >
+              <td>{mapping.workshop_label}</td>
+              <td>{mapping.phone ?? "—"}</td>
+              <td>{mapping.extension ?? "—"}</td>
+            </tr>
+          ))}
+          {mappings.length === 0 && (
+            <tr>
+              <td colSpan={3} className="admin-empty-row">
+                Соответствий пока нет
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <div className="admin-form-actions">
+        <button
+          type="button"
+          className="admin-btn"
+          onClick={handleRecompute}
+          disabled={recomputeState === "running"}
+        >
+          {recomputeState === "running" ? "Пересчёт…" : "Пересчитать цеха"}
+        </button>
+      </div>
+      {recomputeMessage && (
+        <p className={recomputeState === "error" ? "admin-form-error" : "settings-description"}>
+          {recomputeMessage}
+        </p>
+      )}
+
+      <AdminModal
+        open={editing !== null}
+        title={editing === "new" ? "Новое соответствие" : "Изменить соответствие"}
+        onClose={close}
+      >
+        <div className="admin-form-field">
+          <label htmlFor="wp-workshop">Цех</label>
+          <select
+            id="wp-workshop"
+            value={form.workshop_id}
+            onChange={(e) => setForm((prev) => ({ ...prev, workshop_id: e.target.value }))}
+          >
+            {workshops.map((workshop) => (
+              <option key={workshop.id} value={workshop.id}>
+                {workshopLabel(workshop)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="admin-form-field">
+          <label htmlFor="wp-phone">Телефон / линия</label>
+          <input
+            id="wp-phone"
+            type="text"
+            value={form.phone}
+            onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
+            placeholder="79261537227, pan2, 0005348…"
+          />
+        </div>
+        <div className="admin-form-field">
+          <label htmlFor="wp-extension">Добавочный</label>
+          <input
+            id="wp-extension"
+            type="text"
+            value={form.extension}
+            onChange={(e) => setForm((prev) => ({ ...prev, extension: e.target.value }))}
+            placeholder="305"
+          />
+        </div>
+
+        {error && <p className="admin-form-error">{error}</p>}
+        <div className="admin-form-actions">
+          <span className="admin-form-actions-spacer" />
+          <button type="button" className="admin-btn" onClick={close}>
+            Отмена
+          </button>
+          <button type="button" className="admin-btn admin-btn-primary" onClick={save}>
+            Сохранить
+          </button>
+        </div>
+      </AdminModal>
+
+      <AdminModal open={pendingDelete !== null} title="Удалить соответствие?" onClose={() => setPendingDelete(null)}>
+        <p>
+          Точно хотите удалить «{pendingDelete?.phone ?? pendingDelete?.extension}» ({pendingDelete?.workshop_label})?
+        </p>
+        {deleteError && <p className="admin-form-error">{deleteError}</p>}
+        <div className="admin-form-actions">
+          <span className="admin-form-actions-spacer" />
+          <button type="button" className="admin-btn" onClick={() => setPendingDelete(null)}>
+            Отмена
+          </button>
+          <button type="button" className="admin-btn admin-btn-danger" onClick={confirmDelete}>
+            Удалить
+          </button>
+        </div>
+      </AdminModal>
+    </div>
+  );
+}
+
 export function TelephonyTab({
   initialSettings,
   initialSources,
+  initialWorkshopPhones,
+  workshops,
 }: {
   initialSettings: TelephonySettings;
   initialSources: PhoneSource[];
+  initialWorkshopPhones: WorkshopPhoneMapping[];
+  workshops: Workshop[];
 }) {
   return (
     <>
       <ConnectionForm initialSettings={initialSettings} />
       <SourcesTable initialSources={initialSources} />
+      <WorkshopPhonesTable initialMappings={initialWorkshopPhones} workshops={workshops} />
     </>
   );
 }

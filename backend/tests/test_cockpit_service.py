@@ -14,7 +14,6 @@ from app.models.body_car_stage import BodyCarStage
 from app.models.budget_entry import BudgetEntry
 from app.models.department import Department
 from app.models.work_order import WorkOrder
-from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
@@ -369,52 +368,25 @@ def test_payments_scoped_to_workshop_via_mapping(
 
 
 # ---- get_snapshot: ДЗ (receivables) ----------------------------------------
+#
+# ДЗ used to be inferred from the ABSENCE of a WorkOrderPaymentEvent/
+# WorkOrderInvoice row - dropped 2026-10-04 after a real example (ЗН
+# СЦН0002701, confirmed "Оплачено 100%, Остаток долга 0" on its own detail
+# page) showed that rule flagging a fully-settled order as outstanding, just
+# because the payment that settled it was never recorded as its own
+# work_order_payment_events row. WorkOrder.debt_amount - 1C's own already-
+# computed running settlement balance - is what these tests exercise now.
 
 
-def test_receivables_counts_unpaid_invoice(db_session: Session, monkeypatch) -> None:
-    _patch_settings(monkeypatch)
-    wo = _make_work_order(closed_date=None)
-    db_session.add(wo)
-    db_session.flush()
-    db_session.add(
-        WorkOrderInvoice(work_order_id=wo.id, source_document_id="inv-1", amount=Decimal("5000.00"))
-    )
-    db_session.commit()
-
-    snapshot = cockpit_service.get_snapshot(
-        db_session, workshop_id=None, include_nzp=False, now=NOW
-    )
-
-    assert snapshot.receivables_rub == Decimal("5000.00")
-
-
-def test_receivables_excludes_invoice_already_paid(db_session: Session, monkeypatch) -> None:
-    _patch_settings(monkeypatch)
-    wo = _make_work_order(closed_date=None)
-    db_session.add(wo)
-    db_session.flush()
-    db_session.add(
-        WorkOrderInvoice(
-            work_order_id=wo.id,
-            source_document_id="inv-1",
-            amount=Decimal("5000.00"),
-            paid_amount=Decimal("5000.00"),
-        )
-    )
-    db_session.commit()
-
-    snapshot = cockpit_service.get_snapshot(
-        db_session, workshop_id=None, include_nzp=False, now=NOW
-    )
-
-    assert snapshot.receivables_rub == Decimal("0")
-
-
-def test_receivables_counts_closed_work_order_with_no_invoice_and_no_payment(
+def test_receivables_counts_closed_order_with_positive_debt(
     db_session: Session, monkeypatch
 ) -> None:
     _patch_settings(monkeypatch)
-    wo = _make_work_order(closed_date=datetime(2026, 9, 1, tzinfo=UTC), amount=Decimal("7000.00"))
+    wo = _make_work_order(
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+        amount=Decimal("7000.00"),
+        debt_amount=Decimal("7000.00"),
+    )
     db_session.add(wo)
     db_session.commit()
 
@@ -425,23 +397,38 @@ def test_receivables_counts_closed_work_order_with_no_invoice_and_no_payment(
     assert snapshot.receivables_rub == Decimal("7000.00")
 
 
-def test_receivables_excludes_closed_work_order_with_a_payment_but_no_invoice(
+def test_receivables_sums_only_the_remaining_debt_not_the_full_amount(
     db_session: Session, monkeypatch
 ) -> None:
-    """A payment against a work order with no invoice on file still counts
-    as settled - it must not also show up as outstanding ДЗ."""
+    """A partially-paid order contributes only what's still owed, not its
+    original full amount."""
     _patch_settings(monkeypatch)
-    wo = _make_work_order(closed_date=datetime(2026, 9, 1, tzinfo=UTC), amount=Decimal("7000.00"))
-    db_session.add(wo)
-    db_session.flush()
-    db_session.add(
-        WorkOrderPaymentEvent(
-            work_order_id=wo.id,
-            paid_at=datetime(2026, 9, 2, tzinfo=UTC),
-            amount=Decimal("7000.00"),
-            source_document_id="pay-1",
-        )
+    wo = _make_work_order(
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+        amount=Decimal("7000.00"),
+        debt_amount=Decimal("2000.00"),
     )
+    db_session.add(wo)
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("2000.00")
+
+
+def test_receivables_excludes_closed_order_with_zero_debt(db_session: Session, monkeypatch) -> None:
+    """The exact scenario that broke the old payment-event-based rule: fully
+    settled per 1C's own figure, regardless of whether a payment event was
+    ever recorded for it."""
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+        amount=Decimal("7000.00"),
+        debt_amount=Decimal("0"),
+    )
+    db_session.add(wo)
     db_session.commit()
 
     snapshot = cockpit_service.get_snapshot(
@@ -451,12 +438,30 @@ def test_receivables_excludes_closed_work_order_with_a_payment_but_no_invoice(
     assert snapshot.receivables_rub == Decimal("0")
 
 
-def test_receivables_excludes_open_work_order_with_no_invoice(
-    db_session: Session, monkeypatch
-) -> None:
-    """Not yet closed - too early to count as outstanding receivables."""
+def test_receivables_excludes_closed_order_with_null_debt(db_session: Session, monkeypatch) -> None:
+    """1C hasn't sent a settlement figure for this one yet - treated as
+    "unknown", not "fully owed"."""
     _patch_settings(monkeypatch)
-    wo = _make_work_order(closed_date=None, amount=Decimal("7000.00"))
+    wo = _make_work_order(
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC), amount=Decimal("7000.00"), debt_amount=None
+    )
+    db_session.add(wo)
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("0")
+
+
+def test_receivables_excludes_open_work_order_with_debt(db_session: Session, monkeypatch) -> None:
+    """Not yet closed - too early to count as outstanding receivables, even
+    if 1C already shows a positive debt_amount for it."""
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(
+        closed_date=None, amount=Decimal("7000.00"), debt_amount=Decimal("7000.00")
+    )
     db_session.add(wo)
     db_session.commit()
 
@@ -471,20 +476,17 @@ def test_receivables_scoped_to_workshop_via_mapping(
     db_session: Session, mechanical_workshop: Workshop, monkeypatch
 ) -> None:
     _patch_settings(monkeypatch)
-    wo_in = _make_work_order(department=MECHANICAL_DEPT, closed_date=None)
-    wo_out = _make_work_order(department="Кузовной цех_Солнцево", closed_date=None)
-    db_session.add_all([wo_in, wo_out])
-    db_session.flush()
-    db_session.add_all(
-        [
-            WorkOrderInvoice(
-                work_order_id=wo_in.id, source_document_id="inv-in", amount=Decimal("100")
-            ),
-            WorkOrderInvoice(
-                work_order_id=wo_out.id, source_document_id="inv-out", amount=Decimal("200")
-            ),
-        ]
+    wo_in = _make_work_order(
+        department=MECHANICAL_DEPT,
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+        debt_amount=Decimal("100"),
     )
+    wo_out = _make_work_order(
+        department="Кузовной цех_Солнцево",
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+        debt_amount=Decimal("200"),
+    )
+    db_session.add_all([wo_in, wo_out])
     db_session.commit()
 
     snapshot = cockpit_service.get_snapshot(

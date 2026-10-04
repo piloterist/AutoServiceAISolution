@@ -15,6 +15,7 @@ import type {
   SlesarkaStatus,
   TelephonySettings,
   Workshop,
+  WorkshopPhoneMapping,
   WorkshopSourceDepartment,
 } from "@/lib/backend-api";
 
@@ -67,6 +68,7 @@ export function SettingsTabs({
   roleTabVisibility,
   telephonySettings,
   phoneSources,
+  workshopPhoneMappings,
   leadsSettings,
   auditLog,
 }: {
@@ -82,6 +84,7 @@ export function SettingsTabs({
   roleTabVisibility: RoleTabVisibility[];
   telephonySettings: TelephonySettings;
   phoneSources: PhoneSource[];
+  workshopPhoneMappings: WorkshopPhoneMapping[];
   leadsSettings: LeadsSettings;
   auditLog: AuditLogEntry[];
 }) {
@@ -123,7 +126,12 @@ export function SettingsTabs({
         <EmployeesTab initialEmployees={employees} departments={departments} workshops={workshops} />
       )}
       {tab === "telephony" && (
-        <TelephonyTab initialSettings={telephonySettings} initialSources={phoneSources} />
+        <TelephonyTab
+          initialSettings={telephonySettings}
+          initialSources={phoneSources}
+          initialWorkshopPhones={workshopPhoneMappings}
+          workshops={workshops}
+        />
       )}
       {tab === "leads" && <LeadsTab initialSettings={leadsSettings} />}
       {tab === "log" && <AuditLogTab initialEntries={auditLog} />}

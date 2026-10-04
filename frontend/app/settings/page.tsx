@@ -12,6 +12,7 @@ import {
   getSlesarkaStatuses,
   getTelephonySettings,
   getUnmappedSourceDepartments,
+  getWorkshopPhoneMappings,
   getWorkshops,
   getWorkshopSourceDepartments,
 } from "@/lib/backend-api";
@@ -42,6 +43,7 @@ export default async function SettingsPage() {
       roleTabVisibility,
       telephonySettings,
       phoneSources,
+      workshopPhoneMappings,
       leadsSettings,
       auditLog,
     ] = await Promise.all([
@@ -57,6 +59,7 @@ export default async function SettingsPage() {
       getRoleTabVisibility(),
       getTelephonySettings(),
       getPhoneSources(),
+      getWorkshopPhoneMappings(),
       getLeadsSettings(),
       getAuditLog(),
     ]);
@@ -73,6 +76,7 @@ export default async function SettingsPage() {
       roleTabVisibility,
       telephonySettings,
       phoneSources,
+      workshopPhoneMappings,
       leadsSettings,
       auditLog,
     };
@@ -104,6 +108,7 @@ export default async function SettingsPage() {
           roleTabVisibility={data.roleTabVisibility}
           telephonySettings={data.telephonySettings}
           phoneSources={data.phoneSources}
+          workshopPhoneMappings={data.workshopPhoneMappings}
           leadsSettings={data.leadsSettings}
           auditLog={data.auditLog}
         />

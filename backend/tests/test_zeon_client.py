@@ -112,11 +112,41 @@ def test_normalize_calls_classifies_inbound_and_outbound() -> None:
     assert inbound.operator == "302"
     assert inbound.answered is True
     assert inbound.occurred_at == datetime(2026, 9, 20, 7, 0, 0, tzinfo=UTC)
+    assert inbound.dst == "pan"
+    assert inbound.exten == "302"
+    assert inbound.rang_extensions == ["302"]
 
     assert outbound.call_type == "OUT"
     assert outbound.client == "9991234567"
     assert outbound.line is None
     assert outbound.answered is False
+    assert outbound.dst == "79991234567"
+    assert outbound.exten == "302"
+    assert outbound.rang_extensions == []
+
+
+def test_normalize_calls_rang_extensions_unions_members_and_lost() -> None:
+    raw = [
+        {
+            "id": "1003",
+            "calldate": "2026-09-20 12:00:00",
+            "calltype": "IN",
+            "src": "79991234567",
+            "dst": "0005348",
+            "exten": "",
+            "members": "300:302",
+            "lost": "302:308",
+            "waiting": "15",
+            "talktime": "0",
+        }
+    ]
+    calls = _normalize_calls(raw)
+    assert len(calls) == 1
+    call = calls[0]
+    assert call.exten is None
+    assert call.rang_not_answered == ["302", "308"]
+    # De-duplicated union of members (300,302) and lost (302,308).
+    assert call.rang_extensions == ["300", "302", "308"]
 
 
 def test_normalize_calls_handles_dict_keyed_response() -> None:

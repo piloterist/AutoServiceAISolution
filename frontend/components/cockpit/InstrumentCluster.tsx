@@ -545,6 +545,14 @@ function MainGauge({
   );
 }
 
+// See MainGauge's own MONEY_SHIFT_PX comment - same issue, same fix: 0 is
+// at the bottom here too (PAYMENTS_GAUGE_START_ANGLE), so a small payments
+// figure points the needle straight down through this centered readout.
+// Scaled to this dial's smaller size (90 * (PAY needle length / MAIN
+// needle length)).
+const PAYMENTS_MONEY_SHIFT_PX = 55;
+const PAYMENTS_MONEY_OFFSET_STYLE = { transform: `translateX(${PAYMENTS_MONEY_SHIFT_PX}px)` };
+
 function PaymentsGauge({ payments, gauge }: { payments: number; gauge: GaugeReading }) {
   const id = useId();
   const { cx, cy, r } = PAY;
@@ -624,11 +632,31 @@ function PaymentsGauge({ payments, gauge }: { payments: number; gauge: GaugeRead
         }),
       )}
 
-      <text x={cx} y={cy + 62} textAnchor="middle" className="cockpit-money-secondary" fill="#eafcff">
+      {/* Shifted clear of the needle's own downward sweep, same reasoning
+          as MainGauge's MONEY_SHIFT_PX above (0 is now at 270°/left, so the
+          needle points straight down at fraction=1 here too) - scaled down
+          from the main gauge's 90px by this dial's own shorter needle
+          (faceR-16 here vs faceR-24 there). */}
+      <text
+        x={cx}
+        y={cy + 62}
+        textAnchor="middle"
+        className="cockpit-money-secondary"
+        fill="#eafcff"
+        style={PAYMENTS_MONEY_OFFSET_STYLE}
+      >
         {formatRub(payments)} ₽
       </text>
       {gauge.overflow && (
-        <text x={cx} y={cy + 84} textAnchor="middle" className="cockpit-money-flag-sm" fill="#3ebecc" aria-hidden="true">
+        <text
+          x={cx}
+          y={cy + 84}
+          textAnchor="middle"
+          className="cockpit-money-flag-sm"
+          fill="#3ebecc"
+          aria-hidden="true"
+          style={PAYMENTS_MONEY_OFFSET_STYLE}
+        >
           ↑
         </text>
       )}
@@ -1067,7 +1095,7 @@ function DebtCapsule({
   value: number;
   tone: "receivable" | "payable";
   demo?: boolean;
-  /** Present only for ДЗ (see RightSideStack) - renders this as a real
+  /** Present only for ДЗ (see PaymentsDebtStack) - renders this as a real
    * <button> instead of decorative markup, since КЗ has no real underlying
    * data/drill-down to link to yet. */
   onClick?: () => void;
@@ -1107,25 +1135,32 @@ function DebtCapsule({
   );
 }
 
-/** All three bars grouped on one side now (per product feedback,
- * 2026-10-03: "надо чтобы все три полоски были справа и выстроены как
- * дерево" - after a couple of rounds that instead swapped two separate
- * groups back and forth between the two sides), staircased top-to-bottom
- * (Выручка, then ДЗ shifted right of it, then КЗ shifted right again) via
- * each row's own CSS margin-left - not three independently-positioned
- * blocks on the page anymore. ДЗ is clickable (per follow-up feedback,
- * 2026-10-04) - opens the Work Orders list filtered to exactly the orders
- * behind that figure (see backend work_order_query_service.list_work_orders's
- * only_receivables); КЗ has no real data source yet, so it stays
- * decorative. */
-function RightSideStack({
-  revenue,
-  planRub,
+/** Выручка strip - stays on the right under the "Drive" lettering (per
+ * product feedback, 2026-10-04: moved well down the panel and enlarged
+ * ~2x - see .cockpit-revenue-stack - after an earlier round had grouped it
+ * together with ДЗ/КЗ into one combined right-side stack; that grouping is
+ * gone, this is now independently positioned). */
+function RevenueStack({ revenue, planRub }: { revenue: number; planRub: number }) {
+  return (
+    <div className="cockpit-revenue-stack" aria-hidden="true">
+      <RevenueProgressStrip revenue={revenue} planRub={planRub} />
+    </div>
+  );
+}
+
+/** ДЗ/КЗ - moved back so their combined middle sits under the payments
+ * gauge's own center (per product feedback, 2026-10-04: "перемещаем
+ * обратно, примерно их середина под серединой циферблата с оплатами"),
+ * ~50% bigger than before - see .cockpit-payments-stack. Previously grouped
+ * with the revenue strip into one right-side stack; split back out here.
+ * ДЗ is clickable - opens the Work Orders list filtered to exactly the
+ * orders behind that figure (see backend
+ * work_order_query_service.list_work_orders's only_receivables); КЗ has no
+ * real data source yet, so it stays decorative. */
+function PaymentsDebtStack({
   receivables,
   workshopId,
 }: {
-  revenue: number;
-  planRub: number;
   receivables: number;
   workshopId: string;
 }) {
@@ -1138,14 +1173,11 @@ function RightSideStack({
   };
 
   return (
-    <div className="cockpit-right-stack">
-      <div className="cockpit-right-stack-row cockpit-right-stack-row--revenue" aria-hidden="true">
-        <RevenueProgressStrip revenue={revenue} planRub={planRub} />
-      </div>
-      <div className="cockpit-right-stack-row cockpit-right-stack-row--dz">
+    <div className="cockpit-payments-stack">
+      <div className="cockpit-payments-stack-row cockpit-payments-stack-row--dz">
         <DebtCapsule label="ДЗ" value={receivables} tone="receivable" onClick={openReceivables} />
       </div>
-      <div className="cockpit-right-stack-row cockpit-right-stack-row--kz">
+      <div className="cockpit-payments-stack-row cockpit-payments-stack-row--kz">
         <DebtCapsule label="КЗ" value={KZ_PLACEHOLDER_RUB} tone="payable" demo />
       </div>
     </div>
@@ -1270,7 +1302,12 @@ export function InstrumentCluster({
             "P" before - per product feedback, 2026-09-30, it's now a big
             "D" followed immediately by small "rive", spelling "Drive",
             with "your business" below it shifted right). */}
-        <text x={1235} y={340} aria-hidden="true">
+        {/* Whole wordmark nudged right+down and sized up ~10% (per product
+            feedback, 2026-10-04: "увеличить немного и сдвинуть чуть вправо
+            и вниз, чтобы оно было как бы поцентру пустого места" - was
+            x=1235/y=340, centered more toward the top of its own free
+            space than the middle of it). */}
+        <text x={1255} y={360} aria-hidden="true">
           <tspan className="cockpit-letter-d" fill="#f4fafa">
             D
           </tspan>
@@ -1286,11 +1323,11 @@ export function InstrumentCluster({
               2026-09-30: "буквы не болтались отдельно друг от друга") -
               raised to sit against D's upper-middle instead, the usual fix
               for pairing a huge letter with a small suffix. */}
-          <tspan className="cockpit-letter-d-suffix" x={1310} y={323} fill="#8a999e">
+          <tspan className="cockpit-letter-d-suffix" x={1330} y={343} fill="#8a999e">
             rive
           </tspan>
         </text>
-        <text x={1317} y={348} className="cockpit-letter-d-tagline" fill="#8a999e" aria-hidden="true">
+        <text x={1337} y={368} className="cockpit-letter-d-tagline" fill="#8a999e" aria-hidden="true">
           your business
         </text>
         <g className="cockpit-digital-rows" aria-hidden="true">
@@ -1301,7 +1338,20 @@ export function InstrumentCluster({
               of ₽ - moved up under the "D"/tagline instead of down at the
               row this whole group used to fill (a tried "CASH <payments>"
               row above it didn't read well and was dropped). */}
-          <text x={1200} y={395} className="cockpit-row-line">
+          {/* Centered over the revenue strip below (.cockpit-revenue-stack:
+              left=71%, width=23% -> center at 82.5% of VIEW_W=1648 ->
+              x=1360), textAnchor="middle" so it stays centered regardless
+              of the actual digit count - per product feedback, 2026-10-04:
+              "циферки опустить немного и по середине полоски поставить".
+              Was x=1235/start-anchored (matched the big "D" letter's own
+              x, before the strip itself moved right of where it used to
+              sit) at y=408, then 425 - pulled down again, closer to the
+              strip's own top edge (.cockpit-revenue-stack's top=74% of
+              VIEW_H=650 -> y=481), so it visibly reads as that strip's own
+              caption rather than a separate floating line (per product
+              feedback, 2026-10-04: "еще чуть пониже, чтобы было понятно,
+              что это подпись к этой линии"). */}
+          <text x={1360} y={460} textAnchor="middle" className="cockpit-row-line">
             {formatMillions(revenue)} / {formatMillions(budgetPlanRevenue)} млн
           </text>
         </g>
@@ -1372,12 +1422,8 @@ export function InstrumentCluster({
       />
 
       <div className="cockpit-strips">
-        <RightSideStack
-          revenue={revenue}
-          planRub={budgetPlanRevenue}
-          receivables={receivables}
-          workshopId={workshopId}
-        />
+        <RevenueStack revenue={revenue} planRub={budgetPlanRevenue} />
+        <PaymentsDebtStack receivables={receivables} workshopId={workshopId} />
       </div>
     </>
   );

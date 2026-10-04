@@ -160,6 +160,14 @@ class NormalizedCall:
     talk_sec: int
     answered: bool
     raw: dict
+    # --- Цех determination (see services/call_workshop_service.py) - raw
+    # Zeon fields kept verbatim here (both directions, unlike line/operator
+    # above which have their own narrower IN-only/display semantics) so
+    # call_workshop_service can match them against workshop_phone_mappings
+    # without re-deriving anything from raw_payload at import time.
+    dst: str | None
+    exten: str | None
+    rang_extensions: list[str]
 
 
 def _build_request(
@@ -235,6 +243,12 @@ def _normalize_one(raw: Mapping[str, Any]) -> NormalizedCall | None:
 
     talk = _parse_duration(raw.get("talktime"))
     linkedid = str(raw.get("linkedid") or "") or None
+    lost = _split_exts(raw.get("lost"))
+    # Every extension the call rang on at all, answered or not - the "кому
+    # звонило" цех-determination fallback (see call_workshop_service.
+    # determine_workshop) needs both, not just whichever one `operator`
+    # above happened to pick.
+    rang_extensions = sorted(set(members) | set(lost))
     return NormalizedCall(
         external_id=str(raw.get("id") or linkedid or ""),
         linkedid=linkedid,
@@ -244,11 +258,14 @@ def _normalize_one(raw: Mapping[str, Any]) -> NormalizedCall | None:
         client=client or None,
         line=line,
         operator=operator or None,
-        rang_not_answered=_split_exts(raw.get("lost")),
+        rang_not_answered=lost,
         wait_sec=_parse_duration(raw.get("waiting")),
         talk_sec=talk,
         answered=talk > 0,
         raw=dict(raw),
+        dst=str(raw.get("dst") or "") or None,
+        exten=exten or None,
+        rang_extensions=rang_extensions,
     )
 
 

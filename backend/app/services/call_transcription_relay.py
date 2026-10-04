@@ -1,5 +1,6 @@
 """Background poller that automatically transcribes (and, if enabled,
-classifies) answered calls - see services/call_transcription_service.py.
+classifies and/or QA-assesses) answered calls - see
+services/call_transcription_service.py.
 
 Same always-running, settings-gated shape as services/telephony_relay.py
 (not services/call_recording_service.py's own manual-button pipeline,
@@ -24,22 +25,11 @@ from app.services.telephony_settings_service import get_telephony_settings
 logger = structlog.get_logger(__name__)
 
 # How often the loop re-checks TelephonySettings while telephony is off -
-# same reasoning/value as telephony_relay.IDLE_RECHECK_SECONDS.
+# same reasoning/value as telephony_relay.IDLE_RECHECK_SECONDS. Unlike the
+# active poll interval/batch size below, this one stays a fixed constant -
+# it only matters while the feature is off, so there's nothing for an
+# operator to usefully retune here.
 IDLE_RECHECK_SECONDS = 300
-
-# Fixed, not a new settings field - the operator asked for "5-10 минут",
-# not a tunable schedule; 600s sits at the loose end of that on purpose
-# (gives Zeon's own recording a few extra minutes to actually land before
-# this looks for it, so a call isn't marked failed just because its audio
-# wasn't ready yet during the one cycle that happened to run right after
-# the call ended - find_pending_calls() just leaves it for the next cycle
-# regardless, but there's no reason to pay for near-misses).
-POLL_INTERVAL_SECONDS = 600
-
-# Bounds how many calls one cycle takes on - a large backlog (e.g. right
-# after first turning this on) clears over several cycles instead of one
-# cycle blocking the loop for an unbounded amount of time.
-MAX_CALLS_PER_CYCLE = 20
 
 
 async def poll_once() -> float:
@@ -49,37 +39,37 @@ async def poll_once() -> float:
     db = SessionLocal()
     try:
         settings = get_telephony_settings(db)
-        # Gated on classify_calls_enabled, not just the base telephony
-        # `enabled` switch - this is a separate, explicit opt-in (an extra
-        # paid SpeechKit+YandexGPT call per answered call), off by default
-        # even when telephony stats import itself is on.
-        if not settings.enabled or not settings.classify_calls_enabled:
+        # Gated on classify_calls_enabled OR assess_quality_enabled, not
+        # just the base telephony `enabled` switch - each is a separate,
+        # explicit opt-in (an extra paid SpeechKit+YandexGPT call per
+        # answered call), off by default even when telephony stats import
+        # itself is on, and either can run without the other.
+        if not settings.enabled or not (
+            settings.classify_calls_enabled or settings.assess_quality_enabled
+        ):
             return IDLE_RECHECK_SECONDS
 
         try:
             stats = await asyncio.to_thread(
-                process_pending_calls, db, settings, MAX_CALLS_PER_CYCLE
+                process_pending_calls, db, settings, settings.transcription_batch_size
             )
             logger.info(
                 "call_transcription_relay_cycle_completed",
                 transcribed=stats.transcribed,
                 classified=stats.classified,
+                assessed=stats.assessed,
                 failed=stats.failed,
                 errors=stats.errors,
             )
         except CallTranscriptionError as exc:
             logger.error("call_transcription_relay_not_configured", error=str(exc))
-        return POLL_INTERVAL_SECONDS
+        return max(60, settings.transcription_poll_interval_minutes * 60)
     finally:
         db.close()
 
 
 async def run_relay_loop() -> None:
-    logger.info(
-        "call_transcription_relay_started",
-        idle_recheck_seconds=IDLE_RECHECK_SECONDS,
-        poll_interval_seconds=POLL_INTERVAL_SECONDS,
-    )
+    logger.info("call_transcription_relay_started", idle_recheck_seconds=IDLE_RECHECK_SECONDS)
     while True:
         sleep_seconds = IDLE_RECHECK_SECONDS
         try:

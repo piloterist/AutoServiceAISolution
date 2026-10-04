@@ -849,8 +849,10 @@ export type WorkshopJob = {
   status_color: string | null;
   employee_id: string | null;
   employee_name: string | null;
-  // Read-only "RecId"/"CreatedBy" footer in WorkshopJobDialog.tsx - `id`
-  // above is RecId, this is CreatedBy (per product ask, 2026-10-01).
+  // Read-only "RecId"/"CreatedBy"/"Создан" footer in WorkshopJobDialog.tsx -
+  // `id` above is RecId (per product ask, 2026-10-01; created_at added
+  // 2026-10-04).
+  created_at: string;
   created_by_name: string | null;
 };
 
@@ -1005,6 +1007,14 @@ export type TelephonySettings = {
   // call per transcript, on top of SpeechKit's own.
   classify_calls_enabled: boolean;
   yandexgpt_model: string;
+  // Per-call QA review + 1-10 rating (YandexGPT) - independent of
+  // classify_calls_enabled above, either can run without the other.
+  assess_quality_enabled: boolean;
+  // How often the transcribe/summarize/assess background loop re-runs
+  // (minutes) once there's something to do, and how many pending calls it
+  // takes on per run - see backend services/call_transcription_relay.py.
+  transcription_poll_interval_minutes: number;
+  transcription_batch_size: number;
 };
 
 export type TelephonySettingsWrite = {
@@ -1024,6 +1034,9 @@ export type TelephonySettingsWrite = {
   speechkit_timeout_min: number;
   classify_calls_enabled: boolean;
   yandexgpt_model: string;
+  assess_quality_enabled: boolean;
+  transcription_poll_interval_minutes: number;
+  transcription_batch_size: number;
 };
 
 export function getTelephonySettings(): Promise<TelephonySettings> {
@@ -1100,6 +1113,47 @@ export function deletePhoneSource(id: string): Promise<void> {
   return backendDelete(`/api/v1/telephony/sources/${id}`);
 }
 
+// ---- Цех — Телефон — Добавочный (workshop_phone_mappings) -----------------
+
+export type WorkshopPhoneMapping = {
+  id: string;
+  workshop_id: string;
+  workshop_label: string;
+  phone: string | null;
+  extension: string | null;
+};
+
+export type WorkshopPhoneMappingWrite = {
+  workshop_id: string;
+  phone: string | null;
+  extension: string | null;
+};
+
+export function getWorkshopPhoneMappings(): Promise<WorkshopPhoneMapping[]> {
+  return backendGet<WorkshopPhoneMapping[]>("/api/v1/telephony/workshop-phones");
+}
+
+export function createWorkshopPhoneMapping(
+  payload: WorkshopPhoneMappingWrite,
+): Promise<WorkshopPhoneMapping> {
+  return backendPost<WorkshopPhoneMapping>("/api/v1/telephony/workshop-phones", payload);
+}
+
+export function updateWorkshopPhoneMapping(
+  id: string,
+  payload: WorkshopPhoneMappingWrite,
+): Promise<WorkshopPhoneMapping> {
+  return backendPut<WorkshopPhoneMapping>(`/api/v1/telephony/workshop-phones/${id}`, payload);
+}
+
+export function deleteWorkshopPhoneMapping(id: string): Promise<void> {
+  return backendDelete(`/api/v1/telephony/workshop-phones/${id}`);
+}
+
+export function recomputeCallWorkshops(): Promise<{ processed: number }> {
+  return backendPost<{ processed: number }>("/api/v1/telephony/workshop-phones/recompute", {});
+}
+
 export type SourceSummaryRow = {
   line_code: string;
   name: string;
@@ -1145,12 +1199,29 @@ export type LineCallEvent = {
   answered: boolean;
   wait_sec: number;
   talk_sec: number;
-  // YandexGPT's call-topic guess ("Кузовной" | "Слесарный" | "Не
-  // определено") - null until transcribed+classified (see backend
-  // services/call_transcription_relay.py) or always null for a call with
-  // no real talk time to transcribe.
+  // YandexGPT's short free-text call summary (e.g. "Стоимость замены
+  // колодок на Chery Tiggo 8") - null until transcribed+summarized (see
+  // backend services/call_transcription_relay.py) or always null for a
+  // call with no real talk time to transcribe.
   topic_tag: string | null;
   transcript_text: string | null;
+  // YandexGPT's QA review - null until assessed (see
+  // TelephonySettings.assess_quality_enabled), independent of topic_tag.
+  quality_score: number | null;
+  quality_review: string | null;
+  // "<Подразделение> — <Тип цеха>" (see Settings -> IP-телефония's
+  // "Цех — Телефон — Добавочный" table) - null if nothing matched this
+  // call, or the mapping table is empty / hasn't been recomputed yet.
+  workshop_label: string | null;
+  // "Куда звонили"/"Кто ответил" columns - dst is the raw destination
+  // dialed (client's own line for IN, the number we dialed for OUT/
+  // callback); dst_extension/answered_phone are its paired добавочный/
+  // phone from the same "Цех — Телефон — Добавочный" table above, null
+  // when nothing pairs with it (a pure advertising line, an unmapped
+  // number, or the table is still empty).
+  dst: string | null;
+  dst_extension: string | null;
+  answered_phone: string | null;
 };
 
 export type LineCallsResponse = {

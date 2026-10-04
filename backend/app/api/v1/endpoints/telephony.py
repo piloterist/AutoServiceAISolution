@@ -26,6 +26,7 @@ from app.schemas.telephony import (
     OpenMissedCallsResponse,
     PhoneSourceOut,
     PhoneSourceWrite,
+    RecomputeWorkshopsResult,
     SourceSummaryResponse,
     SourceSummaryRowOut,
     TelephonyImportRequest,
@@ -33,9 +34,13 @@ from app.schemas.telephony import (
     TelephonyPingResult,
     TelephonySettingsResponse,
     TelephonySettingsUpdate,
+    WorkshopPhoneMappingOut,
+    WorkshopPhoneMappingWrite,
 )
 from app.services import (
+    admin_service,
     call_recording_service,
+    call_workshop_service,
     telephony_settings_service,
     telephony_stats_service,
     zeon_client,
@@ -112,6 +117,9 @@ def write_telephony_settings(
         speechkit_timeout_min=payload.speechkit_timeout_min,
         classify_calls_enabled=payload.classify_calls_enabled,
         yandexgpt_model=payload.yandexgpt_model,
+        assess_quality_enabled=payload.assess_quality_enabled,
+        transcription_poll_interval_minutes=payload.transcription_poll_interval_minutes,
+        transcription_batch_size=payload.transcription_batch_size,
     )
     return TelephonySettingsResponse.model_validate(settings)
 
@@ -225,6 +233,91 @@ def delete_phone_source(source_id: uuid.UUID, db: Session = Depends(get_db)) -> 
         raise _not_found("Phone source")
 
 
+# ---- Цех — Телефон — Добавочный (workshop_phone_mappings) ------------------
+
+
+def _workshop_label_map(db: Session) -> dict[uuid.UUID, str]:
+    return {
+        w.id: f"{department_name} — {w.workshop_type}"
+        for w, department_name in admin_service.list_workshops(db)
+    }
+
+
+def _mapping_out(mapping, labels: dict[uuid.UUID, str]) -> WorkshopPhoneMappingOut:
+    return WorkshopPhoneMappingOut(
+        id=mapping.id,
+        workshop_id=mapping.workshop_id,
+        workshop_label=labels.get(mapping.workshop_id, "?"),
+        phone=mapping.phone,
+        extension=mapping.extension,
+    )
+
+
+@router.get("/workshop-phones", response_model=list[WorkshopPhoneMappingOut])
+def list_workshop_phone_mappings(db: Session = Depends(get_db)) -> list[WorkshopPhoneMappingOut]:
+    labels = _workshop_label_map(db)
+    return [
+        _mapping_out(m, labels) for m in telephony_settings_service.list_workshop_phone_mappings(db)
+    ]
+
+
+@router.post(
+    "/workshop-phones", response_model=WorkshopPhoneMappingOut, status_code=status.HTTP_201_CREATED
+)
+def create_workshop_phone_mapping(
+    payload: WorkshopPhoneMappingWrite, db: Session = Depends(get_db)
+) -> WorkshopPhoneMappingOut:
+    try:
+        payload.validate_choices()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    mapping = telephony_settings_service.create_workshop_phone_mapping(
+        db, workshop_id=payload.workshop_id, phone=payload.phone, extension=payload.extension
+    )
+    return _mapping_out(mapping, _workshop_label_map(db))
+
+
+@router.put("/workshop-phones/{mapping_id}", response_model=WorkshopPhoneMappingOut)
+def update_workshop_phone_mapping(
+    mapping_id: uuid.UUID, payload: WorkshopPhoneMappingWrite, db: Session = Depends(get_db)
+) -> WorkshopPhoneMappingOut:
+    try:
+        payload.validate_choices()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    mapping = telephony_settings_service.update_workshop_phone_mapping(
+        db,
+        mapping_id,
+        workshop_id=payload.workshop_id,
+        phone=payload.phone,
+        extension=payload.extension,
+    )
+    if mapping is None:
+        raise _not_found("Workshop phone mapping")
+    return _mapping_out(mapping, _workshop_label_map(db))
+
+
+@router.delete("/workshop-phones/{mapping_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workshop_phone_mapping(mapping_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
+    if not telephony_settings_service.delete_workshop_phone_mapping(db, mapping_id):
+        raise _not_found("Workshop phone mapping")
+
+
+@router.post("/workshop-phones/recompute", response_model=RecomputeWorkshopsResult)
+def recompute_call_workshops(db: Session = Depends(get_db)) -> RecomputeWorkshopsResult:
+    """ "Пересчитать цеха" button - re-derives workshop_id/workshop_source
+    for every call against the current workshop_phone_mappings table (and
+    backfills dst/exten/rang_extensions from raw_payload for any call
+    imported before this feature existed - see
+    call_workshop_service.recompute_all)."""
+    processed = call_workshop_service.recompute_all(db)
+    return RecomputeWorkshopsResult(processed=processed)
+
+
 # ---- Итог по каждому источнику --------------------------------------------
 
 
@@ -272,11 +365,35 @@ def line_calls(
         )
 
     events = telephony_stats_service.list_line_calls(db, range_start, range_end, line_code)
+    workshop_labels = _workshop_label_map(db)
     return LineCallsResponse(
         line_code=line_code,
         start_date=range_start,
         end_date=range_end,
-        events=[LineCallEventOut.model_validate(event) for event in events],
+        events=[
+            LineCallEventOut(
+                time=event.time,
+                direction=event.direction,
+                role=event.role,
+                client=event.client,
+                operator=event.operator,
+                rang_not_answered=event.rang_not_answered,
+                answered=event.answered,
+                wait_sec=event.wait_sec,
+                talk_sec=event.talk_sec,
+                topic_tag=event.topic_tag,
+                transcript_text=event.transcript_text,
+                quality_score=event.quality_score,
+                quality_review=event.quality_review,
+                workshop_label=(
+                    workshop_labels.get(event.workshop_id) if event.workshop_id else None
+                ),
+                dst=event.dst,
+                dst_extension=event.dst_extension,
+                answered_phone=event.answered_phone,
+            )
+            for event in events
+        ],
     )
 
 

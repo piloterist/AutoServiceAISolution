@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 import statistics
+import uuid
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -37,6 +38,7 @@ from sqlalchemy.orm import Session
 from app.models.call_record import CALL_TYPE_IN, CALL_TYPE_OUT, CallRecord
 from app.models.employee import Employee
 from app.models.phone_source import GROUP_OTHER, SOURCE_GROUPS, PhoneSource
+from app.services import call_workshop_service
 
 CALLBACK_WINDOW = timedelta(hours=24)
 SHORT_ABANDON_SEC = 5
@@ -73,12 +75,32 @@ class _Rec:
     lost: list[str]
     wait: int
     talk: int
-    # YandexGPT's call-topic guess (see models.call_record.CALL_TOPICS) and
-    # the transcript it was read from - both null until
-    # services/call_transcription_relay.py gets to this call, or always
-    # null for one with no real talk time to transcribe.
+    # Raw Zeon destination (see models.call_record.CallRecord.dst) - unlike
+    # `line` above (only meaningful for IN, resolved against phone_sources
+    # for source-summary grouping), this is set for every call type and
+    # used here only for the drill-down's own "Куда звонили" column (see
+    # list_line_calls) - the client's dialed line/number for IN, or the
+    # number we dialed out to for OUT/callback rows.
+    dst: str | None
+    # YandexGPT's short free-text call summary (see
+    # models.call_record.CallRecord.topic_tag) and the transcript it was
+    # read from - both null until services/call_transcription_relay.py gets
+    # to this call, or always null for one with no real talk time to
+    # transcribe.
     topic_tag: str | None
     transcript_text: str | None
+    # YandexGPT's QA review (see models.call_record.CallRecord.quality_score/
+    # quality_review) - independent of topic_tag above, both null until
+    # services/call_transcription_relay.py gets to this call.
+    quality_score: int | None
+    quality_review: str | None
+    # See models.call_record.CallRecord.workshop_id/services/
+    # call_workshop_service.py - null if nothing in workshop_phone_mappings
+    # matched this call (or it hasn't been computed yet). Resolved to a
+    # display label at the API layer (see endpoints/telephony.py's own
+    # _workshop_label_map), not here - this module doesn't otherwise know
+    # about models.workshop.Workshop.
+    workshop_id: uuid.UUID | None
 
     @property
     def answered(self) -> bool:
@@ -96,8 +118,12 @@ def _row_to_rec(row: CallRecord) -> _Rec:
         lost=list(row.rang_not_answered or []),
         wait=row.wait_sec,
         talk=row.talk_sec,
+        dst=row.dst,
         topic_tag=row.topic_tag,
         transcript_text=row.transcript_text,
+        quality_score=row.quality_score,
+        quality_review=row.quality_review,
+        workshop_id=row.workshop_id,
     )
 
 
@@ -600,6 +626,19 @@ class LineCallEvent:
     talk_sec: int
     topic_tag: str | None
     transcript_text: str | None
+    quality_score: int | None
+    quality_review: str | None
+    workshop_id: uuid.UUID | None
+    # "Куда звонили" / "Кто ответил" columns (product ask, 2026-10-04) - raw
+    # dst, the добавочный it unambiguously resolves to (if any), and the
+    # phone number that answered the call (see call_workshop_service.
+    # phone_extension_index for how that's resolved, dst-context first) -
+    # dst_extension/answered_phone are None when nothing resolves (e.g.
+    # dst is a pure advertising line, or the mapping table is empty), in
+    # which case the caller just shows the raw dst/добавочный alone.
+    dst: str | None
+    dst_extension: str | None
+    answered_phone: str | None
 
 
 def list_line_calls(
@@ -615,6 +654,9 @@ def list_line_calls(
     Deliberately not reusing `_analyze_missed`'s MissedClient objects (which
     only keep the *first* callback/recall): the operator asked to see every
     attempt in order, not just the first one."""
+    extensions_by_phone, fallback_phone_by_extension = call_workshop_service.phone_extension_index(
+        db
+    )
     period_recs, later_recs = _period_and_tail_recs(db, start_day, end_day)
     all_recs = period_recs + later_recs
     by_client: dict[str, list[_Rec]] = defaultdict(list)
@@ -631,6 +673,21 @@ def list_line_calls(
         if rec.id in seen_ids:
             return
         seen_ids.add(rec.id)
+        dst_norm = call_workshop_service.normalize_phone_or_line(rec.dst) if rec.dst else None
+        operator_norm = rec.operator.strip().lower() if rec.operator else None
+        dst_extensions = extensions_by_phone.get(dst_norm, set()) if dst_norm else set()
+        dst_extension = next(iter(dst_extensions)) if len(dst_extensions) == 1 else None
+        if operator_norm and operator_norm in dst_extensions:
+            # The answering добавочный is confirmed configured on THIS
+            # call's own dialed line - that line's own number is the
+            # answering phone too, unambiguous regardless of whether this
+            # добавочный also appears under some other, unrelated phone
+            # elsewhere in the table (see phone_extension_index).
+            answered_phone = rec.dst
+        elif operator_norm:
+            answered_phone = fallback_phone_by_extension.get(operator_norm)
+        else:
+            answered_phone = None
         events.append(
             LineCallEvent(
                 time=rec.time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -644,6 +701,12 @@ def list_line_calls(
                 talk_sec=rec.talk,
                 topic_tag=rec.topic_tag,
                 transcript_text=rec.transcript_text,
+                quality_score=rec.quality_score,
+                quality_review=rec.quality_review,
+                workshop_id=rec.workshop_id,
+                dst=rec.dst,
+                dst_extension=dst_extension,
+                answered_phone=answered_phone,
             )
         )
 

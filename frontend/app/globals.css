@@ -3441,11 +3441,11 @@ table.bt {
   color: var(--down);
 }
 
-/* YandexGPT call-topic tag (see components/telephony/TelephonyStatsView.tsx's
-   topicBadgeClass) - a plain label, not a quality signal, so it uses its
-   own neutral accent colors rather than the ok/warn/down ones
-   .telephony-badge above carries. Full transcript shows as a native
-   tooltip (title attribute) on hover - see topicTitle(). */
+/* YandexGPT call-topic summary (see components/telephony/
+   TelephonyStatsView.tsx's topicBadgeClass) - a plain label, not a quality
+   signal, so it uses its own neutral accent colors rather than the
+   ok/warn/down ones .telephony-badge above carries. Clicking it opens the
+   full transcript in a modal (see .telephony-topic-cell-btn below). */
 .telephony-topic-badge {
   display: inline-flex;
   align-items: center;
@@ -3483,14 +3483,16 @@ table.bt {
   line-height: 1.5;
 }
 
-.telephony-topic-badge--body {
-  background: color-mix(in srgb, #8b5cf6 16%, transparent);
-  color: #8b5cf6;
-}
-
-.telephony-topic-badge--mechanical {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
+/* A free-text summary ("Стоимость замены колодок на Chery Tiggo 8") can run
+   much longer than the old 3-value tag ever did - wraps across lines
+   instead of forcing the pill shape/nowrap the base rule above uses. */
+.telephony-topic-badge--summary {
+  display: inline;
+  padding: 0;
+  border-radius: 0;
+  font-weight: 500;
+  white-space: normal;
+  color: var(--text);
 }
 
 .telephony-topic-badge--unknown {
@@ -3890,7 +3892,10 @@ main:has(.cockpit-page) {
 
 .cockpit-letter-d {
   font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
-  font-size: 128px;
+  /* ~10% up from 128px (per product feedback, 2026-10-04: "увеличить
+     немного") - see InstrumentCluster.tsx's own x/y comment on this same
+     wordmark for the matching position nudge. */
+  font-size: 140px;
   font-weight: 800;
   opacity: 0.92;
 }
@@ -3904,7 +3909,7 @@ main:has(.cockpit-page) {
 .cockpit-letter-d-tagline {
   font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
   font-style: italic;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 400;
   letter-spacing: 0.02em;
   opacity: 0.92;
@@ -4266,35 +4271,81 @@ main:has(.cockpit-page) {
   pointer-events: none;
 }
 
-/* All three bars (Выручка, ДЗ, КЗ) grouped together on one side (per
-   product feedback, 2026-10-03: "надо чтобы все три полоски были справа и
-   выстроены как дерево", after a couple of rounds that instead kept
-   swapping two separate groups between the two sides) - one positioned
-   container under the big "D" letter (starts at x=1235 of the 1648-wide
-   viewBox -> 74.9%) and the revenue/plan digital row (y=395 of the
-   650-tall viewBox -> 60.8%), staircased top-to-bottom via each row's own
-   margin-left instead of three independently-positioned blocks on the
-   page. */
-.cockpit-right-stack {
+/* Выручка strip - under the big "D" letter/digital row. History,
+   2026-10-04, all same day: (1) moved well down from an earlier y=65% and
+   widened to ~2.4x the old .cockpit-right-stack-row's rendered width
+   (14.26% -> 33%); (2) "тоже очень большая, но сократи не сильно,
+   процентов на 20... и сделай потолще примерно на 50%" - pulled the width
+   back in to 26% and the segments ~50% taller (28px -> 42px); (3)
+   "уменьши процентов на 10 и подними выше" - width/height both trimmed
+   another ~10% (26% -> 23%, 42px -> 38px) and moved up/right (top 87% ->
+   80%, left 66% -> 68%); (4) (this round, screenshot-driven) "ещё повыше
+   и правее" - top 80% -> 74%, left 68% -> 71%. left keeps pace with each
+   upward move to stay clear of MainGauge's own circle (cx=887/1648=53.8%,
+   r=296/1648=18%) - it reaches out to ~69.2% of the viewBox width at
+   top=74%, more than at any lower position tried so far. */
+.cockpit-revenue-stack {
   position: absolute;
-  left: 75%;
-  top: 65%;
+  left: 71%;
+  top: 74%;
   width: 23%;
+  pointer-events: none;
+}
+
+.cockpit-revenue-stack .cockpit-strip-segments {
+  gap: 6px;
+}
+
+.cockpit-revenue-stack .cockpit-seg {
+  height: 38px;
+}
+
+.cockpit-revenue-stack .cockpit-strip-footer {
+  font-size: 1.1rem;
+  margin-top: 6px;
+}
+
+.cockpit-revenue-stack .cockpit-strip-edge {
+  width: 9px;
+  height: 9px;
+}
+
+/* ДЗ/КЗ - moved back under PaymentsGauge's own center (PAY.cx/VIEW_W =
+   489/1648 = 29.7% - see InstrumentCluster.tsx's own PAY const), per
+   product feedback, 2026-10-04 (first round): "перемещаем обратно,
+   примерно их середина под серединой циферблата с оплатами". A same-day
+   follow-up ("сильно большие... уменьши процентов на 50" plus "не сделаны
+   со сдвигом... друг под другом не так прикольно") walked back that
+   round's +50% capsule/label/footer sizing entirely (back to the shared
+   base .cockpit-debt-capsule-label etc. styling, no scoped overrides here
+   any more) and reintroduced the original staggered layout (each row 62%
+   of the container, offset by its own margin-left - same ratios as the
+   very first ДЗ/КЗ design) instead of two full-width rows stacked flush
+   underneath each other. Centered via translateX(-50%): the container's
+   own width is narrow enough that the staggered rows' own visual midpoint
+   still lands within ~1% of PAY's true center, close enough per that
+   first round's own "примерно". */
+.cockpit-payments-stack {
+  position: absolute;
+  left: 29.7%;
+  top: 84%;
+  width: 17.3%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   gap: 10px;
   pointer-events: none;
 }
 
-.cockpit-right-stack-row {
+.cockpit-payments-stack-row {
   width: 62%;
 }
 
-.cockpit-right-stack-row--dz {
+.cockpit-payments-stack-row--dz {
   margin-left: 15%;
 }
 
-.cockpit-right-stack-row--kz {
+.cockpit-payments-stack-row--kz {
   margin-left: 30%;
 }
 
@@ -4422,9 +4473,9 @@ main:has(.cockpit-page) {
 }
 
 /* Each strip gets its own corner tag rather than one shared tag placed
-   "between" them - the two strips sit far apart horizontally (receivables
-   ~28%, payables ~73%), so a single midpoint coordinate reads as floating
-   over the main gauge instead of belonging to either strip. */
+   "between" them - ДЗ and КЗ stack vertically now (see
+   .cockpit-payments-stack), so a single shared tag would sit awkwardly
+   between two stacked rows instead of belonging to either one. */
 .cockpit-demo-tag--corner {
   position: absolute;
   top: -16px;

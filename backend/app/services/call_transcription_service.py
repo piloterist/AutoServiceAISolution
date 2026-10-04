@@ -1,4 +1,4 @@
-"""Per-call, DB-tracked transcription + YandexGPT topic classification.
+"""Per-call, DB-tracked transcription + YandexGPT call-topic summary.
 
 A separate, additive pipeline from call_recording_service.py's own manual
 "Выгрузить и расшифровать" button: that one is folder-listing-idempotent
@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 
 import structlog
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.call_record import (
@@ -96,11 +96,21 @@ def _yandexgpt_settings(settings: TelephonySettings) -> YandexGPTSettings:
 def find_pending_calls(db: Session, limit: int, *, now: datetime | None = None) -> list[CallRecord]:
     """Answered calls with real talk time, from today or yesterday only
     (Moscow calendar - see MAX_CALL_AGE_DAYS), that still need
-    transcribing and/or classifying - oldest first, so a backlog clears in
-    call order instead of newer calls starving older ones forever. Mirrors
-    telephony_stats_service.MIN_REAL_TALK_SEC's own "a real conversation"
-    rule (talk_sec > 0) - a missed/zero-talk call has nothing to
-    transcribe. A "failed" row (no usable recording) is never retried."""
+    transcribing, classifying, and/or quality-assessing - oldest first, so a
+    backlog clears in call order instead of newer calls starving older ones
+    forever. Mirrors telephony_stats_service.MIN_REAL_TALK_SEC's own "a real
+    conversation" rule (talk_sec > 0) - a missed/zero-talk call has nothing
+    to transcribe. A "failed" row (no usable recording) is never retried.
+
+    A row already at "classified" is normally done and excluded - except
+    when it still has no quality_score, which only happens if
+    assess_quality_enabled was turned on after that row was already
+    classified (quality assessment otherwise runs in the same pass as
+    classification, before the row ever leaves "transcribed" - see
+    process_pending_calls). Included unconditionally rather than gated on
+    the current setting value, to keep this query simple - bounded anyway
+    by MAX_CALL_AGE_DAYS, so at worst a handful of already-classified rows
+    get rechecked each cycle for no real work."""
     today_msk = (now or datetime.now(UTC)).astimezone(_MSK).date()
     min_call_date = today_msk - timedelta(days=MAX_CALL_AGE_DAYS)
     return list(
@@ -114,6 +124,10 @@ def find_pending_calls(db: Session, limit: int, *, now: datetime | None = None) 
                 or_(
                     CallRecord.transcript_status.is_(None),
                     CallRecord.transcript_status == TRANSCRIPT_STATUS_TRANSCRIBED,
+                    and_(
+                        CallRecord.transcript_status == TRANSCRIPT_STATUS_CLASSIFIED,
+                        CallRecord.quality_score.is_(None),
+                    ),
                 ),
             )
             .order_by(CallRecord.occurred_at)
@@ -186,21 +200,45 @@ def _transcribe(
     return True
 
 
-def _classify(
+def _summarize_topic(
     db: Session,
     gpt_client,  # noqa: ANN001 - httpx.Client
     gpt_settings: YandexGPTSettings,
     row: CallRecord,
 ) -> bool:
     try:
-        tag = yandexgpt_client.classify_topic(gpt_client, gpt_settings, row.transcript_text or "")
+        summary = yandexgpt_client.summarize_call_topic(
+            gpt_client, gpt_settings, row.transcript_text or ""
+        )
     except YandexGPTError as exc:
-        logger.error("call_classification_failed", call=row.external_id, error=str(exc))
+        logger.error("call_topic_summary_failed", call=row.external_id, error=str(exc))
         row.transcript_error = f"YandexGPT failed: {exc}"
         db.commit()
         return False
-    row.topic_tag = tag
+    row.topic_tag = summary
     row.transcript_status = TRANSCRIPT_STATUS_CLASSIFIED
+    row.transcript_error = None
+    db.commit()
+    return True
+
+
+def _assess_quality(
+    db: Session,
+    gpt_client,  # noqa: ANN001 - httpx.Client
+    gpt_settings: YandexGPTSettings,
+    row: CallRecord,
+) -> bool:
+    try:
+        assessment = yandexgpt_client.assess_call_quality(
+            gpt_client, gpt_settings, row.transcript_text or ""
+        )
+    except YandexGPTError as exc:
+        logger.error("call_quality_assessment_failed", call=row.external_id, error=str(exc))
+        row.transcript_error = f"YandexGPT quality assessment failed: {exc}"
+        db.commit()
+        return False
+    row.quality_score = assessment.score
+    row.quality_review = assessment.review
     row.transcript_error = None
     db.commit()
     return True
@@ -210,6 +248,7 @@ def _classify(
 class ProcessStats:
     transcribed: int = 0
     classified: int = 0
+    assessed: int = 0
     failed: int = 0
     errors: int = 0
 
@@ -231,11 +270,19 @@ def process_pending_calls(
     zeon_settings = _zeon_settings(settings)
     stt_settings = _speechkit_settings(settings)
     classify = settings.classify_calls_enabled
-    gpt_settings = _yandexgpt_settings(settings) if classify else None
+    assess = settings.assess_quality_enabled
+    # One shared settings object for both YandexGPT steps - they use the
+    # same credentials (yc_api_key/yc_folder_id/yandexgpt_model).
+    gpt_settings = _yandexgpt_settings(settings) if (classify or assess) else None
 
     with speechkit_client.new_client() as stt_client, yandexgpt_client.new_client() as gpt_client:
         for row in rows:
-            if row.transcript_status != TRANSCRIPT_STATUS_TRANSCRIBED:
+            # find_pending_calls can also hand back an already-"classified"
+            # row (the one-off case where assess_quality_enabled was turned
+            # on after that row was classified) - transcript_status is None
+            # is the only state that actually still needs transcribing;
+            # TRANSCRIBED/CLASSIFIED both already have a transcript.
+            if row.transcript_status is None:
                 if not _transcribe(db, settings, stt_client, zeon_settings, stt_settings, row):
                     if row.transcript_status == TRANSCRIPT_STATUS_FAILED:
                         stats.failed += 1
@@ -244,9 +291,19 @@ def process_pending_calls(
                     continue
                 stats.transcribed += 1
 
-            if classify and gpt_settings is not None:
-                if _classify(db, gpt_client, gpt_settings, row):
+            if (
+                classify
+                and gpt_settings is not None
+                and row.transcript_status != TRANSCRIPT_STATUS_CLASSIFIED
+            ):
+                if _summarize_topic(db, gpt_client, gpt_settings, row):
                     stats.classified += 1
+                else:
+                    stats.errors += 1
+
+            if assess and gpt_settings is not None and row.quality_score is None:
+                if _assess_quality(db, gpt_client, gpt_settings, row):
+                    stats.assessed += 1
                 else:
                     stats.errors += 1
 
@@ -255,6 +312,7 @@ def process_pending_calls(
         processed=len(rows),
         transcribed=stats.transcribed,
         classified=stats.classified,
+        assessed=stats.assessed,
         failed=stats.failed,
         errors=stats.errors,
     )

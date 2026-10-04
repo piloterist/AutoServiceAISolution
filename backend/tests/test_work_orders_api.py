@@ -7,7 +7,6 @@ from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
 from app.models.department import Department
 from app.models.work_order import WorkOrder
-from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
@@ -104,37 +103,36 @@ def test_list_work_orders_filters_by_paid_range(client, db_session, auth_headers
     assert [item["external_number"] for item in body["items"]] == ["WO-PAID"]
 
 
-def test_only_receivables_includes_unpaid_invoice_and_uninvoiced_closed(
+def test_only_receivables_includes_closed_orders_with_positive_debt(
     client, db_session, auth_headers
 ) -> None:
-    unpaid_invoice_wo = _make_work_order(external_number="WO-UNPAID-INVOICE", closed_date=None)
-    uninvoiced_closed_wo = _make_work_order(
-        external_number="WO-UNINVOICED-CLOSED", closed_date=datetime(2026, 7, 1)
+    """ДЗ is read straight from WorkOrder.debt_amount (1C's own settlement
+    balance) - see work_order_query_service.list_work_orders's
+    only_receivables and cockpit_service._receivables. Dropped the old
+    invoice/payment-event-based rule 2026-10-04: a real example (ЗН
+    СЦН0002701, "Оплачено 100%, Остаток долга 0" on its own detail page) had
+    no work_order_payment_events row at all, so that rule wrongly flagged a
+    fully-settled order as outstanding."""
+    owed = _make_work_order(
+        external_number="WO-OWED", closed_date=datetime(2026, 7, 1), debt_amount=Decimal("500")
     )
-    settled_wo = _make_work_order(external_number="WO-SETTLED", closed_date=datetime(2026, 7, 1))
-    open_no_invoice_wo = _make_work_order(external_number="WO-OPEN-NO-INVOICE", closed_date=None)
-    db_session.add_all([unpaid_invoice_wo, uninvoiced_closed_wo, settled_wo, open_no_invoice_wo])
-    db_session.commit()
-    db_session.add(
-        WorkOrderInvoice(
-            work_order_id=unpaid_invoice_wo.id, source_document_id="inv-1", amount=Decimal("500")
-        )
+    settled = _make_work_order(
+        external_number="WO-SETTLED", closed_date=datetime(2026, 7, 1), debt_amount=Decimal("0")
     )
-    db_session.add(
-        WorkOrderPaymentEvent(
-            work_order_id=settled_wo.id,
-            paid_at=datetime(2026, 7, 2),
-            amount=Decimal("1000"),
-            source_document_id="pay-1",
-        )
+    unknown_debt = _make_work_order(
+        external_number="WO-UNKNOWN-DEBT", closed_date=datetime(2026, 7, 1), debt_amount=None
     )
+    still_open = _make_work_order(
+        external_number="WO-OPEN", closed_date=None, debt_amount=Decimal("500")
+    )
+    db_session.add_all([owed, settled, unknown_debt, still_open])
     db_session.commit()
 
     response = client.get(LIST_URL, headers=auth_headers, params={"only_receivables": "true"})
 
     assert response.status_code == 200
     numbers = {item["external_number"] for item in response.json()["items"]}
-    assert numbers == {"WO-UNPAID-INVOICE", "WO-UNINVOICED-CLOSED"}
+    assert numbers == {"WO-OWED"}
 
 
 def test_only_receivables_scoped_to_workshop_via_workshop_id(
@@ -164,11 +162,13 @@ def test_only_receivables_scoped_to_workshop_via_workshop_id(
         external_number="WO-IN-SCOPE",
         department="Слесарный цех_(ИП Пан)",
         closed_date=datetime(2026, 7, 1),
+        debt_amount=Decimal("500"),
     )
     out_of_scope = _make_work_order(
         external_number="WO-OUT-OF-SCOPE",
         department="Кузовной цех_Солнцево",
         closed_date=datetime(2026, 7, 1),
+        debt_amount=Decimal("500"),
     )
     db_session.add_all([in_scope, out_of_scope])
     db_session.commit()
