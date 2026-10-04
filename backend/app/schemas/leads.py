@@ -40,6 +40,11 @@ class WebsiteLeadOut(BaseModel):
     raw_payload: dict
     created_at: datetime
     status: Literal["open", "resolved", "stale"]
+    # The first ЗН on this same phone created after the lead itself - see
+    # services/leads_service.py's own _match_work_order docstring. Computed
+    # live on every read, same as `status` above - never stored.
+    matched_work_order_id: uuid.UUID | None
+    matched_work_order_number: str | None
 
 
 class WebsiteLeadsResponse(BaseModel):

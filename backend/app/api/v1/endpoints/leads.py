@@ -58,6 +58,8 @@ def _lead_out(item: leads_service.LeadWithStatus) -> WebsiteLeadOut:
         raw_payload=lead.raw_payload,
         created_at=lead.created_at,
         status=item.status,
+        matched_work_order_id=item.matched_work_order_id,
+        matched_work_order_number=item.matched_work_order_number,
     )
 
 

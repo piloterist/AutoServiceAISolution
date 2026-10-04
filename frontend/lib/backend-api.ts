@@ -1288,6 +1288,12 @@ export type WebsiteLead = {
   raw_payload: Record<string, unknown>;
   created_at: string;
   status: LeadStatus;
+  // The first ЗН on this same phone created after the lead itself - see
+  // backend services/leads_service.py's own _match_work_order. Computed
+  // live on every read, so it appears as soon as the matching work order
+  // is next imported from 1C, no extra action needed.
+  matched_work_order_id: string | null;
+  matched_work_order_number: string | null;
 };
 
 export type WebsiteLeadsResponse = {

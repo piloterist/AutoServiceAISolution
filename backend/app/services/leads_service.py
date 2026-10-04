@@ -35,6 +35,7 @@ from app.models.website_lead import (
     SOURCE_QUIZ_MECHANICAL,
     WebsiteLead,
 )
+from app.models.work_order import WorkOrder
 from app.services import lead_photos_service, telephony_settings_service
 from app.services.telephony_stats_service import MIN_REAL_TALK_SEC
 
@@ -166,6 +167,16 @@ def create_lead(db: Session, payload: dict[str, Any]) -> WebsiteLead:
 class LeadWithStatus:
     lead: WebsiteLead
     status: LeadStatus
+    # The first work order (ЗН) created for this same phone number *after*
+    # this lead came in (see _match_work_order) - computed live on every
+    # read, same as `status` above, not stored: a work order imported from
+    # 1C days after the lead still arrived still just as "new" is matched
+    # the very next time this page loads, no separate relay/backfill job
+    # needed (product ask, 2026-10-04). None if nothing has matched yet, or
+    # the only work orders on this phone predate the lead (an old,
+    # unrelated visit - must not be shown as if it came from this lead).
+    matched_work_order_id: uuid.UUID | None = None
+    matched_work_order_number: str | None = None
 
 
 def _resolving_calls_by_phone(db: Session) -> dict[str, list[datetime]]:
@@ -192,6 +203,41 @@ def _status_for(
     return "open" if lead.created_at >= stale_cutoff else "stale"
 
 
+def _work_orders_by_phone(db: Session) -> dict[str, list[tuple[datetime, uuid.UUID, str]]]:
+    """Every work order with a phone at all, grouped by that phone
+    (normalized the same way WebsiteLead.phone already is), each list
+    sorted oldest-created-first - fetched once and matched in Python, same
+    shape as _resolving_calls_by_phone above. WorkOrder.phone is raw 1C
+    passthrough (see models/work_order.py), hence the normalization here
+    rather than a direct column comparison."""
+    rows = db.execute(
+        select(
+            WorkOrder.phone, WorkOrder.created_at, WorkOrder.id, WorkOrder.external_number
+        ).where(WorkOrder.phone.is_not(None))
+    ).all()
+    by_phone: dict[str, list[tuple[datetime, uuid.UUID, str]]] = {}
+    for phone, created_at, work_order_id, external_number in rows:
+        normalized = _normalize_phone(phone)
+        if len(normalized) < 10:
+            continue
+        by_phone.setdefault(normalized, []).append((created_at, work_order_id, external_number))
+    for entries in by_phone.values():
+        entries.sort(key=lambda entry: entry[0])
+    return by_phone
+
+
+def _match_work_order(
+    lead: WebsiteLead, candidates: list[tuple[datetime, uuid.UUID, str]]
+) -> tuple[uuid.UUID | None, str | None]:
+    """The earliest work order on this phone created after the lead itself
+    - the one most plausibly caused by it, not some older unrelated visit
+    (candidates are pre-sorted oldest-first, see _work_orders_by_phone)."""
+    for created_at, work_order_id, external_number in candidates:
+        if created_at > lead.created_at:
+            return work_order_id, external_number
+    return None, None
+
+
 def list_leads(db: Session, *, now: datetime | None = None) -> list[LeadWithStatus]:
     """Every lead ever received, newest first, each with its computed
     status - feeds the full "Заявки" page."""
@@ -201,13 +247,19 @@ def list_leads(db: Session, *, now: datetime | None = None) -> list[LeadWithStat
 
     leads = list(db.scalars(select(WebsiteLead).order_by(WebsiteLead.created_at.desc())))
     resolving = _resolving_calls_by_phone(db)
-    return [
-        LeadWithStatus(
-            lead=lead,
-            status=_status_for(lead, resolving.get(lead.phone, []), stale_cutoff=stale_cutoff),
+    work_orders = _work_orders_by_phone(db)
+    result = []
+    for lead in leads:
+        work_order_id, work_order_number = _match_work_order(lead, work_orders.get(lead.phone, []))
+        result.append(
+            LeadWithStatus(
+                lead=lead,
+                status=_status_for(lead, resolving.get(lead.phone, []), stale_cutoff=stale_cutoff),
+                matched_work_order_id=work_order_id,
+                matched_work_order_number=work_order_number,
+            )
         )
-        for lead in leads
-    ]
+    return result
 
 
 def get_open_leads(db: Session, *, now: datetime | None = None) -> list[WebsiteLead]:

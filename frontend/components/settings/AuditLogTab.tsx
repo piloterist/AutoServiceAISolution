@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
 import type { AuditLogEntry } from "@/lib/backend-api";
 
 const ACTION_LABELS: Record<string, string> = {
@@ -94,31 +96,114 @@ function renderChanges(changes: Record<string, { old: unknown; new: unknown }>) 
   );
 }
 
+// Plain-text version of renderChanges above, for the "Что изменилось"
+// column's own filter - lets a search for a field name (e.g. "Статус") or
+// an old/new value (e.g. "Готова") match, same as what's actually printed
+// on screen.
+function changesSearchText(changes: Record<string, { old: unknown; new: unknown }>): string {
+  return Object.entries(changes)
+    .map(([field, { old, new: next }]) => `${FIELD_LABELS[field] ?? field} ${formatValue(field, old)} ${formatValue(field, next)}`)
+    .join(" ");
+}
+
+type ColumnKey =
+  | "when"
+  | "who"
+  | "action"
+  | "entity_type"
+  | "entity_id"
+  | "work_order_number"
+  | "car_description"
+  | "changes";
+
+const COLUMNS: { key: ColumnKey; label: string }[] = [
+  { key: "when", label: "Когда" },
+  { key: "who", label: "Кто" },
+  { key: "action", label: "Действие" },
+  { key: "entity_type", label: "Объект" },
+  { key: "entity_id", label: "RecId" },
+  { key: "work_order_number", label: "ЗН" },
+  { key: "car_description", label: "Автомобиль" },
+  { key: "changes", label: "Что изменилось" },
+];
+
+// Searchable text per column, per entry - matches exactly what's rendered
+// on screen for every column except "changes" (its own display is JSX, see
+// changesSearchText above for the plain-text equivalent).
+function columnText(entry: AuditLogEntry): Record<ColumnKey, string> {
+  return {
+    when: formatDateTime(entry.created_at),
+    who: entry.actor_name,
+    action: ACTION_LABELS[entry.action] ?? entry.action,
+    entity_type: ENTITY_TYPE_LABELS[entry.entity_type] ?? entry.entity_type,
+    entity_id: entry.entity_id,
+    work_order_number: entry.work_order_number ?? "",
+    car_description: entry.car_description ?? "",
+    changes: changesSearchText(entry.changes),
+  };
+}
+
 /** Read-only - see backend app/models/schedule_audit_log.py. Empty until
  * the Planner's own write endpoints exist and start logging to it. */
 export function AuditLogTab({ initialEntries }: { initialEntries: AuditLogEntry[] }) {
+  // Per-column text filters (product ask, 2026-10-04: "фильтр по каждому
+  // полю... текстовый, как на листе с заказ-нарядами") - same plain
+  // substring/case-insensitive match as WorkOrdersTable's own columnFilters,
+  // just against this table's own column text (see columnText above).
+  const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>(() => ({
+    when: "",
+    who: "",
+    action: "",
+    entity_type: "",
+    entity_id: "",
+    work_order_number: "",
+    car_description: "",
+    changes: "",
+  }));
+
+  const filteredEntries = useMemo(() => {
+    return initialEntries.filter((entry) => {
+      const text = columnText(entry);
+      return COLUMNS.every(({ key }) => {
+        const filterValue = columnFilters[key].trim().toLowerCase();
+        return !filterValue || text[key].toLowerCase().includes(filterValue);
+      });
+    });
+  }, [initialEntries, columnFilters]);
+
   return (
     <div className="card">
       <h2 className="chart-title">Логи изменений</h2>
       <p className="settings-hint" style={{ marginBottom: "0.75rem" }}>
         Изменения и удаления записей в планировщике цехов (появятся здесь после включения планировщика).
+        Страница не обновляется сама — если недавно что-то поменялось, перезагрузите её.
       </p>
 
       <table className="data-table admin-data-table">
         <thead>
           <tr>
-            <th>Когда</th>
-            <th>Кто</th>
-            <th>Действие</th>
-            <th>Объект</th>
-            <th>RecId</th>
-            <th>ЗН</th>
-            <th>Автомобиль</th>
-            <th>Что изменилось</th>
+            {COLUMNS.map((col) => (
+              <th key={col.key}>{col.label}</th>
+            ))}
+          </tr>
+          <tr className="filter-row">
+            {COLUMNS.map((col) => (
+              <td key={col.key}>
+                <input
+                  type="text"
+                  value={columnFilters[col.key]}
+                  onChange={(event) =>
+                    setColumnFilters((prev) => ({ ...prev, [col.key]: event.target.value }))
+                  }
+                  placeholder="Фильтр"
+                  aria-label={`Фильтр по полю ${col.label}`}
+                />
+              </td>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {initialEntries.map((entry) => (
+          {filteredEntries.map((entry) => (
             <tr key={entry.id}>
               <td>{formatDateTime(entry.created_at)}</td>
               <td>{entry.actor_name}</td>
@@ -134,6 +219,13 @@ export function AuditLogTab({ initialEntries }: { initialEntries: AuditLogEntry[
             <tr>
               <td colSpan={8} className="admin-empty-row">
                 Пока нет записей
+              </td>
+            </tr>
+          )}
+          {initialEntries.length > 0 && filteredEntries.length === 0 && (
+            <tr>
+              <td colSpan={8} className="admin-empty-row">
+                Ничего не найдено по этому фильтру
               </td>
             </tr>
           )}

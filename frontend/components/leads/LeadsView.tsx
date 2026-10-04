@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import type { LeadStatus, WebsiteLead } from "@/lib/backend-api";
@@ -57,7 +58,7 @@ function LeadDetail({ lead }: { lead: WebsiteLead }) {
 
   return (
     <tr className="leads-detail-row">
-      <td colSpan={6}>
+      <td colSpan={7}>
         {lead.photos && lead.photos.length > 0 && (
           <div className="leads-photo-links" style={{ marginBottom: "0.6rem" }}>
             {lead.photos.map((url) => (
@@ -138,6 +139,7 @@ export function LeadsView({
             <th>Имя</th>
             <th>Источник</th>
             <th>Статус</th>
+            <th>Заказ-наряд</th>
             <th>Фото</th>
           </tr>
         </thead>
@@ -156,6 +158,18 @@ export function LeadsView({
                 <td>
                   <span className={`lead-status lead-status--${lead.status}`}>{STATUS_LABELS[lead.status]}</span>
                 </td>
+                <td>
+                  {lead.matched_work_order_number ? (
+                    <Link
+                      href={`/work-orders/${lead.matched_work_order_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {lead.matched_work_order_number}
+                    </Link>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td className="num">{lead.photos?.length ?? 0}</td>
               </tr>
               {expandedId === lead.id && <LeadDetail lead={lead} />}
@@ -163,7 +177,7 @@ export function LeadsView({
           ))}
           {filtered.length === 0 && (
             <tr>
-              <td colSpan={6} className="admin-empty-row">
+              <td colSpan={7} className="admin-empty-row">
                 Заявок нет
               </td>
             </tr>
