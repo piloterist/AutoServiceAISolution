@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 const TAGLINE_EN = "Enterprise Stability Platform";
-const TAGLINE_RU = "Платформа Стабилизации Предприятия";
+const TAGLINE_RU = "Платформа Стабильности Предприятия";
 const TYPING_START_DELAY_MS = 1200;
 const TYPE_INTERVAL_MS = 22;
 // Timed so the flicker (.cockpit-esp-indicator--flicker's own 2300ms

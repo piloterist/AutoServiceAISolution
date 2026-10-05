@@ -2,7 +2,7 @@
 
 import re
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 _HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
@@ -21,6 +21,8 @@ class AppSettingsResponse(BaseModel):
     hide_internal_orders: bool
     fivesystems_api_enabled: bool
     daily_logout_time: str
+    planner_auto_match_enabled: bool
+    planner_auto_match_interval_minutes: int
 
     model_config = {"from_attributes": True}
 
@@ -32,5 +34,7 @@ class AppSettingsUpdate(BaseModel):
     hide_internal_orders: bool = False
     fivesystems_api_enabled: bool = False
     daily_logout_time: str = "23:30"
+    planner_auto_match_enabled: bool = False
+    planner_auto_match_interval_minutes: int = Field(default=180, gt=0)
 
     _validate_daily_logout_time = field_validator("daily_logout_time")(_validate_hhmm)

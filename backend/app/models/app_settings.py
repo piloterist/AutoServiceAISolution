@@ -10,7 +10,7 @@ in this codebase.
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -71,6 +71,21 @@ class AppSettings(Base):
     # Pydantic/JSON boundary for no benefit.
     daily_logout_time: Mapped[str] = mapped_column(
         String(5), nullable=False, default="23:30", server_default="23:30"
+    )
+
+    # Auto-links an unlinked Planner record (WorkshopJob/BodyCar with no
+    # work_order_id yet) to a ЗН imported shortly afterward, matched by
+    # phone or VIN (see services/planner_service.auto_match_planner_records
+    # and services/planner_match_relay.py) - product ask, 2026-10-05: a
+    # record is often created by phone/VIN ahead of the real 1C import,
+    # which can lag by days. Off by default, same reasoning as
+    # fivesystems_api_enabled above (an automatic write to Planner records
+    # shouldn't start happening until an operator opts in).
+    planner_auto_match_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    planner_auto_match_interval_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=180, server_default="180"
     )
 
     updated_at: Mapped[datetime] = mapped_column(

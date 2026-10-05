@@ -33,5 +33,7 @@ def write_settings(
         hide_internal_orders=payload.hide_internal_orders,
         fivesystems_api_enabled=payload.fivesystems_api_enabled,
         daily_logout_time=payload.daily_logout_time,
+        planner_auto_match_enabled=payload.planner_auto_match_enabled,
+        planner_auto_match_interval_minutes=payload.planner_auto_match_interval_minutes,
     )
     return AppSettingsResponse.model_validate(settings)

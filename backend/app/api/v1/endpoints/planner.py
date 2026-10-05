@@ -20,6 +20,7 @@ from app.db.session import get_db
 from app.models.body_car import BodyCar
 from app.models.workshop_job import WorkshopJob
 from app.schemas.planner import (
+    AutoMatchResult,
     BodyCarOut,
     BodyCarStageOut,
     BodyCarWrite,
@@ -49,6 +50,15 @@ def actor(
         except ValueError:
             user_id = None
     return user_id, unquote(x_actor_name) if x_actor_name else "Неизвестно"
+
+
+@router.post("/auto-match", response_model=AutoMatchResult)
+def run_auto_match(db: Session = Depends(get_db)) -> AutoMatchResult:
+    """ "Выполнить сейчас" button in Settings - same matching logic the
+    background relay runs periodically (see services/planner_match_relay.py),
+    triggered on demand instead of waiting for the next scheduled pass."""
+    stats = planner_service.auto_match_planner_records(db)
+    return AutoMatchResult(processed=stats.processed, matched=stats.matched)
 
 
 @router.get("/work-orders/search", response_model=list[WorkOrderSearchResult])

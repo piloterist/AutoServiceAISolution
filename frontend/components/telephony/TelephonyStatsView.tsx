@@ -326,6 +326,13 @@ function LineCallsPanel({
           </div>
         )}
         <p className="telephony-transcript-text">{transcriptEvent?.transcript_text}</p>
+        {transcriptEvent?.transcript_text_raw &&
+          transcriptEvent.transcript_text_raw !== transcriptEvent.transcript_text && (
+            <details className="telephony-transcript-raw">
+              <summary>Исходная расшифровка (до обработки YandexGPT)</summary>
+              <p className="telephony-transcript-text">{transcriptEvent.transcript_text_raw}</p>
+            </details>
+          )}
       </AdminModal>
     </>
   );

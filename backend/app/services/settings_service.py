@@ -32,6 +32,8 @@ def update_app_settings(
     hide_internal_orders: bool,
     fivesystems_api_enabled: bool,
     daily_logout_time: str,
+    planner_auto_match_enabled: bool,
+    planner_auto_match_interval_minutes: int,
 ) -> AppSettings:
     settings = get_app_settings(db)
     settings.insurance_repair_type = insurance_repair_type
@@ -40,6 +42,8 @@ def update_app_settings(
     settings.hide_internal_orders = hide_internal_orders
     settings.fivesystems_api_enabled = fivesystems_api_enabled
     settings.daily_logout_time = daily_logout_time
+    settings.planner_auto_match_enabled = planner_auto_match_enabled
+    settings.planner_auto_match_interval_minutes = planner_auto_match_interval_minutes
     db.commit()
     db.refresh(settings)
     return settings

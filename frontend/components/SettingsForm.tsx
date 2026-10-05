@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { AppSettings } from "@/lib/backend-api";
+import type { AppSettings, AutoMatchResult } from "@/lib/backend-api";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -47,7 +47,20 @@ export function SettingsForm({
   // allowedTabs already has (no mid-session push, no server-side session
   // store to revoke from - see lib/auth.ts's module comment).
   const [dailyLogoutTime, setDailyLogoutTime] = useState(initialSettings.daily_logout_time);
+  // Auto-links an unlinked Planner record (WorkshopJob/BodyCar with no ЗН
+  // yet) to a work order imported shortly afterward, matched by phone or
+  // VIN - see backend services/planner_service.auto_match_planner_records.
+  const [plannerAutoMatchEnabled, setPlannerAutoMatchEnabled] = useState(
+    initialSettings.planner_auto_match_enabled,
+  );
+  const [plannerAutoMatchIntervalMinutes, setPlannerAutoMatchIntervalMinutes] = useState(
+    String(initialSettings.planner_auto_match_interval_minutes),
+  );
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [autoMatchState, setAutoMatchState] = useState<"idle" | "running" | "done" | "error">(
+    "idle",
+  );
+  const [autoMatchMessage, setAutoMatchMessage] = useState<string | null>(null);
 
   const handleSave = async () => {
     setSaveState("saving");
@@ -62,6 +75,8 @@ export function SettingsForm({
           hide_internal_orders: hideInternalOrders,
           fivesystems_api_enabled: fivesystemsApiEnabled,
           daily_logout_time: dailyLogoutTime,
+          planner_auto_match_enabled: plannerAutoMatchEnabled,
+          planner_auto_match_interval_minutes: Number(plannerAutoMatchIntervalMinutes) || 180,
         } satisfies AppSettings),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -70,6 +85,23 @@ export function SettingsForm({
       setSaveState("error");
     } finally {
       setTimeout(() => setSaveState("idle"), 2000);
+    }
+  };
+
+  const handleAutoMatchNow = async () => {
+    setAutoMatchState("running");
+    setAutoMatchMessage(null);
+    try {
+      const res = await fetch("/api/planner/auto-match", { method: "POST" });
+      if (!res.ok) throw new Error(await res.text());
+      const result = (await res.json()) as AutoMatchResult;
+      setAutoMatchState("done");
+      setAutoMatchMessage(
+        `Проверено записей: ${result.processed}, привязано: ${result.matched}`,
+      );
+    } catch (err) {
+      setAutoMatchState("error");
+      setAutoMatchMessage(err instanceof Error ? err.message : "Не удалось выполнить");
     }
   };
 
@@ -165,6 +197,53 @@ export function SettingsForm({
           разлогиниваются при следующем действии в системе. Изменение применяется к новым входам —
           уже открытые сессии выйдут по старому времени, пока не перелогинятся.
         </p>
+      </div>
+
+      <div className="card settings-card">
+        <h2 className="chart-title">Планировщик</h2>
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={plannerAutoMatchEnabled}
+            onChange={(event) => setPlannerAutoMatchEnabled(event.target.checked)}
+          />
+          Автоматически привязывать ЗН к записям планировщика
+        </label>
+
+        <div className="settings-field">
+          <label htmlFor="planner-auto-match-interval">Проверять раз в (мин)</label>
+          <input
+            id="planner-auto-match-interval"
+            type="number"
+            min={1}
+            value={plannerAutoMatchIntervalMinutes}
+            onChange={(event) => setPlannerAutoMatchIntervalMinutes(event.target.value)}
+          />
+        </div>
+
+        <p className="settings-description">
+          Если в записи планировщика (Слесарный/Кузовной) ещё не указан заказ-наряд, система ищет
+          среди недавно пришедших из 1С ЗН (с даты создания записи и не позже чем через 3 дня
+          после) такой же номер телефона или VIN — и если находит, подставляет заказ-наряд, а
+          пустые поля «Автомобиль»/«Клиент»/VIN/телефон заполняет из него. Уже заполненные вручную
+          поля и уже привязанные к ЗН записи никогда не трогаются.
+        </p>
+
+        <button
+          type="button"
+          className="admin-btn"
+          onClick={handleAutoMatchNow}
+          disabled={autoMatchState === "running"}
+        >
+          {autoMatchState === "running" ? "Выполняется…" : "Выполнить сейчас"}
+        </button>
+
+        {autoMatchMessage && (
+          <p className={autoMatchState === "error" ? "admin-form-error" : "settings-description"}>
+            {autoMatchMessage}
+          </p>
+        )}
       </div>
 
       <div className="card settings-card">

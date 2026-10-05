@@ -103,6 +103,7 @@ def _patch_happy_path(
         "build_utterances",
         lambda responses: [{"speaker": "Говорящий 1", "text": "Нужна покраска бампера"}],
     )
+    monkeypatch.setattr(yandexgpt_client, "adapt_transcript", lambda client, settings, text: text)
     monkeypatch.setattr(
         yandexgpt_client, "summarize_call_topic", lambda client, settings, text: topic
     )
@@ -365,6 +366,66 @@ def test_process_pending_calls_backfills_quality_for_already_classified_call(
     db_session.refresh(call)
     assert call.quality_score == 6
     assert call.transcript_text == "Говорящий 1: уже расшифровано ранее"
+
+
+def test_process_pending_calls_skips_carrier_announcement_without_scoring(
+    monkeypatch, db_session: Session
+) -> None:
+    """Product ask, 2026-10-05: an outbound call to an unreachable number -
+    SpeechKit only "hears" the carrier's own "абонент не отвечает или
+    временно недоступен" voice prompt, not an actual conversation - must
+    not be classified/scored as if a human operator had mishandled it."""
+    call = _call(db_session)
+    monkeypatch.setattr(
+        zeon_client,
+        "download_audio",
+        lambda settings, link, method="get-mp3": AudioFile(
+            data=b"x" * 2000, content_type="audio/mpeg", filename="call.mp3"
+        ),
+    )
+    monkeypatch.setattr(
+        speechkit_client, "submit", lambda client, settings, audio, container: "op-1"
+    )
+    monkeypatch.setattr(speechkit_client, "is_done", lambda client, settings, op_id: True)
+    monkeypatch.setattr(
+        speechkit_client, "get_result", lambda client, settings, op_id: [{"raw": True}]
+    )
+    monkeypatch.setattr(
+        speechkit_client,
+        "build_utterances",
+        lambda responses: [
+            {"speaker": "Говорящий 1", "text": "Недоступен."},
+            {"speaker": "Говорящий 2", "text": "Абонент не отвечает или временно."},
+        ],
+    )
+    for name in ("adapt_transcript", "summarize_call_topic", "assess_call_quality"):
+        monkeypatch.setattr(
+            yandexgpt_client,
+            name,
+            lambda *a, _name=name, **kw: (_ for _ in ()).throw(
+                AssertionError(f"{_name} must not be called")
+            ),
+        )
+
+    stats = svc.process_pending_calls(
+        db_session, _settings(classify=True, assess=True), limit=10, now=NOW
+    )
+
+    assert stats.skipped == 1
+    assert stats.transcribed == 0
+    assert stats.classified == 0
+    assert stats.assessed == 0
+    db_session.refresh(call)
+    assert call.transcript_status == svc.TRANSCRIPT_STATUS_SKIPPED
+    assert (
+        call.transcript_text
+        == "Говорящий 1: Недоступен.\nГоворящий 2: Абонент не отвечает или временно."
+    )
+    assert call.topic_tag is None
+    assert call.quality_score is None
+
+    # Never picked up again by a later cycle - it's a terminal state.
+    assert svc.find_pending_calls(db_session, limit=10, now=NOW) == []
 
 
 def test_process_pending_calls_respects_limit(monkeypatch, db_session: Session) -> None:

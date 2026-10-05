@@ -54,7 +54,7 @@ class TelephonySettingsUpdate(BaseModel):
     speechkit_language: str = "ru-RU"
     speechkit_timeout_min: int = Field(default=60, gt=0)
     classify_calls_enabled: bool = False
-    yandexgpt_model: str = "yandexgpt-lite/latest"
+    yandexgpt_model: str = "yandexgpt/latest"
     assess_quality_enabled: bool = False
     transcription_poll_interval_minutes: int = Field(default=10, gt=0)
     transcription_batch_size: int = Field(default=20, gt=0)
@@ -187,6 +187,10 @@ class LineCallEventOut(BaseModel):
     # or always null for a call with no real talk time to transcribe.
     topic_tag: str | None
     transcript_text: str | None
+    # SpeechKit's own raw, pre-adaptation transcript - kept alongside
+    # transcript_text above purely so the two can be compared (see
+    # services/yandexgpt_client.py's adapt_transcript).
+    transcript_text_raw: str | None
     # YandexGPT's QA review - null until assessed (see TelephonySettings.
     # assess_quality_enabled), independent of topic_tag above.
     quality_score: int | None

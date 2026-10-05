@@ -13,9 +13,10 @@ docstring for which fields that excludes and why.
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
-from datetime import date, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, or_, select
@@ -34,6 +35,7 @@ from app.models.workshop_job import WorkshopJob
 from app.schemas.planner import BodyCarWrite, WorkshopJobWrite
 from app.services import audit_log_service
 from app.services.fivesystems_client import WorkOrderLookupResult
+from app.services.internal_order_rules import normalize_vin
 
 ENTITY_WORKSHOP_JOB = "workshop_job"
 ENTITY_BODY_CAR = "body_car"
@@ -217,6 +219,123 @@ def sync_planner_records_from_work_order(
             )
 
     db.commit()
+
+
+# ---- Автосопоставление с ЗН по телефону/VIN --------------------------------
+
+AUTO_MATCH_ACTOR_NAME = "Автосопоставление (телефон/VIN)"
+AUTO_MATCH_WINDOW_DAYS = 3
+
+
+def _normalize_phone(value: str | None) -> str:
+    """Last 10 digits - same convention as leads_service/telephony_stats_service's
+    own _normalize_phone (duplicated rather than shared, same as those two
+    already are) - so a planner record's hand-typed/ЗН-sourced phone
+    compares equal to WorkOrder.phone regardless of formatting
+    ("+7 (926) 1642018" vs "+7 926 164-20-18")."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+@dataclass
+class AutoMatchStats:
+    processed: int = 0
+    matched: int = 0
+
+
+def _find_match_candidate(
+    db: Session, *, phone: str, vin: str | None, created_at: datetime
+) -> WorkOrder | None:
+    """Earliest WorkOrder created in [created_at, created_at + 3 days]
+    matching this planner record's own phone or VIN (either is enough) -
+    see auto_match_planner_records. The candidate set is bounded by the
+    date window (normally tiny), so it's fetched once per record and
+    filtered in Python - WorkOrder.phone is raw 1C passthrough (not
+    normalized), so a SQL-level equality check wouldn't match anyway."""
+    window_end = created_at + timedelta(days=AUTO_MATCH_WINDOW_DAYS)
+    candidates = db.scalars(
+        select(WorkOrder)
+        .where(WorkOrder.created_at >= created_at, WorkOrder.created_at <= window_end)
+        .order_by(WorkOrder.created_at)
+    )
+    for candidate in candidates:
+        if phone and _normalize_phone(candidate.phone) == phone:
+            return candidate
+        if vin and normalize_vin(candidate.vin) == vin:
+            return candidate
+    return None
+
+
+def _apply_auto_match(db: Session, record: WorkshopJob | BodyCar, *, entity_type: str) -> bool:
+    phone = _normalize_phone(record.phone) if record.phone else ""
+    vin = normalize_vin(record.vin) if record.vin else None
+    if not phone and not vin:
+        return False
+
+    work_order = _find_match_candidate(db, phone=phone, vin=vin, created_at=record.created_at)
+    if work_order is None:
+        return False
+
+    changes: dict[str, dict] = {"work_order_id": {"old": None, "new": _jsonable(work_order.id)}}
+    record.work_order_id = work_order.id
+
+    # Never overwrites a field already present - same rule as
+    # sync_planner_records_from_work_order above (a value typed by hand
+    # must not be blanked out/replaced by the ЗН's own, possibly less
+    # complete, data).
+    new_values = {
+        "car_description": work_order.vehicle_description,
+        "vin": work_order.vin,
+        "client_name": work_order.customer_name,
+        "phone": work_order.phone,
+    }
+    for field, new in new_values.items():
+        if not new or getattr(record, field):
+            continue
+        changes[field] = {"old": None, "new": new}
+        setattr(record, field, new)
+
+    audit_log_service.record_change(
+        db,
+        entity_type=entity_type,
+        entity_id=record.id,
+        action="update",
+        changes=changes,
+        actor_user_id=None,
+        actor_name=AUTO_MATCH_ACTOR_NAME,
+        work_order_id=record.work_order_id,
+        car_description=record.car_description,
+    )
+    return True
+
+
+def auto_match_planner_records(db: Session) -> AutoMatchStats:
+    """Automatically links an unlinked WorkshopJob/BodyCar (work_order_id
+    still NULL) to a WorkOrder imported shortly afterward, when they
+    clearly belong to the same real visit - matched by phone OR VIN
+    (either is enough), within [record.created_at, +3 days] (product ask,
+    2026-10-05: a planner record is often created by phone/VIN ahead of
+    the real 1C import, which can lag by days - 1C's own created_at never
+    predates the planner record it corresponds to). Already-linked records
+    are skipped entirely, by construction (only unlinked ones are
+    queried) - this never re-points or second-guesses a link a person
+    already made by hand. See services/planner_match_relay.py for the
+    background schedule that calls this, and the "Выполнить сейчас" button
+    in Settings for an on-demand run."""
+    stats = AutoMatchStats()
+    jobs = list(db.scalars(select(WorkshopJob).where(WorkshopJob.work_order_id.is_(None))))
+    cars = list(db.scalars(select(BodyCar).where(BodyCar.work_order_id.is_(None))))
+    stats.processed = len(jobs) + len(cars)
+
+    for job in jobs:
+        if _apply_auto_match(db, job, entity_type=ENTITY_WORKSHOP_JOB):
+            stats.matched += 1
+    for car in cars:
+        if _apply_auto_match(db, car, entity_type=ENTITY_BODY_CAR):
+            stats.matched += 1
+
+    db.commit()
+    return stats
 
 
 # ---- Слесарный (WorkshopJob) -----------------------------------------------

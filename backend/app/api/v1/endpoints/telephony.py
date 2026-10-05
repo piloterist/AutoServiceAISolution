@@ -383,6 +383,7 @@ def line_calls(
                 talk_sec=event.talk_sec,
                 topic_tag=event.topic_tag,
                 transcript_text=event.transcript_text,
+                transcript_text_raw=event.transcript_text_raw,
                 quality_score=event.quality_score,
                 quality_review=event.quality_review,
                 workshop_label=(

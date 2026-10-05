@@ -3488,6 +3488,23 @@ table.bt {
   line-height: 1.5;
 }
 
+.telephony-transcript-raw {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+.telephony-transcript-raw > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.telephony-transcript-raw .telephony-transcript-text {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+}
+
 /* A free-text summary ("Стоимость замены колодок на Chery Tiggo 8") can run
    much longer than the old 3-value tag ever did - wraps across lines
    instead of forcing the pill shape/nowrap the base rule above uses. */
@@ -4310,11 +4327,6 @@ main:has(.cockpit-page) {
   margin-top: 6px;
 }
 
-.cockpit-revenue-stack .cockpit-strip-edge {
-  width: 9px;
-  height: 9px;
-}
-
 /* ДЗ/КЗ - moved back under PaymentsGauge's own center (PAY.cx/VIEW_W =
    489/1648 = 29.7% - see InstrumentCluster.tsx's own PAY const), per
    product feedback, 2026-10-04 (first round): "перемещаем обратно,
@@ -4475,6 +4487,25 @@ main:has(.cockpit-page) {
 
 .cockpit-strip-edge--end {
   background: #3ebecc;
+}
+
+/* Fuel-gauge-style E/F edge labels (revenue strip only - see
+   StripEdgeMark's own comment). No own font-size - inherits .cockpit-
+   strip-footer's (scaled up under .cockpit-revenue-stack, same as
+   .cockpit-strip-value next to it), same color pairing the plain dot used
+   (grey at empty, cyan at full) so this reads as a drop-in replacement. */
+.cockpit-strip-edge-label {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.cockpit-strip-edge-label--start {
+  color: #596063;
+}
+
+.cockpit-strip-edge-label--end {
+  color: #3ebecc;
 }
 
 /* Each strip gets its own corner tag rather than one shared tag placed

@@ -349,7 +349,7 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
               type="text"
               value={yandexgptModel}
               onChange={(e) => setYandexgptModel(e.target.value)}
-              placeholder="yandexgpt-lite/latest"
+              placeholder="yandexgpt/latest"
             />
           </div>
 

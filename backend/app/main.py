@@ -23,7 +23,12 @@ from app.core.errors import (
     validation_exception_handler,
 )
 from app.core.logging import configure_logging
-from app.services import call_transcription_relay, telephony_relay, yandex_relay
+from app.services import (
+    call_transcription_relay,
+    planner_match_relay,
+    telephony_relay,
+    yandex_relay,
+)
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -47,12 +52,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # services/call_transcription_relay.py.
     transcription_task = asyncio.create_task(call_transcription_relay.run_relay_loop())
 
+    # Same always-on/settings-gated shape - see services/planner_match_relay.py.
+    planner_match_task = asyncio.create_task(planner_match_relay.run_relay_loop())
+
     yield
 
     if background_task is not None:
         background_task.cancel()
     telephony_task.cancel()
     transcription_task.cancel()
+    planner_match_task.cancel()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)

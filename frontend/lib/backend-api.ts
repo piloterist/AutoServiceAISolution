@@ -114,6 +114,12 @@ export type AppSettings = {
   // "ЧЧ:ММ", Moscow time - every non-Admin session still active at/after
   // this time gets force-logged-out (see lib/auth.ts's nextDailyBoundary).
   daily_logout_time: string;
+  // Auto-links an unlinked Planner record (WorkshopJob/BodyCar with no
+  // ЗН yet) to a work order imported shortly afterward, matched by phone
+  // or VIN - see backend services/planner_service.auto_match_planner_records
+  // and services/planner_match_relay.py. Off by default.
+  planner_auto_match_enabled: boolean;
+  planner_auto_match_interval_minutes: number;
 };
 
 export type StatusSummaryItem = {
@@ -428,6 +434,15 @@ export function getAppSettings(): Promise<AppSettings> {
 
 export function updateAppSettings(settings: AppSettings): Promise<AppSettings> {
   return backendPut<AppSettings>("/api/v1/settings", settings);
+}
+
+export type AutoMatchResult = { processed: number; matched: number };
+
+/** "Выполнить сейчас" button next to the planner_auto_match_* settings -
+ * runs the same matching pass the background relay does periodically,
+ * on demand instead of waiting for the next scheduled one. */
+export function runPlannerAutoMatch(): Promise<AutoMatchResult> {
+  return backendPost<AutoMatchResult>("/api/v1/planner/auto-match", {});
 }
 
 export function getStatusSummary(
@@ -1205,6 +1220,10 @@ export type LineCallEvent = {
   // call with no real talk time to transcribe.
   topic_tag: string | null;
   transcript_text: string | null;
+  // SpeechKit's own raw, pre-adaptation transcript - kept alongside
+  // transcript_text purely so the two can be compared (see backend
+  // services/yandexgpt_client.py's adapt_transcript).
+  transcript_text_raw: string | null;
   // YandexGPT's QA review - null until assessed (see
   // TelephonySettings.assess_quality_enabled), independent of topic_tag.
   quality_score: number | null;

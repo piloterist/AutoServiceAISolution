@@ -55,7 +55,7 @@ def test_write_settings_persists_classify_calls_fields(client, auth_headers) -> 
     pattern as speechkit_model)."""
     response = client.get(SETTINGS_URL, headers=auth_headers)
     assert response.json()["classify_calls_enabled"] is False
-    assert response.json()["yandexgpt_model"] == "yandexgpt-lite/latest"
+    assert response.json()["yandexgpt_model"] == "yandexgpt/latest"
 
     response = client.put(
         SETTINGS_URL,

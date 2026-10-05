@@ -44,14 +44,23 @@ CALL_TYPES = (CALL_TYPE_IN, CALL_TYPE_OUT, CALL_TYPE_LOCAL, CALL_TYPE_TRANSIT)
 # from any Zeon-side field. NULL = not attempted yet (default for every
 # existing/new row); "failed" is terminal only for a call with no usable
 # recording (too short/placeholder) - a transient SpeechKit/YandexGPT error
-# just leaves the row as-is so the next relay cycle retries it.
+# just leaves the row as-is so the next relay cycle retries it. "skipped" is
+# also terminal: the recording transcribed fine, but it's not an actual
+# conversation with the client (e.g. an outbound call to an unreachable
+# number, where all SpeechKit "hears" is the carrier's own "абонент не
+# отвечает или временно недоступен" announcement) - product ask,
+# 2026-10-05: don't score the operator 1/10 for a robot message nobody
+# could have handled differently. See
+# call_transcription_service._looks_like_carrier_announcement.
 TRANSCRIPT_STATUS_TRANSCRIBED = "transcribed"
 TRANSCRIPT_STATUS_CLASSIFIED = "classified"
 TRANSCRIPT_STATUS_FAILED = "failed"
+TRANSCRIPT_STATUS_SKIPPED = "skipped"
 TRANSCRIPT_STATUSES = (
     TRANSCRIPT_STATUS_TRANSCRIBED,
     TRANSCRIPT_STATUS_CLASSIFIED,
     TRANSCRIPT_STATUS_FAILED,
+    TRANSCRIPT_STATUS_SKIPPED,
 )
 
 # YandexGPT's short free-text summary of what a call was about (e.g.
@@ -148,7 +157,20 @@ class CallRecord(Base):
     # conversation" threshold, reused here) - a missed/zero-talk call has
     # nothing to transcribe.
     transcript_status: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    # The YandexGPT-adapted transcript (see services/yandexgpt_client.py's
+    # adapt_transcript) - lightly corrected for recognition artifacts and
+    # mis-split speaker turns (e.g. a single "Добрый день" greeting wrongly
+    # cut across "Говорящий 1"/"Говорящий 2"), WITHOUT changing meaning.
+    # This is what topic_tag/quality_score are computed from, and what the
+    # UI shows (product ask, 2026-10-05: raw SpeechKit output read poorly).
     transcript_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # SpeechKit's own raw, unadapted output - kept verbatim alongside the
+    # adapted version above so the two can be compared from the same row,
+    # without re-paying for a second SpeechKit pass through the separate,
+    # manual Yandex.Disk export (see call_recording_service.py, which
+    # already archives its own copy of the raw transcript independently of
+    # this column).
+    transcript_text_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
     # A short free-text summary of the call (see TOPIC_UNDETERMINED above) -
     # set only once transcript_status is "classified".
     topic_tag: Mapped[str | None] = mapped_column(String(200), nullable=True)

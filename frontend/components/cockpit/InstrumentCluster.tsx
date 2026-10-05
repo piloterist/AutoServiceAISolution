@@ -1037,11 +1037,16 @@ function WarningIcons({
   );
 }
 
-// Neither strip uses automotive edge letters (E/F, C/H) - the product
-// spec explicitly asks for minimal edge marks/pictograms instead ("Вместо
-// E/F, C/H используй минимальные отметки краёв шкалы и небольшие
-// пиктограммы без финансовых названий").
-function StripEdgeMark({ align }: { align: "start" | "end" }) {
+// Originally a minimal notch, no letters, per the product spec ("Вместо
+// E/F, C/H используй минимальные отметки краёв шкалы"). Product feedback,
+// 2026-10-05, reversed that for the revenue strip specifically ("подпиши
+// как пишут на индикаторе топлива... Empty и Full") - `label` is optional
+// so DebtCapsule's ДЗ/КЗ marks (no real 0..100% scale to label the ends
+// of) keep the original plain dot.
+function StripEdgeMark({ align, label }: { align: "start" | "end"; label?: string }) {
+  if (label) {
+    return <span className={`cockpit-strip-edge-label cockpit-strip-edge-label--${align}`}>{label}</span>;
+  }
   return <span className={`cockpit-strip-edge cockpit-strip-edge--${align}`} />;
 }
 
@@ -1066,9 +1071,9 @@ function RevenueProgressStrip({ revenue, planRub }: { revenue: number; planRub: 
         ))}
       </div>
       <div className="cockpit-strip-footer">
-        <StripEdgeMark align="start" />
+        <StripEdgeMark align="start" label="E" />
         <span className="cockpit-strip-value">{formatRub(revenue)} ₽</span>
-        <StripEdgeMark align="end" />
+        <StripEdgeMark align="end" label="F" />
       </div>
     </div>
   );

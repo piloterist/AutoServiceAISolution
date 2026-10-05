@@ -102,9 +102,11 @@ class TelephonySettings(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     # Suffix after "gpt://<folder_id>/" - e.g. "yandexgpt-lite/latest"
-    # (cheaper, used by default) vs "yandexgpt/latest" (full model).
+    # (cheaper) vs "yandexgpt/latest" (full model, default since 2026-10-05
+    # - product ask: lite's transcript-adaptation/quality-assessment
+    # results "выглядят бесполезно", full model used instead).
     yandexgpt_model: Mapped[str] = mapped_column(
-        String(50), nullable=False, default="yandexgpt-lite/latest"
+        String(50), nullable=False, default="yandexgpt/latest"
     )
 
     # --- QA review + 1-10 score via YandexGPT (product ask, 2026-10-04) -

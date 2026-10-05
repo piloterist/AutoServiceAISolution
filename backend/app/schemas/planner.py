@@ -27,6 +27,11 @@ class WorkOrderSearchResult(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AutoMatchResult(BaseModel):
+    processed: int
+    matched: int
+
+
 # ---- Слесарный (WorkshopJob) -----------------------------------------------
 
 

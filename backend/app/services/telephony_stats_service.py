@@ -89,6 +89,10 @@ class _Rec:
     # transcribe.
     topic_tag: str | None
     transcript_text: str | None
+    # SpeechKit's own raw, pre-adaptation transcript (see
+    # models.call_record.CallRecord.transcript_text_raw) - kept alongside
+    # the adapted transcript_text above purely so the two can be compared.
+    transcript_text_raw: str | None
     # YandexGPT's QA review (see models.call_record.CallRecord.quality_score/
     # quality_review) - independent of topic_tag above, both null until
     # services/call_transcription_relay.py gets to this call.
@@ -121,6 +125,7 @@ def _row_to_rec(row: CallRecord) -> _Rec:
         dst=row.dst,
         topic_tag=row.topic_tag,
         transcript_text=row.transcript_text,
+        transcript_text_raw=row.transcript_text_raw,
         quality_score=row.quality_score,
         quality_review=row.quality_review,
         workshop_id=row.workshop_id,
@@ -626,6 +631,7 @@ class LineCallEvent:
     talk_sec: int
     topic_tag: str | None
     transcript_text: str | None
+    transcript_text_raw: str | None
     quality_score: int | None
     quality_review: str | None
     workshop_id: uuid.UUID | None
@@ -701,6 +707,7 @@ def list_line_calls(
                 talk_sec=rec.talk,
                 topic_tag=rec.topic_tag,
                 transcript_text=rec.transcript_text,
+                transcript_text_raw=rec.transcript_text_raw,
                 quality_score=rec.quality_score,
                 quality_review=rec.quality_review,
                 workshop_id=rec.workshop_id,

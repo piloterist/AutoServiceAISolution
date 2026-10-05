@@ -14,6 +14,7 @@ drives this automatically (product ask, 2026-10-02: расшифровка и р
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.models.call_record import (
     TRANSCRIPT_STATUS_CLASSIFIED,
     TRANSCRIPT_STATUS_FAILED,
+    TRANSCRIPT_STATUS_SKIPPED,
     TRANSCRIPT_STATUS_TRANSCRIBED,
     CallRecord,
 )
@@ -54,6 +56,37 @@ logger = structlog.get_logger(__name__)
 MIN_AUDIO_BYTES = 1024
 _AUDIO_CONTAINER_BY_EXT = {".mp3": "MP3", ".wav": "WAV", ".ogg": "OGG_OPUS"}
 POLL_INTERVAL_SECONDS = 5.0
+
+# Standard Russian mobile/landline carrier voice-prompts heard when an
+# outbound call reaches an unreachable number - SpeechKit transcribes the
+# network's own announcement, not a conversation with the client, so
+# scoring it (product ask, 2026-10-05: six such retries to one dead number
+# all got quality_score=1, as if a human operator had mishandled a human
+# caller) makes no sense. Speaker splits/order are meaningless for these -
+# it's one message, SpeechKit just divides it across "speakers" and chunks
+# arbitrarily (e.g. "Недоступен. Абонент не отвечает или временно.") - so
+# matching is a vocabulary check (every word is one this announcement
+# family could use) over a short pooled transcript, not a positional one.
+_CARRIER_ANNOUNCEMENT_TEMPLATES = (
+    "абонент не отвечает или временно недоступен",
+    "абонент временно недоступен попробуйте позвонить позже",
+    "аппарат абонента выключен или находится вне зоны действия сети",
+    "набранный вами номер не обслуживается",
+    "телефон абонента выключен или находится вне зоны действия сети",
+)
+_CARRIER_ANNOUNCEMENT_VOCABULARY = frozenset(
+    word for template in _CARRIER_ANNOUNCEMENT_TEMPLATES for word in template.split()
+)
+# A real conversation runs far longer than this - a short, all-vocabulary
+# transcript is the actual signal, not just word overlap.
+_CARRIER_ANNOUNCEMENT_MAX_WORDS = 14
+
+
+def _looks_like_carrier_announcement(plain_text: str) -> bool:
+    words = re.sub(r"[^а-яё\s]", " ", plain_text.lower()).split()
+    if not words or len(words) > _CARRIER_ANNOUNCEMENT_MAX_WORDS:
+        return False
+    return all(word in _CARRIER_ANNOUNCEMENT_VOCABULARY for word in words)
 
 
 class CallTranscriptionError(Exception):
@@ -142,6 +175,8 @@ def _transcribe(
     stt_client,  # noqa: ANN001 - httpx.Client, matches speechkit_client's own untyped param style
     zeon_settings: ZeonSettings,
     stt_settings: SpeechKitSettings,
+    gpt_client,  # noqa: ANN001 - httpx.Client
+    gpt_settings: YandexGPTSettings | None,
     row: CallRecord,
 ) -> bool:
     """Returns True once row.transcript_text is set (freshly transcribed,
@@ -186,14 +221,37 @@ def _transcribe(
         return False
 
     utterances = speechkit_client.build_utterances(responses)
-    text = "\n".join(f"{u['speaker']}: {u['text']}" for u in utterances).strip()
-    if not text:
+    raw_text = "\n".join(f"{u['speaker']}: {u['text']}" for u in utterances).strip()
+    if not raw_text:
         row.transcript_status = TRANSCRIPT_STATUS_FAILED
         row.transcript_error = "SpeechKit returned no speech"
         db.commit()
         return False
 
-    row.transcript_text = text
+    plain_text = " ".join(u["text"] for u in utterances)
+    if _looks_like_carrier_announcement(plain_text):
+        row.transcript_text_raw = raw_text
+        row.transcript_text = raw_text
+        row.transcript_status = TRANSCRIPT_STATUS_SKIPPED
+        row.transcript_error = None
+        db.commit()
+        return False
+
+    # Lightly corrected by YandexGPT before it's used for anything else
+    # (topic summary, quality score) or shown in the UI - see
+    # yandexgpt_client.adapt_transcript's own docstring for why (product
+    # ask, 2026-10-05: raw SpeechKit output reads poorly, mis-splits
+    # speaker turns). Falls back to the raw text unchanged on any failure,
+    # never blocks on this - gpt_settings is None only if neither
+    # classify_calls_enabled nor assess_quality_enabled is on, which
+    # already keeps this whole function from running at all (see
+    # find_pending_calls), so this is just defensive.
+    row.transcript_text_raw = raw_text
+    row.transcript_text = (
+        yandexgpt_client.adapt_transcript(gpt_client, gpt_settings, raw_text)
+        if gpt_settings is not None
+        else raw_text
+    )
     row.transcript_status = TRANSCRIPT_STATUS_TRANSCRIBED
     row.transcript_error = None
     db.commit()
@@ -250,6 +308,7 @@ class ProcessStats:
     classified: int = 0
     assessed: int = 0
     failed: int = 0
+    skipped: int = 0
     errors: int = 0
 
 
@@ -283,9 +342,20 @@ def process_pending_calls(
             # is the only state that actually still needs transcribing;
             # TRANSCRIBED/CLASSIFIED both already have a transcript.
             if row.transcript_status is None:
-                if not _transcribe(db, settings, stt_client, zeon_settings, stt_settings, row):
+                if not _transcribe(
+                    db,
+                    settings,
+                    stt_client,
+                    zeon_settings,
+                    stt_settings,
+                    gpt_client,
+                    gpt_settings,
+                    row,
+                ):
                     if row.transcript_status == TRANSCRIPT_STATUS_FAILED:
                         stats.failed += 1
+                    elif row.transcript_status == TRANSCRIPT_STATUS_SKIPPED:
+                        stats.skipped += 1
                     else:
                         stats.errors += 1
                     continue
@@ -314,6 +384,7 @@ def process_pending_calls(
         classified=stats.classified,
         assessed=stats.assessed,
         failed=stats.failed,
+        skipped=stats.skipped,
         errors=stats.errors,
     )
     return stats
