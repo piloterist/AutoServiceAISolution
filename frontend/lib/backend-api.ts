@@ -1246,8 +1246,8 @@ export function getLineCalls(params: {
 // Planner's phone-icon badge (see backend telephony_stats_service.
 // get_open_missed_calls for the resolution rules - a rolling 2-Moscow-day
 // window, >=5s real talk time to count as reached, one real contact clears
-// every earlier open miss from that number). Company-wide, not scoped by
-// цех - phone lines have no цех of their own in this data model.
+// every earlier open miss from that number). Company-wide, not filtered by
+// цех - but each call now carries its own best-guess цех (below).
 export type OpenMissedCall = {
   id: string;
   client: string;
@@ -1260,6 +1260,10 @@ export type OpenMissedCall = {
   // callback attempt - `operator` already says which of our own
   // extensions placed that one).
   rang_not_answered: string[];
+  // "<Подразделение> — <Тип цеха>" (see Settings -> IP-телефония's
+  // "Цех — Телефон — Добавочный" table) - null if nothing matched this
+  // call, or the mapping table is empty / hasn't been recomputed yet.
+  workshop_label: string | null;
 };
 
 export type OpenMissedCallsResponse = {

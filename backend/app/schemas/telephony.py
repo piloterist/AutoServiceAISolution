@@ -231,6 +231,11 @@ class OpenMissedCallOut(BaseModel):
     time: str  # "YYYY-MM-DD HH:MM:SS", Moscow-local
     operator: str | None
     rang_not_answered: list[str]
+    # "<Подразделение> — <Тип цеха>" (see services/call_workshop_service.py) -
+    # null if nothing in workshop_phone_mappings matched this call, or it
+    # hasn't been computed yet. Resolved from CallRecord.workshop_id at the
+    # API layer - see endpoints/telephony.py's own _workshop_label_map.
+    workshop_label: str | None
 
     model_config = {"from_attributes": True}
 

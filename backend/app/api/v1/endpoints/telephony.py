@@ -401,12 +401,29 @@ def line_calls(
 def open_missed_calls(db: Session = Depends(get_db)) -> OpenMissedCallsResponse:
     """Planner's phone-icon badge (see telephony_stats_service.
     get_open_missed_calls for the resolution rules) - company-wide across
-    every line, not scoped to a цех (phone lines have no цех of their own
-    in this data model)."""
+    every line (not filtered/scoped to one цех), though each individual
+    call now carries its own best-guess цех (see call_workshop_service.py)
+    for display, per product ask 2026-10-05."""
     calls = telephony_stats_service.get_open_missed_calls(db)
+    workshop_labels = _workshop_label_map(db)
     return OpenMissedCallsResponse(
         count=len(calls),
-        calls=[OpenMissedCallOut.model_validate(call) for call in calls],
+        calls=[
+            OpenMissedCallOut(
+                id=call.id,
+                client=call.client,
+                line=call.line,
+                source_label=call.source_label,
+                direction=call.direction,
+                time=call.time,
+                operator=call.operator,
+                rang_not_answered=call.rang_not_answered,
+                workshop_label=(
+                    workshop_labels.get(call.workshop_id) if call.workshop_id else None
+                ),
+            )
+            for call in calls
+        ],
     )
 
 

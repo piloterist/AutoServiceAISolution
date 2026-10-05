@@ -749,6 +749,13 @@ class OpenMissedCall:
     # callback attempt (direction="callback"), so always [] there -
     # `operator` already says which of our own extensions placed it.
     rang_not_answered: list[str]
+    # See models.call_record.CallRecord.workshop_id/services/
+    # call_workshop_service.py - resolved to a display label at the API
+    # layer (see endpoints/telephony.py's own _workshop_label_map), same as
+    # LineCallEvent.workshop_id above. None if nothing in
+    # workshop_phone_mappings matched this call, or it hasn't been
+    # computed yet.
+    workshop_id: uuid.UUID | None
 
 
 def _missed_badge_window_utc(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -852,6 +859,7 @@ def get_open_missed_calls(db: Session, *, now: datetime | None = None) -> list[O
             rang_not_answered=(
                 list(row.rang_not_answered or []) if row.call_type == CALL_TYPE_IN else []
             ),
+            workshop_id=row.workshop_id,
         )
         for pending in open_by_client.values()
         for row in pending

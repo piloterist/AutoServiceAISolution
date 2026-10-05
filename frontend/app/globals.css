@@ -2417,6 +2417,11 @@ table.admin-data-table td.audit-changes-cell {
   font-variant-numeric: tabular-nums;
 }
 
+.missed-calls-row-workshop {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
 .missed-calls-row-label {
   color: var(--down);
   font-size: 0.85rem;

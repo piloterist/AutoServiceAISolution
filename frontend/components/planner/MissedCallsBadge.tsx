@@ -86,9 +86,10 @@ function groupByClient(calls: OpenMissedCall[]): GroupedMissedCall[] {
  * backend telephony_stats_service.get_open_missed_calls for the exact
  * "still open" rules: last 2 Moscow-calendar days, >=5s real talk to count
  * as reached, one real contact clears every earlier miss from that
- * number). Company-wide - phone lines aren't tied to a цех in this data
- * model, so this isn't scoped to whichever цех the Planner board is
- * currently showing. Nothing here can be dismissed/deleted by hand - a row
+ * number). Company-wide - not filtered by whichever цех the Planner board
+ * is currently showing, though each row now shows its own best-guess цех
+ * (see workshop_label, product ask 2026-10-05). Nothing here can be
+ * dismissed/deleted by hand - a row
  * only leaves this list by a real callback or by aging out of the
  * 2-day window (per product spec), so the count always reflects reality,
  * never a manually-cleared notification. */
@@ -163,6 +164,9 @@ export function MissedCallsBadge() {
                     {group.count > 1 && <span className="missed-calls-row-count"> ({group.count})</span>}
                   </span>
                   {calledTo && <span className="missed-calls-row-called-to">{calledTo}</span>}
+                  {group.last.workshop_label && (
+                    <span className="missed-calls-row-workshop">Цех: {group.last.workshop_label}</span>
+                  )}
                   <span className="missed-calls-row-label">{directionLabel(group.last)}</span>
                   <span className="missed-calls-row-meta">{formatCallTime(group.last.time)}</span>
                 </li>
