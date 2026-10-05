@@ -17,6 +17,7 @@ def test_get_settings_returns_defaults_on_first_access(client, auth_headers) -> 
     assert body["hide_internal_orders"] is False
     assert body["fivesystems_api_enabled"] is False
     assert body["daily_logout_time"] == "23:30"
+    assert body["planner_search_exclude_closed_orders"] is False
 
 
 def test_put_settings_persists_values(client, auth_headers) -> None:

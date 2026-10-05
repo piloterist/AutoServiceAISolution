@@ -34,6 +34,7 @@ def update_app_settings(
     daily_logout_time: str,
     planner_auto_match_enabled: bool,
     planner_auto_match_interval_minutes: int,
+    planner_search_exclude_closed_orders: bool,
 ) -> AppSettings:
     settings = get_app_settings(db)
     settings.insurance_repair_type = insurance_repair_type
@@ -44,6 +45,7 @@ def update_app_settings(
     settings.daily_logout_time = daily_logout_time
     settings.planner_auto_match_enabled = planner_auto_match_enabled
     settings.planner_auto_match_interval_minutes = planner_auto_match_interval_minutes
+    settings.planner_search_exclude_closed_orders = planner_search_exclude_closed_orders
     db.commit()
     db.refresh(settings)
     return settings

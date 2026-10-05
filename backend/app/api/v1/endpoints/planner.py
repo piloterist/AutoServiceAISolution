@@ -65,9 +65,10 @@ def run_auto_match(db: Session = Depends(get_db)) -> AutoMatchResult:
 def search_work_orders(q: str, db: Session = Depends(get_db)) -> list[WorkOrderSearchResult]:
     if not q or len(q.strip()) < 2:
         return []
+    exclude_closed = get_app_settings(db).planner_search_exclude_closed_orders
     return [
         WorkOrderSearchResult.model_validate(w)
-        for w in planner_service.search_work_orders(db, q.strip())
+        for w in planner_service.search_work_orders(db, q.strip(), exclude_closed=exclude_closed)
     ]
 
 

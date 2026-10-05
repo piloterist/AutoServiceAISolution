@@ -35,5 +35,6 @@ def write_settings(
         daily_logout_time=payload.daily_logout_time,
         planner_auto_match_enabled=payload.planner_auto_match_enabled,
         planner_auto_match_interval_minutes=payload.planner_auto_match_interval_minutes,
+        planner_search_exclude_closed_orders=payload.planner_search_exclude_closed_orders,
     )
     return AppSettingsResponse.model_validate(settings)

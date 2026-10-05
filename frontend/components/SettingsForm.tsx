@@ -56,6 +56,9 @@ export function SettingsForm({
   const [plannerAutoMatchIntervalMinutes, setPlannerAutoMatchIntervalMinutes] = useState(
     String(initialSettings.planner_auto_match_interval_minutes),
   );
+  const [plannerSearchExcludeClosedOrders, setPlannerSearchExcludeClosedOrders] = useState(
+    initialSettings.planner_search_exclude_closed_orders,
+  );
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [autoMatchState, setAutoMatchState] = useState<"idle" | "running" | "done" | "error">(
     "idle",
@@ -77,6 +80,7 @@ export function SettingsForm({
           daily_logout_time: dailyLogoutTime,
           planner_auto_match_enabled: plannerAutoMatchEnabled,
           planner_auto_match_interval_minutes: Number(plannerAutoMatchIntervalMinutes) || 180,
+          planner_search_exclude_closed_orders: plannerSearchExcludeClosedOrders,
         } satisfies AppSettings),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -244,6 +248,21 @@ export function SettingsForm({
             {autoMatchMessage}
           </p>
         )}
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={plannerSearchExcludeClosedOrders}
+            onChange={(event) => setPlannerSearchExcludeClosedOrders(event.target.checked)}
+          />
+          Исключить Закрыт и Выполнен
+        </label>
+
+        <p className="settings-description">
+          Не показывать в поиске заказ-наряда (по номеру, VIN и т.п.) при создании записи
+          планировщика заказ-наряды в статусе «Закрыт» или «Выполнен» — привязывать новую запись к
+          уже завершённому заказ-наряду незачем.
+        </p>
       </div>
 
       <div className="card settings-card">

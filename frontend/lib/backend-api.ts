@@ -120,6 +120,10 @@ export type AppSettings = {
   // and services/planner_match_relay.py. Off by default.
   planner_auto_match_enabled: boolean;
   planner_auto_match_interval_minutes: number;
+  // Hides ЗН already "Закрыт"/"Выполнен" from the Planner's "Заказ-наряд"
+  // search (WorkOrderAutocomplete) - see backend services/planner_service.
+  // search_work_orders. Off by default.
+  planner_search_exclude_closed_orders: boolean;
 };
 
 export type StatusSummaryItem = {

@@ -23,6 +23,7 @@ class AppSettingsResponse(BaseModel):
     daily_logout_time: str
     planner_auto_match_enabled: bool
     planner_auto_match_interval_minutes: int
+    planner_search_exclude_closed_orders: bool
 
     model_config = {"from_attributes": True}
 
@@ -36,5 +37,6 @@ class AppSettingsUpdate(BaseModel):
     daily_logout_time: str = "23:30"
     planner_auto_match_enabled: bool = False
     planner_auto_match_interval_minutes: int = Field(default=180, gt=0)
+    planner_search_exclude_closed_orders: bool = False
 
     _validate_daily_logout_time = field_validator("daily_logout_time")(_validate_hhmm)

@@ -88,6 +88,19 @@ class AppSettings(Base):
         Integer, nullable=False, default=180, server_default="180"
     )
 
+    # Hides ЗН already in a terminal status ("Закрыт"/"Выполнен") from the
+    # Planner's "Заказ-наряд" search (services/planner_service.
+    # search_work_orders) - product ask, 2026-10-05: linking a new Planner
+    # record to a work order that's already done makes no sense. These two
+    # literal status strings are this deployment's real Alpha-Auto values
+    # (see WorkOrder.status's own docstring - plain free text, no enum) -
+    # off by default so a client with different status wording isn't
+    # silently affected; a work order with no status at all is never
+    # hidden by this (nothing to match against).
+    planner_search_exclude_closed_orders: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

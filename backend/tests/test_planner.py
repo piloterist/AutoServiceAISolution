@@ -8,6 +8,7 @@ from urllib.parse import quote
 import pytest
 from sqlalchemy.orm import Session
 
+from app.models.app_settings import AppSettings
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.slesarka_status import SlesarkaStatus
@@ -137,6 +138,83 @@ def test_search_work_orders_matches_number_and_vehicle(
         f"{PLANNER_URL}/work-orders/search", params={"q": "qqqqq"}, headers=auth_headers
     )
     assert no_match.json() == []
+
+
+def _enable_exclude_closed_orders(db_session: Session) -> None:
+    row = db_session.get(AppSettings, 1)
+    if row is None:
+        row = AppSettings(id=1)
+        db_session.add(row)
+    row.planner_search_exclude_closed_orders = True
+    db_session.commit()
+
+
+def test_search_work_orders_includes_closed_by_default(
+    db_session: Session, client, auth_headers
+) -> None:
+    """planner_search_exclude_closed_orders defaults to off - an existing
+    deployment's search behavior doesn't silently change on upgrade."""
+    closed = WorkOrder(
+        external_number="СЛ90000001",
+        source_system="alpha-auto",
+        document_date=datetime(2026, 9, 20, tzinfo=UTC),
+        status="Закрыт",
+        amount=Decimal("0.00"),
+    )
+    db_session.add(closed)
+    db_session.commit()
+
+    response = client.get(
+        f"{PLANNER_URL}/work-orders/search", params={"q": "СЛ9000000"}, headers=auth_headers
+    )
+    assert [w["external_number"] for w in response.json()] == ["СЛ90000001"]
+
+
+def test_search_work_orders_excludes_closed_when_setting_enabled(
+    db_session: Session, client, auth_headers
+) -> None:
+    """Product ask, 2026-10-05: linking a new Planner record to a ЗН
+    that's already "Закрыт"/"Выполнен" makes no sense - opt-in via
+    Settings (AppSettings.planner_search_exclude_closed_orders)."""
+    _enable_exclude_closed_orders(db_session)
+    closed = WorkOrder(
+        external_number="СЛ90000002",
+        source_system="alpha-auto",
+        document_date=datetime(2026, 9, 20, tzinfo=UTC),
+        status="Закрыт",
+        amount=Decimal("0.00"),
+    )
+    done = WorkOrder(
+        external_number="СЛ90000003",
+        source_system="alpha-auto",
+        document_date=datetime(2026, 9, 21, tzinfo=UTC),
+        status="Выполнен",
+        amount=Decimal("0.00"),
+    )
+    # No status at all - never hidden, nothing to match against.
+    no_status = WorkOrder(
+        external_number="СЛ90000004",
+        source_system="alpha-auto",
+        document_date=datetime(2026, 9, 22, tzinfo=UTC),
+        amount=Decimal("0.00"),
+    )
+    open_order = WorkOrder(
+        external_number="СЛ90000005",
+        source_system="alpha-auto",
+        document_date=datetime(2026, 9, 23, tzinfo=UTC),
+        status="В работе",
+        amount=Decimal("0.00"),
+    )
+    db_session.add_all([closed, done, no_status, open_order])
+    db_session.commit()
+
+    response = client.get(
+        f"{PLANNER_URL}/work-orders/search", params={"q": "СЛ9000000"}, headers=auth_headers
+    )
+    assert sorted(w["external_number"] for w in response.json()) == [
+        "СЛ90000004",
+        "СЛ90000005",
+    ]
 
 
 # ---- Слесарный --------------------------------------------------------------

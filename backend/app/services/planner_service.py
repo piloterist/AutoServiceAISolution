@@ -40,6 +40,13 @@ from app.services.internal_order_rules import normalize_vin
 ENTITY_WORKSHOP_JOB = "workshop_job"
 ENTITY_BODY_CAR = "body_car"
 
+# WorkOrder.status is plain free text (1C's own value, e.g. "Закрыт"/
+# "Выполнен" on this deployment - see WorkOrder.status's own docstring, no
+# enum). Gated behind AppSettings.planner_search_exclude_closed_orders
+# (off by default) rather than baked unconditionally into the query below,
+# since another deployment's status wording may differ entirely.
+CLOSED_WORK_ORDER_STATUSES = ("Закрыт", "Выполнен")
+
 
 class SchedulingError(ValueError):
     """A slot/date is outside working hours or overlaps another record -
@@ -53,20 +60,26 @@ class NotFoundError(ValueError):
 # ---- ЗН autocomplete --------------------------------------------------------
 
 
-def search_work_orders(db: Session, q: str, *, limit: int = 20) -> list[WorkOrder]:
+def search_work_orders(
+    db: Session, q: str, *, exclude_closed: bool = False, limit: int = 20
+) -> list[WorkOrder]:
     like = f"%{q}%"
-    stmt = (
-        select(WorkOrder)
-        .where(
-            or_(
-                WorkOrder.external_number.ilike(like),
-                WorkOrder.vehicle_description.ilike(like),
-                WorkOrder.vin.ilike(like),
-                WorkOrder.customer_name.ilike(like),
-            )
+    conditions = [
+        or_(
+            WorkOrder.external_number.ilike(like),
+            WorkOrder.vehicle_description.ilike(like),
+            WorkOrder.vin.ilike(like),
+            WorkOrder.customer_name.ilike(like),
         )
-        .order_by(WorkOrder.document_date.desc())
-        .limit(limit)
+    ]
+    if exclude_closed:
+        # A work order with no status at all is never hidden - nothing to
+        # match against (see CLOSED_WORK_ORDER_STATUSES's own comment).
+        conditions.append(
+            or_(WorkOrder.status.is_(None), WorkOrder.status.notin_(CLOSED_WORK_ORDER_STATUSES))
+        )
+    stmt = (
+        select(WorkOrder).where(*conditions).order_by(WorkOrder.document_date.desc()).limit(limit)
     )
     return list(db.scalars(stmt))
 
