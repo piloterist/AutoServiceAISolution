@@ -47,7 +47,6 @@ function formatPercentOrDash(percent: string | null): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(percent)) + "%";
 }
 
-type PaymentFilter = "all" | "full" | "partial" | "none";
 type InternalFilter = "all" | "internal" | "external";
 type ScheduledFilter = "all" | "yes" | "no";
 
@@ -67,16 +66,25 @@ function matchesScheduledFilter(isScheduled: boolean, filter: ScheduledFilter): 
   return filter === "yes" ? isScheduled : !isScheduled;
 }
 
-/** "Оплата" filter categories, derived from the same payment_percent 5S
- * AUTO already computes (see WorkOrderListItem) - not a new calculation.
- * A null payment_percent (no payment data from 1C yet) counts as "Без
- * оплаты", same as an explicit 0. */
-function matchesPaymentFilter(percent: string | null, filter: PaymentFilter): boolean {
-  if (filter === "all") return true;
+/** "Оплата" bucket labels, derived from the same payment_percent 5S AUTO
+ * already computes (see WorkOrderListItem) - not a new calculation. A null
+ * payment_percent (no payment data from 1C yet) counts as "Без оплаты",
+ * same as an explicit 0. Multi-select, same shape as "Статус"/"Вид
+ * ремонта" below (product ask, 2026-10-06: Оплата should allow picking
+ * several values at once, the same way Статус already did) - an empty
+ * selection means "show everything", not "show nothing". */
+const PAYMENT_BUCKETS = ["Полная оплата", "Частичная оплата", "Без оплаты"] as const;
+
+function paymentBucketLabel(percent: string | null): (typeof PAYMENT_BUCKETS)[number] {
   const value = percent === null ? 0 : Number(percent);
-  if (filter === "none") return value <= 0;
-  if (filter === "partial") return value > 0 && value < 100;
-  return value >= 100; // "full"
+  if (value <= 0) return "Без оплаты";
+  if (value < 100) return "Частичная оплата";
+  return "Полная оплата";
+}
+
+function matchesPaymentFilter(percent: string | null, selected: string[]): boolean {
+  if (selected.length === 0) return true;
+  return selected.includes(paymentBucketLabel(percent));
 }
 
 // A bare "YYYY-MM-DD" from a plain <input type="date"> picker means a
@@ -115,6 +123,49 @@ function isWithinDateRange(iso: string | null, dateFrom: string, dateTo: string)
   }
 
   return true;
+}
+
+/** A column filter box accepts comma-separated values, OR'd together (e.g.
+ * "СЦН0003096,ПС00010369" matches either number) - product ask,
+ * 2026-10-06. Shared by every per-column text/numeric filter below. */
+function splitFilterSegments(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+type NumericOp = ">" | "<" | ">=" | "<=" | "!" | "=";
+
+/** "!0" (not equal), ">100"/"<100" (greater/less than) - product ask,
+ * 2026-10-06, for the numeric columns (Сумма/Сумма оплаты/% оплаты).
+ * Returns null for a segment that isn't a recognized numeric expression,
+ * so the caller falls back to a plain substring match against the
+ * formatted display string (preserves the old "type 125, matches
+ * 125 000 ₽" behavior for a bare number). */
+function parseNumericToken(segment: string): { op: NumericOp; value: number } | null {
+  const match = segment.match(/^(>=|<=|>|<|!|=)?\s*(-?\d+(?:[.,]\d+)?)$/);
+  if (!match) return null;
+  const value = Number(match[2].replace(",", "."));
+  if (Number.isNaN(value)) return null;
+  return { op: (match[1] as NumericOp) ?? "=", value };
+}
+
+function matchesNumericToken(raw: number, token: { op: NumericOp; value: number }): boolean {
+  switch (token.op) {
+    case ">":
+      return raw > token.value;
+    case "<":
+      return raw < token.value;
+    case ">=":
+      return raw >= token.value;
+    case "<=":
+      return raw <= token.value;
+    case "!":
+      return raw !== token.value;
+    default:
+      return raw === token.value;
+  }
 }
 
 type Row = {
@@ -165,20 +216,56 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "paymentPercent", label: "% оплаты", numeric: true },
 ];
 
+/** The real number behind a numeric column, for operator-based filtering
+ * (parseNumericToken above) - as opposed to `row[key]`, which is the
+ * already-formatted display string ("125 000 ₽"). A null underlying value
+ * counts as 0, same convention matchesPaymentFilter already uses. */
+function numericRawValue(item: WorkOrderListItem, key: ColumnKey): number {
+  if (key === "amount") return Number(item.amount);
+  if (key === "paidAmount") return item.paid_amount === null ? 0 : Number(item.paid_amount);
+  if (key === "paymentPercent") return item.payment_percent === null ? 0 : Number(item.payment_percent);
+  return 0;
+}
+
 type PersistedFilters = {
   search: string;
   columnFilters: Record<ColumnKey, string>;
   selectedStatuses: string[];
+  selectedPayments: string[];
+  selectedRepairTypes: string[];
   dateFrom: string;
   dateTo: string;
   closedFrom: string;
   closedTo: string;
-  paymentFilter: PaymentFilter;
   internalFilter: InternalFilter;
   scheduledFilter: ScheduledFilter;
 };
 
 const FILTERS_STORAGE_KEY = "work-orders-filters:v1";
+
+// Remembers which row was last opened, so returning to the list (product
+// ask, 2026-10-06: "хочу чтобы при возврате на страницу у меня на экране
+// был тот заказ-наряд который я открывал") can scroll back to it instead
+// of resetting to the top - see the scroll-restore effect in
+// WorkOrdersTable below. Session-scoped like the filters above, not tied
+// to any one row's own data.
+const LAST_OPENED_STORAGE_KEY = "work-orders-last-opened:v1";
+
+function rememberLastOpened(id: string): void {
+  try {
+    sessionStorage.setItem(LAST_OPENED_STORAGE_KEY, id);
+  } catch {
+    // Ignore (private browsing, quota) - just won't scroll back to it.
+  }
+}
+
+function readLastOpened(): string | null {
+  try {
+    return sessionStorage.getItem(LAST_OPENED_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
 
 /** So filters survive "open a work order, then go back" - without this,
  * every click into a row and back reset the whole toolbar, since
@@ -249,6 +336,87 @@ function buildClipboardText(rows: Row[]): string {
     ].join("\t"),
   );
   return [header, ...lines].join("\n");
+}
+
+/** Shared multi-select checkbox dropdown for Статус/Оплата/Вид ремонта
+ * (product ask, 2026-10-06: Оплата and Вид ремонта should work the same
+ * way Статус already did, and all three should look the same - label to
+ * the left, "Все" shown when nothing's picked, same as a plain <select>
+ * would read, instead of the label being the clickable control's own
+ * text). */
+function MultiSelectDropdown({
+  label,
+  options,
+  selected,
+  onToggle,
+  onClear,
+  emptyMessage,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onToggle: (value: string) => void;
+  onClear: () => void;
+  emptyMessage: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDetailsElement>(null);
+
+  // A native <details> only closes on a second click on its own <summary>
+  // - it has no built-in "click outside to close" behavior the way a
+  // <select> dropdown does. Made controlled so an outside click can close
+  // it too, without interfering with clicking the summary itself (native
+  // toggle) or checking boxes inside the panel (both are inside `ref`, so
+  // the outside-click check leaves them alone).
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  const summaryText =
+    selected.length === 0
+      ? "Все"
+      : selected.length <= 2
+        ? selected.join(", ")
+        : `Выбрано: ${selected.length}`;
+
+  return (
+    <div className="dropdown-filter">
+      <span className="period-filter-label">{label}</span>
+      <details
+        ref={ref}
+        className="status-filter"
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary>{summaryText}</summary>
+        <div className="status-filter-panel">
+          {options.length === 0 && <p className="status-filter-empty">{emptyMessage}</p>}
+          {options.map((option) => (
+            <label key={option} className="status-filter-checkbox">
+              <input
+                type="checkbox"
+                checked={selected.includes(option)}
+                onChange={() => onToggle(option)}
+              />
+              {option}
+            </label>
+          ))}
+          {selected.length > 0 && (
+            <button type="button" className="status-filter-clear" onClick={onClear}>
+              Сбросить
+            </button>
+          )}
+        </div>
+      </details>
+    </div>
+  );
 }
 
 export function WorkOrdersTable({
@@ -370,16 +538,25 @@ export function WorkOrdersTable({
     internal: "",
     scheduled: "",
     department: initialDepartment ?? persisted?.columnFilters.department ?? "",
-    repairType: persisted?.columnFilters.repairType ?? "",
+    // Вид ремонта has its own checkbox dropdown (below), same as Статус -
+    // see the comment on selectedStatuses.
+    repairType: "",
     amount: persisted?.columnFilters.amount ?? "",
     paidAmount: persisted?.columnFilters.paidAmount ?? "",
     paymentPercent: persisted?.columnFilters.paymentPercent ?? "",
   }));
-  // Status has its own checkbox dropdown (below) instead of the generic
-  // per-column text filter every other column gets - a free-text substring
-  // match makes little sense against a small fixed set of status values.
+  // Status/Вид ремонта/Оплата each get their own checkbox dropdown (below)
+  // instead of the generic per-column text filter every other column
+  // gets - a free-text substring match makes little sense against a small
+  // fixed set of values.
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(
     () => (initialStatus ? [initialStatus] : persisted?.selectedStatuses ?? []),
+  );
+  const [selectedPayments, setSelectedPayments] = useState<string[]>(
+    () => persisted?.selectedPayments ?? [],
+  );
+  const [selectedRepairTypes, setSelectedRepairTypes] = useState<string[]>(
+    () => persisted?.selectedRepairTypes ?? [],
   );
   const [dateFrom, setDateFrom] = useState(() => initialDateFrom ?? persisted?.dateFrom ?? "");
   const [dateTo, setDateTo] = useState(() => initialDateTo ?? persisted?.dateTo ?? "");
@@ -387,9 +564,6 @@ export function WorkOrdersTable({
     () => initialClosedFrom ?? persisted?.closedFrom ?? "",
   );
   const [closedTo, setClosedTo] = useState(() => initialClosedTo ?? persisted?.closedTo ?? "");
-  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>(
-    () => persisted?.paymentFilter ?? "all",
-  );
   const [internalFilter, setInternalFilter] = useState<InternalFilter>(
     () => persisted?.internalFilter ?? "all",
   );
@@ -402,11 +576,12 @@ export function WorkOrdersTable({
       search,
       columnFilters,
       selectedStatuses,
+      selectedPayments,
+      selectedRepairTypes,
       dateFrom,
       dateTo,
       closedFrom,
       closedTo,
-      paymentFilter,
       internalFilter,
       scheduledFilter,
     });
@@ -414,11 +589,12 @@ export function WorkOrdersTable({
     search,
     columnFilters,
     selectedStatuses,
+    selectedPayments,
+    selectedRepairTypes,
     dateFrom,
     dateTo,
     closedFrom,
     closedTo,
-    paymentFilter,
     internalFilter,
     scheduledFilter,
   ]);
@@ -441,11 +617,12 @@ export function WorkOrdersTable({
       paymentPercent: "",
     });
     setSelectedStatuses([]);
+    setSelectedPayments([]);
+    setSelectedRepairTypes([]);
     setDateFrom("");
     setDateTo("");
     setClosedFrom("");
     setClosedTo("");
-    setPaymentFilter("all");
     setInternalFilter("all");
     setScheduledFilter("all");
     clearPersistedFilters();
@@ -488,26 +665,27 @@ export function WorkOrdersTable({
     );
   };
 
-  // A native <details> only closes on a second click on its own <summary>
-  // - it has no built-in "click outside to close" behavior the way a
-  // <select> dropdown does. Made controlled (open={statusFilterOpen}) so
-  // an outside click can close it too, without interfering with clicking
-  // the summary itself (native toggle) or checking boxes inside the panel
-  // (both are inside statusFilterRef, so the outside-click check leaves
-  // them alone).
-  const [statusFilterOpen, setStatusFilterOpen] = useState(false);
-  const statusFilterRef = useRef<HTMLDetailsElement>(null);
+  // Distinct repair-type values actually present in the data - same
+  // never-hardcode rule as availableStatuses above.
+  const availableRepairTypes = useMemo(() => {
+    const values = new Set<string>();
+    for (const item of items) {
+      if (item.repair_type) values.add(item.repair_type);
+    }
+    return Array.from(values).sort((a, b) => a.localeCompare(b, "ru"));
+  }, [items]);
 
-  useEffect(() => {
-    if (!statusFilterOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (statusFilterRef.current && !statusFilterRef.current.contains(event.target as Node)) {
-        setStatusFilterOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [statusFilterOpen]);
+  const togglePayment = (bucket: string) => {
+    setSelectedPayments((prev) =>
+      prev.includes(bucket) ? prev.filter((value) => value !== bucket) : [...prev, bucket],
+    );
+  };
+
+  const toggleRepairType = (value: string) => {
+    setSelectedRepairTypes((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  };
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -520,20 +698,34 @@ export function WorkOrdersTable({
         if (!haystack.includes(query)) return false;
       }
 
-      for (const { key } of COLUMNS) {
-        const filterValue = columnFilters[key].trim().toLowerCase();
-        if (filterValue && !row[key].toLowerCase().includes(filterValue)) return false;
+      for (const { key, numeric } of COLUMNS) {
+        const segments = splitFilterSegments(columnFilters[key]);
+        if (segments.length === 0) continue;
+        const matched = segments.some((segment) => {
+          if (numeric) {
+            const token = parseNumericToken(segment);
+            if (token) return matchesNumericToken(numericRawValue(row.item, key), token);
+          }
+          return row[key].toLowerCase().includes(segment.toLowerCase());
+        });
+        if (!matched) return false;
       }
 
-      // No status checked = show all statuses (same "empty = all" rule
+      // No status/вид ремонта checked = show all (same "empty = all" rule
       // used by the department filter on the dashboard).
       if (selectedStatuses.length > 0 && !selectedStatuses.includes(row.item.status ?? "")) {
+        return false;
+      }
+      if (
+        selectedRepairTypes.length > 0 &&
+        !selectedRepairTypes.includes(row.item.repair_type ?? "")
+      ) {
         return false;
       }
 
       if (!isWithinDateRange(row.item.document_date, dateFrom, dateTo)) return false;
       if (!isWithinDateRange(row.item.closed_date, closedFrom, closedTo)) return false;
-      if (!matchesPaymentFilter(row.item.payment_percent, paymentFilter)) return false;
+      if (!matchesPaymentFilter(row.item.payment_percent, selectedPayments)) return false;
       if (!matchesInternalFilter(row.item.is_internal, internalFilter)) return false;
       if (!matchesScheduledFilter(row.item.is_scheduled, scheduledFilter)) return false;
 
@@ -544,11 +736,12 @@ export function WorkOrdersTable({
     search,
     columnFilters,
     selectedStatuses,
+    selectedPayments,
+    selectedRepairTypes,
     dateFrom,
     dateTo,
     closedFrom,
     closedTo,
-    paymentFilter,
     internalFilter,
     scheduledFilter,
   ]);
@@ -587,6 +780,35 @@ export function WorkOrdersTable({
     overscan: 12,
   });
 
+  // Scrolls back to whatever row was last opened (see
+  // rememberLastOpened/readLastOpened above) - once per mount only
+  // (WorkOrdersTable remounts fresh on every visit to the list, per the
+  // comment on readPersistedFilters), so a filter the user types
+  // afterward doesn't keep yanking the scroll position back here.
+  const scrolledToLastOpenedRef = useRef(false);
+  useEffect(() => {
+    if (scrolledToLastOpenedRef.current) return;
+    if (loading || filteredRows.length === 0) return;
+    scrolledToLastOpenedRef.current = true;
+    const lastOpenedId = readLastOpened();
+    if (!lastOpenedId) return;
+    const index = filteredRows.findIndex((row) => row.item.id === lastOpenedId);
+    if (index >= 0) rowVirtualizer.scrollToIndex(index, { align: "center" });
+  }, [loading, filteredRows, rowVirtualizer]);
+
+  // Opening a row remembers it (scroll-restore effect above) and carries
+  // the current URL's own query string along as `from`, so the detail
+  // page's "← К списку заказ-нарядов" link can return to this exact
+  // filtered/scoped view (e.g. Cockpit's ДЗ drill-down, a dashboard status
+  // chip) instead of a bare /work-orders - product ask, 2026-10-06: "стоит
+  // мне там поставить какой-то фильтр и все сбивается" after opening a
+  // row and coming back from Cockpit's ДЗ link.
+  const openRow = (id: string) => {
+    rememberLastOpened(id);
+    const back = typeof window !== "undefined" ? window.location.search : "";
+    router.push(`/work-orders/${id}${back ? `?from=${encodeURIComponent(back)}` : ""}`);
+  };
+
   if (loadError) {
     return (
       <div className="wide-page">
@@ -620,54 +842,32 @@ export function WorkOrdersTable({
       )}
 
       <div className="toolbar">
-        <label className="payment-filter">
-          <span className="period-filter-label">Оплата</span>
-          <select
-            value={paymentFilter}
-            onChange={(event) => setPaymentFilter(event.target.value as PaymentFilter)}
-            aria-label="Фильтр по оплате"
-          >
-            <option value="all">Все</option>
-            <option value="full">Полная оплата</option>
-            <option value="partial">Частичная оплата</option>
-            <option value="none">Без оплаты</option>
-          </select>
-        </label>
+        <MultiSelectDropdown
+          label="Оплата"
+          options={[...PAYMENT_BUCKETS]}
+          selected={selectedPayments}
+          onToggle={togglePayment}
+          onClear={() => setSelectedPayments([])}
+          emptyMessage="Нет данных по оплате"
+        />
 
-        <details
-          ref={statusFilterRef}
-          className="status-filter"
-          open={statusFilterOpen}
-          onToggle={(event) => setStatusFilterOpen(event.currentTarget.open)}
-        >
-          <summary>
-            Статус{selectedStatuses.length > 0 ? ` (${selectedStatuses.length})` : ""}
-          </summary>
-          <div className="status-filter-panel">
-            {availableStatuses.length === 0 && (
-              <p className="status-filter-empty">Нет данных по статусам</p>
-            )}
-            {availableStatuses.map((status) => (
-              <label key={status} className="status-filter-checkbox">
-                <input
-                  type="checkbox"
-                  checked={selectedStatuses.includes(status)}
-                  onChange={() => toggleStatus(status)}
-                />
-                {status}
-              </label>
-            ))}
-            {selectedStatuses.length > 0 && (
-              <button
-                type="button"
-                className="status-filter-clear"
-                onClick={() => setSelectedStatuses([])}
-              >
-                Сбросить
-              </button>
-            )}
-          </div>
-        </details>
+        <MultiSelectDropdown
+          label="Статус"
+          options={availableStatuses}
+          selected={selectedStatuses}
+          onToggle={toggleStatus}
+          onClear={() => setSelectedStatuses([])}
+          emptyMessage="Нет данных по статусам"
+        />
+
+        <MultiSelectDropdown
+          label="Вид ремонта"
+          options={availableRepairTypes}
+          selected={selectedRepairTypes}
+          onToggle={toggleRepairType}
+          onClear={() => setSelectedRepairTypes([])}
+          emptyMessage="Нет данных по видам ремонта"
+        />
 
         <div className="period-filter">
           <span className="period-filter-label">Дата документа</span>
@@ -737,7 +937,7 @@ export function WorkOrdersTable({
             style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
           >
             {COLUMNS.map((col) =>
-              col.key === "status" ? (
+              col.key === "status" || col.key === "repairType" ? (
                 <div key={col.key} className="vt-cell" role="columnheader" />
               ) : col.key === "internal" ? (
                 <div key={col.key} className="vt-cell" role="columnheader">
@@ -776,6 +976,11 @@ export function WorkOrdersTable({
                       setColumnFilters((prev) => ({ ...prev, [col.key]: event.target.value }))
                     }
                     placeholder="Фильтр"
+                    title={
+                      col.numeric
+                        ? "Через запятую: несколько значений ИЛИ. Можно >100, <100, !0"
+                        : "Через запятую: несколько значений ИЛИ"
+                    }
                     aria-label={`Фильтр по полю ${col.label}`}
                   />
                 </div>
@@ -806,11 +1011,11 @@ export function WorkOrdersTable({
                     gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
-                  onClick={() => router.push(`/work-orders/${row.item.id}`)}
+                  onDoubleClick={() => openRow(row.item.id)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      router.push(`/work-orders/${row.item.id}`);
+                      openRow(row.item.id);
                     }
                   }}
                 >

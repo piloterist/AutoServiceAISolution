@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Numeric, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -125,6 +125,12 @@ class WorkOrder(Base):
         DateTime(timezone=True), nullable=True
     )
     raw_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Free-text staff note (product ask, 2026-10-06) - purely internal,
+    # never sent by or to 1C. Deliberately absent from `_upsert_work_order`'s
+    # own `values`/`update_columns` (see services/import_service.py), so a
+    # re-import can never touch/reset it.
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

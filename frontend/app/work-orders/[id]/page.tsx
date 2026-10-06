@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { WorkOrderComment } from "@/components/WorkOrderComment";
 import { WorkOrderLineTabs } from "@/components/WorkOrderLineTabs";
 import { getWorkOrder } from "@/lib/backend-api";
 
@@ -29,10 +30,20 @@ function formatPercent(percent: string | null): string {
 
 export default async function WorkOrderDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  /** Carries the list page's own current query string (set by
+   * WorkOrdersTable's openRow) - so the back link below returns to the
+   * exact filtered/scoped view the user came from (e.g. Cockpit's ДЗ
+   * drill-down's ?only_receivables=1&workshop_id=..., a dashboard status
+   * chip's ?status=...) instead of resetting to a bare /work-orders
+   * (product ask, 2026-10-06). */
+  searchParams: Promise<{ from?: string }>;
 }) {
   const { id } = await params;
+  const { from } = await searchParams;
+  const backHref = from ? `/work-orders${from}` : "/work-orders";
 
   let workOrder;
   let error: string | null = null;
@@ -56,7 +67,7 @@ export default async function WorkOrderDetailPage({
   return (
     <div>
       <p className="detail-back">
-        <Link href="/work-orders">← К списку заказ-нарядов</Link>
+        <Link href={backHref}>← К списку заказ-нарядов</Link>
       </p>
 
       {error && (
@@ -141,6 +152,8 @@ export default async function WorkOrderDetailPage({
               <span>{formatAmount(workOrder.debt_amount)}</span>
             </div>
           </div>
+
+          <WorkOrderComment workOrderId={workOrder.id} initialComment={workOrder.comment} />
 
           <div className="card">
             <WorkOrderLineTabs

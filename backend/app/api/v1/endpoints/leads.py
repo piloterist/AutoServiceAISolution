@@ -9,11 +9,11 @@ services/leads_service.py's module docstring for why). Every other route
 here still uses the normal `verify_api_token`, same as the rest of the app.
 """
 
-import asyncio
 import mimetypes
 import uuid
+from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
@@ -67,26 +67,35 @@ def _lead_out(item: leads_service.LeadWithStatus) -> WebsiteLeadOut:
 
 
 @router.post("/intake", status_code=status.HTTP_201_CREATED)
-async def intake_lead(
-    request: Request,
+def intake_lead(
+    payload: dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
 ) -> dict[str, str]:
+    """A plain `def` endpoint on purpose (unlike most of this router, which
+    doesn't need to care either way) - FastAPI then runs this on Starlette's
+    own request threadpool, same as every other synchronous route in this
+    app (see db/session.py's own docstring). That pool is separate from the
+    raw asyncio default executor the 4 always-on background relays (see
+    app/main.py's lifespan) share via their own `asyncio.to_thread` calls -
+    this endpoint used to `await asyncio.to_thread(...)` here too (to avoid
+    blocking the event loop while archiving photos, see lead_photos_service),
+    which put it in direct contention for that SAME shared executor: a
+    relay cycle mid-SpeechKit-poll (services/call_transcription_service._
+    transcribe's own sleep loop, now longer since the 2026-10-05 adapt_
+    transcript/full-model changes) occupies one of only
+    min(32, cpu_count+4) threads for minutes at a time, so an incoming
+    lead could queue behind it even with zero photos of its own to
+    archive - confirmed as the cause of intermittent 10-15s site-side
+    hangs reported 2026-10-06 (occurred on photo-less submissions too,
+    which ruled out archive_photos' own per-photo network calls as the
+    cause)."""
     token = authorization.removeprefix("Bearer ").strip() if authorization else None
     if not leads_service.verify_intake_token(db, token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid intake token")
 
-    payload = await request.json()
-    if not isinstance(payload, dict):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Expected a JSON object"
-        )
-
     try:
-        # Archives any attached photos to Yandex.Disk inline (see
-        # lead_photos_service) - potentially several seconds of outbound
-        # HTTP per photo, so this must not block the event loop.
-        lead = await asyncio.to_thread(leads_service.create_lead, db, payload)
+        lead = leads_service.create_lead(db, payload)
     except LeadRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)

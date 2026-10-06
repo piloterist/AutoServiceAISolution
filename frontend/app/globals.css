@@ -336,7 +336,9 @@ main:has(.full-width-page) {
   color: var(--text);
 }
 
-/* --- Work Orders toolbar: status checkbox dropdown + period range --- */
+/* --- Work Orders toolbar: Статус/Оплата/Вид ремонта checkbox dropdowns
+   (.status-filter is a generic class name now, shared by all three - see
+   MultiSelectDropdown in WorkOrdersTable.tsx) + period range --- */
 
 .toolbar {
   display: flex;
@@ -354,14 +356,9 @@ main:has(.full-width-page) {
   cursor: pointer;
   list-style: none;
   /* Without this, <summary>'s default block sizing stretches it wider
-     than its text (unlike the sibling Оплата <select>, which naturally
-     shrinks to content) - forces the same "size to content" behavior so
-     both toolbar controls line up visually. */
+     than its text - forces "size to content" so every .dropdown-filter
+     control in the toolbar lines up visually. */
   width: max-content;
-  /* Exactly mirrors .payment-filter select's box (padding + font-size) -
-     a <summary> and a <select> render at different heights even with
-     identical padding if the font-size differs, since padding is fixed
-     but line-height scales with it. */
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -437,20 +434,13 @@ main:has(.full-width-page) {
   gap: 0.75rem;
 }
 
-.payment-filter {
+/* Shared "label left, dropdown right" wrapper for the toolbar's three
+   multi-select checkbox dropdowns (Статус/Оплата/Вид ремонта - see
+   MultiSelectDropdown in WorkOrdersTable.tsx; product ask, 2026-10-06). */
+.dropdown-filter {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.payment-filter select {
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.85rem;
-  line-height: 1.25;
-  color: var(--text);
-  background: var(--surface);
 }
 
 /* --- Settings page --- */
@@ -1858,6 +1848,26 @@ table.admin-data-table td.audit-changes-cell {
 .detail-label {
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+.work-order-comment-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--surface);
+  resize: vertical;
+}
+
+.work-order-comment-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
 }
 
 .tabs {
@@ -3870,7 +3880,10 @@ main:has(.cockpit-page) {
 .cockpit-unit-label {
   font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
   font-size: 15px;
-  letter-spacing: 0.04em;
+  /* Wider than the usual 0.04em default elsewhere - product feedback,
+     2026-10-06: curved along a tight arc, the glyphs otherwise read as
+     cramped into each other ("как-то скомкано"). */
+  letter-spacing: 0.2em;
 }
 
 /* Same family as .cockpit-gauge-number, scaled down for the smaller
@@ -3880,19 +3893,6 @@ main:has(.cockpit-page) {
   font-style: italic;
   font-size: 15px;
   font-weight: 700;
-}
-
-/* Deliberately small/secondary - the needle's position against the dial's
-   own ticks is the primary reading (per product feedback: a real
-   instrument shows its value through the needle, not a large printed
-   sum dominating the face) - now sits dead-center under the hub instead,
-   so it reads as this gauge's one digital readout rather than a floating
-   label; sized to be legible there without competing with the needle. */
-.cockpit-money-main {
-  font-family: Consolas, "SFMono-Regular", "Roboto Mono", "Segoe UI Mono", monospace;
-  font-size: 21px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
 }
 
 .cockpit-money-secondary {
@@ -4048,10 +4048,10 @@ main:has(.cockpit-page) {
   outline-offset: -2px;
 }
 
-/* Reads in the same bright tone as the main gauge's own digital sum
-   (.cockpit-money-main's #eafcff) - per product feedback, 2026-09-29 -
-   and noticeably larger too (per product feedback, 2026-09-30: "выделяй
-   более крупным шрифтом и ярким цветом тот цех, который выбрался"). */
+/* Reads in the same bright tone the main gauge's own digital readout used
+   (#eafcff) - per product feedback, 2026-09-29 - and noticeably larger too
+   (per product feedback, 2026-09-30: "выделяй более крупным шрифтом и
+   ярким цветом тот цех, который выбрался"). */
 .cockpit-dept-wheel-row[data-selected="true"] {
   color: #eafcff;
   font-size: 1.4rem;
@@ -4350,8 +4350,21 @@ main:has(.cockpit-page) {
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  /* Slightly more than the original 10px (product feedback, 2026-10-06) -
+     room for the now-~20%-bigger ДЗ/КЗ value text below each capsule
+     (.cockpit-strip-value right below) without crowding the row below it. */
+  gap: 15px;
   pointer-events: none;
+}
+
+/* ~20% bigger than the shared base .cockpit-strip-footer's 0.62rem
+   (product feedback, 2026-10-06: "подписи цифр которые под ДЗ КЗ... на
+   20% примерно"), then nudged up a bit more the same day ("еще немного
+   увеличь... еще на пару пунктов") - just this stack's own value text,
+   not the revenue strip's (already separately scaled, see
+   .cockpit-revenue-stack above). */
+.cockpit-payments-stack .cockpit-strip-footer {
+  font-size: 0.85rem;
 }
 
 .cockpit-payments-stack-row {

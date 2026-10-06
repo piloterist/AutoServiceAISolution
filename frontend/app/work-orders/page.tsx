@@ -36,8 +36,10 @@ export default async function WorkOrdersPage({
 
   return (
     <div>
-      <h1>Work Orders</h1>
-
+      {/* No page title here on purpose (product ask, 2026-10-06) - the nav
+          tab already says "Заказ Наряды", and the extra heading block just
+          ate vertical space this table badly needs (virtualized, often
+          hundreds of rows). */}
       <WorkOrdersTable
         initialStatus={params.status}
         initialDateFrom={params.date_from}

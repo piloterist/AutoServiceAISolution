@@ -318,6 +318,64 @@ def test_delete_work_order_missing_returns_404(client, auth_headers) -> None:
     assert response.status_code == 404
 
 
+def test_update_work_order_comment_requires_auth(client, db_session) -> None:
+    work_order = _make_work_order(external_number="WO-COMMENT-AUTH")
+    db_session.add(work_order)
+    db_session.commit()
+
+    response = client.patch(f"{LIST_URL}/{work_order.id}/comment", json={"comment": "Заметка"})
+
+    assert response.status_code == 401
+
+
+def test_update_work_order_comment_saves_and_is_returned_on_detail(
+    client, db_session, auth_headers
+) -> None:
+    work_order = _make_work_order(external_number="WO-COMMENT-1")
+    db_session.add(work_order)
+    db_session.commit()
+    work_order_id = work_order.id
+
+    response = client.patch(
+        f"{LIST_URL}/{work_order_id}/comment",
+        headers=auth_headers,
+        json={"comment": "Клиент просил перезвонить после обеда"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"comment": "Клиент просил перезвонить после обеда"}
+
+    detail = client.get(f"{LIST_URL}/{work_order_id}", headers=auth_headers)
+    assert detail.json()["comment"] == "Клиент просил перезвонить после обеда"
+
+
+def test_update_work_order_comment_can_clear_it(client, db_session, auth_headers) -> None:
+    work_order = _make_work_order(external_number="WO-COMMENT-2")
+    db_session.add(work_order)
+    db_session.commit()
+    work_order_id = work_order.id
+
+    client.patch(
+        f"{LIST_URL}/{work_order_id}/comment", headers=auth_headers, json={"comment": "Черновик"}
+    )
+    response = client.patch(
+        f"{LIST_URL}/{work_order_id}/comment", headers=auth_headers, json={"comment": None}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"comment": None}
+
+
+def test_update_work_order_comment_missing_returns_404(client, auth_headers) -> None:
+    response = client.patch(
+        f"{LIST_URL}/00000000-0000-0000-0000-000000000000/comment",
+        headers=auth_headers,
+        json={"comment": "Заметка"},
+    )
+
+    assert response.status_code == 404
+
+
 def test_list_work_orders_filters_by_department(client, db_session, auth_headers) -> None:
     db_session.add(_make_work_order(external_number="WO-BODY", department="Кузовной цех"))
     db_session.add(_make_work_order(external_number="WO-PAINT", department="Малярный цех"))

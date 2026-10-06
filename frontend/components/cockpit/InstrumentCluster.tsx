@@ -457,39 +457,56 @@ function MainGauge({
         </text>
       )}
 
-      {/* Unit label sits on the rim, in the free (tick-less) wedge between
-          the "0" tick and the sweep's own end - following the dial's own
-          circumference, like the reference photo's "X1000R/M" - instead of
-          the dial's center, which now shows the actual sum instead. */}
+      {/* Unit label curves along the dial's own rim, in the free
+          (tick-less) wedge between the "0" tick (180deg) and the sweep's
+          own end (90deg) - a real curved arc of text now (an invisible
+          <path> for it to flow along via <textPath>), not just a straight
+          label rotated into that gap, per product feedback 2026-10-06:
+          "располагаем по окружность (по дуге) с изгибом". The dial's
+          center no longer shows the sum at all (removed the same round,
+          see below), so this is clear of anything else regardless of
+          needle angle.
+
+          The path is built starting AT the "0" tick (180deg) and curving
+          toward the sweep's end (90deg), not the other way round, for two
+          reasons raised together, 2026-10-06: (1) "она должна начинаться
+          от нуля" - the text should read starting from the "0" tick, and
+          (2) going 90->180 instead (the first version here) put the
+          glyphs' "up" on the path's INNER side, which textPath renders
+          upside-down/mirrored for an arc curving this way - a well-known
+          SVG textPath gotcha, confirmed by that same screenshot. Sweep
+          flag is 0 (not arcPath's hardcoded 1) because this now traces
+          BACKWARD through the angle range (180 down to 90) to get there -
+          same quarter-circle shape, opposite direction.
+
+          Follow-up, same day (two rounds): first "она должна начинаться
+          от нуля" (start right at the tick), "спусти ниже" (lower),
+          "расстояние между символами больше" (more letter-spacing - see
+          .cockpit-unit-label), "дугу побольше" (more curved) - tried a
+          tighter, non-concentric arc for that round. Then corrected again:
+          "еще ниже, чтобы шло по одной линии с нижней частью риски, прям
+          по кругу циферблата" - actually concentric with the dial after
+          all, riding the tick marks' own radius (tickOuter) rather than a
+          custom one, plus "отступи от риски... примерно на 2 цифры" - a
+          real gap before the text starts, not flush against the tick
+          (startOffset below, in px - a fixed length survives a radius
+          change better than a path-relative percentage would). */}
       {(() => {
-        // Angular middle of the free (tick-less) wedge (90deg..180deg) -
-        // equidistant from the "0" tick at 180deg and the max-value tick at
-        // 90deg, so this doesn't crowd either.
-        const unitPos = polarPoint(cx, cy, labelR, 135);
+        const arcStart = polarPoint(cx, cy, tickOuter, 180);
+        const arcEnd = polarPoint(cx, cy, tickOuter, 90);
+        const unitArcD = `M ${arcStart.x} ${arcStart.y} A ${tickOuter} ${tickOuter} 0 0 0 ${arcEnd.x} ${arcEnd.y}`;
         return (
-          <text x={unitPos.x} y={unitPos.y} textAnchor="middle" className="cockpit-unit-label" fill="#8a999e">
-            х1000000руб.
-          </text>
+          <>
+            <path id={`${id}-unit-arc`} d={unitArcD} fill="none" stroke="none" />
+            <text className="cockpit-unit-label" fill="#8a999e">
+              <textPath href={`#${id}-unit-arc`} startOffset="32">
+                х1000000руб.
+              </textPath>
+            </text>
+          </>
         );
       })()}
 
-      {/* The full sum, centered below the needle hub and tail - clear of
-          the tail's own swept footprint (hub r=26, tail reaches ~37 from
-          center at its longest) so the needle never sits on top of it, per
-          product feedback that it was getting partly covered. The needle
-          is still the primary reading; this is a legible central digital
-          readout, not a dominant overlay. */}
-      <text
-        x={cx}
-        y={cy + 75}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        className="cockpit-money-main"
-        fill="#eafcff"
-        style={moneyOffsetStyle}
-      >
-        {formatRub(displayValue)} ₽
-      </text>
       {gauge.overflow && (
         <text
           x={cx}

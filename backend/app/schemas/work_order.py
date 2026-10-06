@@ -253,6 +253,9 @@ class WorkOrderDetail(WorkOrderListItem):
     services/internal_order_rules.py's module docstring)."""
 
     vin: str | None
+    # Free-text staff note - see models/work_order.py's own docstring.
+    # Shown/edited on the detail card only, like `vin` above.
+    comment: str | None
     labor: list[WorkOrderLaborLineItem]
     parts: list[WorkOrderPartLineItem]
     status_history: list[StatusHistoryItem]
@@ -260,3 +263,7 @@ class WorkOrderDetail(WorkOrderListItem):
     payment_events: list[PaymentEventItem]
     invoices: list[InvoiceItem]
     planner_record: PlannerRecordOut | None
+
+
+class WorkOrderCommentUpdate(BaseModel):
+    comment: str | None = None

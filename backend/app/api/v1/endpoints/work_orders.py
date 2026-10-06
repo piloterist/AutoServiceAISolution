@@ -34,6 +34,7 @@ from app.schemas.work_order import (
     StatusSummaryResponse,
     TrendSummaryItem,
     TrendSummaryResponse,
+    WorkOrderCommentUpdate,
     WorkOrderDetail,
     WorkOrderLaborLineItem,
     WorkOrderListItem,
@@ -62,6 +63,7 @@ from app.services.work_order_query_service import (
     revenue_paid_amount,
     status_summary,
     trend_summary,
+    update_work_order_comment,
 )
 
 router = APIRouter(tags=["work-orders"], dependencies=[Depends(verify_api_token)])
@@ -335,6 +337,7 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
     return WorkOrderDetail(
         **WorkOrderListItem.model_validate(work_order).model_dump(),
         vin=work_order.vin,
+        comment=work_order.comment,
         planner_record=PlannerRecordOut(
             kind=record.kind, workshop_id=record.workshop_id, date=record.date
         )
@@ -360,6 +363,18 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
         ],
         invoices=[InvoiceItem.from_model(row) for row in list_invoices(db, work_order_id)],
     )
+
+
+@router.patch("/work-orders/{work_order_id}/comment", response_model=WorkOrderCommentUpdate)
+def update_work_order_comment_endpoint(
+    work_order_id: UUID, payload: WorkOrderCommentUpdate, db: Session = Depends(get_db)
+) -> WorkOrderCommentUpdate:
+    """Saves the detail card's free-text "Комментарий" field - the one
+    user-editable field on an otherwise read-only (1C-imported) work order."""
+    work_order = update_work_order_comment(db, work_order_id, payload.comment)
+    if work_order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
+    return WorkOrderCommentUpdate(comment=work_order.comment)
 
 
 @router.delete("/work-orders/{work_order_id}", status_code=status.HTTP_204_NO_CONTENT)

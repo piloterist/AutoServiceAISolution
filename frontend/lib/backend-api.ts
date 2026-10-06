@@ -213,6 +213,9 @@ export type WorkOrderDetail = WorkOrderListItem & {
   // ЗаказНаряд.Автомобиль.VIN - shown on the detail card only, never on
   // the list or dashboard (see backend services/internal_order_rules.py).
   vin: string | null;
+  // Free-text staff note - the one user-editable field on this otherwise
+  // read-only (1C-imported) card. See updateWorkOrderComment below.
+  comment: string | null;
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
   status_history: StatusHistoryItem[];
@@ -270,6 +273,29 @@ async function backendPut<T>(
 ): Promise<T> {
   const res = await fetch(new URL(path, API_URL), {
     method: "PUT",
+    headers: {
+      Authorization: `Bearer ${backendToken()}`,
+      "Content-Type": "application/json",
+      ...extraHeaders,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Backend request failed: ${res.status} ${await res.text()}`);
+  }
+
+  return res.json() as Promise<T>;
+}
+
+async function backendPatch<T>(
+  path: string,
+  body: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
+  const res = await fetch(new URL(path, API_URL), {
+    method: "PATCH",
     headers: {
       Authorization: `Bearer ${backendToken()}`,
       "Content-Type": "application/json",
@@ -500,6 +526,15 @@ export function getPaymentTrendSummary(params: {
 
 export function getWorkOrder(id: string): Promise<WorkOrderDetail> {
   return backendGet<WorkOrderDetail>(`/api/v1/work-orders/${id}`);
+}
+
+export function updateWorkOrderComment(
+  id: string,
+  comment: string | null,
+): Promise<{ comment: string | null }> {
+  return backendPatch<{ comment: string | null }>(`/api/v1/work-orders/${id}/comment`, {
+    comment,
+  });
 }
 
 // ============================================================================

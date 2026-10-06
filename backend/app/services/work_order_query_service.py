@@ -602,6 +602,21 @@ def get_work_order(db: Session, work_order_id: UUID) -> WorkOrder | None:
     return db.get(WorkOrder, work_order_id)
 
 
+def update_work_order_comment(
+    db: Session, work_order_id: UUID, comment: str | None
+) -> WorkOrder | None:
+    """Saves the detail card's free-text "Комментарий" field. Returns None
+    if the work order doesn't exist, same not-found convention as
+    delete_work_order."""
+    work_order = db.get(WorkOrder, work_order_id)
+    if work_order is None:
+        return None
+    work_order.comment = comment
+    db.commit()
+    db.refresh(work_order)
+    return work_order
+
+
 def list_labor_lines(db: Session, work_order_id: UUID) -> list[WorkOrderLaborLine]:
     """A work order's "Работы" (labor) tabular-section lines."""
     rows = db.execute(
