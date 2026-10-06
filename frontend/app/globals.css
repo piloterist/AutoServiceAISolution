@@ -1089,6 +1089,19 @@ table.admin-data-table td.audit-changes-cell {
   font-variant-numeric: tabular-nums;
 }
 
+/* "Has a note" icon next to Номер - product ask, 2026-10-06: a small
+   page/sheet glyph marking a ЗН with something in its Комментарий field
+   (see WorkOrderComment.tsx), without needing to open the card to find
+   out. Muted by default - it's a hint, not an alert. */
+.vt-comment-icon {
+  width: 13px;
+  height: 13px;
+  margin-right: 0.3rem;
+  vertical-align: -2px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 .vt-header .vt-cell {
   color: var(--text-muted);
   font-weight: 600;

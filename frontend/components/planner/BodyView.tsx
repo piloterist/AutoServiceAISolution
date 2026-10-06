@@ -598,9 +598,9 @@ function BodyViewInner({
                         </select>
                       </div>
                     </div>
-                    {(car.repair_type === "Страховой" || car.on_site) && (
+                    {(car.is_internal || car.on_site) && (
                       <div className="planner-body-flags">
-                        {car.repair_type === "Страховой" && (
+                        {car.is_internal && (
                           <span className="planner-body-insurance">Страховой</span>
                         )}
                         {car.on_site && <span className="planner-body-onsite">На территории</span>}

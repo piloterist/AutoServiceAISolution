@@ -129,6 +129,7 @@ def get_work_orders(
         # Not a real column - see WorkOrderListItem.is_scheduled's own
         # comment for why a plain transient attribute works fine here.
         item.is_scheduled = item.id in scheduled_ids
+        item.has_comment = item.comment is not None
     return WorkOrderListResponse(
         items=[WorkOrderListItem.model_validate(item) for item in items],
         total=total,
@@ -333,6 +334,7 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
 
     record = planner_service.find_planner_record(db, work_order_id)
     work_order.is_scheduled = record is not None
+    work_order.has_comment = work_order.comment is not None
 
     return WorkOrderDetail(
         **WorkOrderListItem.model_validate(work_order).model_dump(),

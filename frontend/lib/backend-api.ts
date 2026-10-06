@@ -50,6 +50,10 @@ export type WorkOrderListItem = {
   // services/planner_service.scheduled_work_order_ids. Feeds the Work
   // Orders list's "Запланирован" Да/Нет column/filter.
   is_scheduled: boolean;
+  // Whether WorkOrder.comment is set - drives the small "has a note" icon
+  // next to "Номер" on the list (see WorkOrdersTable.tsx). The comment
+  // text itself isn't shipped here - see WorkOrderDetail.comment.
+  has_comment: boolean;
 };
 
 export type WorkOrderListResponse = {
@@ -977,10 +981,13 @@ export type BodyCar = {
   workshop_id: string;
   work_order_id: string | null;
   work_order_number: string | null;
-  // ЗаказНаряд.ВидРемонта, live from the linked ЗН - "Страховой" drives
-  // the red label on the Planner car list, see components/planner/
-  // BodyView.tsx.
+  // ЗаказНаряд.ВидРемонта, live from the linked ЗН - shown as its own
+  // field on the card.
   repair_type: string | null;
+  // WorkOrder.is_internal, live from the linked ЗН - drives the red
+  // "Страховой" label on the Planner car list (see components/planner/
+  // BodyView.tsx). False when there's no linked ЗН yet.
+  is_internal: boolean;
   amount: string | null;
   car_description: string | null;
   vin: string | null;

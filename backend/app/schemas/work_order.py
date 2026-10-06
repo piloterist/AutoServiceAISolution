@@ -54,6 +54,12 @@ class WorkOrderListItem(BaseModel):
     # instance attribute before validation (from_attributes just does a
     # getattr, it doesn't care that it isn't a mapped SQLAlchemy column).
     is_scheduled: bool
+    # Whether WorkOrder.comment is set - drives a small "has a note" icon
+    # on the list (see frontend/components/WorkOrdersTable.tsx), without
+    # shipping the comment's own (possibly long) text to every row on the
+    # list. Same attach-before-validate pattern as is_scheduled above - see
+    # endpoints/work_orders.py's get_work_orders.
+    has_comment: bool
 
     model_config = {"from_attributes": True}
 

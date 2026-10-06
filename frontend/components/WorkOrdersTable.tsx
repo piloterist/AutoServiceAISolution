@@ -1026,6 +1026,25 @@ export function WorkOrdersTable({
                     {row.closedDate}
                   </div>
                   <div className="vt-cell" role="gridcell">
+                    {row.item.has_comment && (
+                      <svg
+                        className="vt-comment-icon"
+                        viewBox="0 0 16 16"
+                        role="img"
+                        aria-label="Есть комментарий"
+                      >
+                        <title>Есть комментарий</title>
+                        <path
+                          d="M3 1.5h7l3 3v10a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5v-12a.5.5 0 0 1 .5-.5Z"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.1"
+                          strokeLinejoin="round"
+                        />
+                        <path d="M10 1.5v2.5a.5.5 0 0 0 .5.5H13" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" />
+                        <path d="M5 8.2h6M5 10.8h4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+                      </svg>
+                    )}
                     {row.number}
                   </div>
                   <div className="vt-cell" role="gridcell">

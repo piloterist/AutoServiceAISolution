@@ -376,6 +376,25 @@ def test_update_work_order_comment_missing_returns_404(client, auth_headers) -> 
     assert response.status_code == 404
 
 
+def test_list_work_orders_has_comment_flag(client, db_session, auth_headers) -> None:
+    """has_comment drives the small "note" icon next to Номер on the list
+    (see WorkOrdersTable.tsx) - product ask, 2026-10-06. Just a boolean,
+    not the comment text itself (see WorkOrderDetail.comment for that)."""
+    db_session.add(
+        _make_work_order(external_number="WO-WITH-COMMENT", comment="Перезвонить клиенту")
+    )
+    db_session.add(_make_work_order(external_number="WO-NO-COMMENT"))
+    db_session.commit()
+
+    response = client.get(LIST_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["external_number"]: item for item in response.json()["items"]}
+    assert items["WO-WITH-COMMENT"]["has_comment"] is True
+    assert "comment" not in items["WO-WITH-COMMENT"]
+    assert items["WO-NO-COMMENT"]["has_comment"] is False
+
+
 def test_list_work_orders_filters_by_department(client, db_session, auth_headers) -> None:
     db_session.add(_make_work_order(external_number="WO-BODY", department="Кузовной цех"))
     db_session.add(_make_work_order(external_number="WO-PAINT", department="Малярный цех"))

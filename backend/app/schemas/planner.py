@@ -132,9 +132,17 @@ class BodyCarOut(BaseModel):
     work_order_id: uuid.UUID | None
     work_order_number: str | None
     # ЗаказНаряд.ВидРемонта, live from the linked ЗН like work_order_number/
-    # amount above - "Страховой" drives the red "Страховой" label on the
-    # Planner car list (see BodyView.tsx), per product feedback, 2026-09-30.
+    # amount above - shown as its own field on the car card.
     repair_type: str | None
+    # WorkOrder.is_internal, live from the linked ЗН - drives the red
+    # "Страховой" label on the Planner car list (see BodyView.tsx).
+    # Despite the label text, this is no longer about repair_type at all
+    # (was `repair_type == "Страховой"` before) - product ask, 2026-10-06:
+    # "она должна ставиться для внутренних заказ-нарядов. Вид ремонта
+    # проверять вообще не надо". False (not None) when there's no linked
+    # ЗН yet, same convention as on_site/status below - a BodyCar always
+    # has SOME value here, never "unknown".
+    is_internal: bool
     amount: Decimal | None
     car_description: str | None
     vin: str | None

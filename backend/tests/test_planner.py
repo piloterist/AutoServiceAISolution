@@ -416,8 +416,7 @@ def test_body_car_surfaces_linked_work_order_repair_type(
     client, auth_headers, body_workshop, sample_work_order, db_session: Session
 ) -> None:
     """repair_type is live from the linked ЗН (like work_order_number/
-    amount) - "Страховой" drives the red label on the Planner car list, see
-    BodyView.tsx (product feedback, 2026-09-30)."""
+    amount) - shown as its own field on the car card."""
     sample_work_order.repair_type = "Страховой"
     db_session.commit()
 
@@ -442,6 +441,40 @@ def test_body_car_repair_type_null_without_linked_work_order(
         json=_car_payload(),
     )
     assert response.json()["repair_type"] is None
+
+
+def test_body_car_surfaces_linked_work_order_is_internal(
+    client, auth_headers, body_workshop, sample_work_order, db_session: Session
+) -> None:
+    """is_internal is live from the linked ЗН - drives the red "Страховой"
+    label on the Planner car list, see BodyView.tsx (product ask,
+    2026-10-06: "она должна ставиться для внутренних заказ-нарядов. Вид
+    ремонта проверять вообще не надо" - no longer about repair_type at
+    all, despite the label text)."""
+    sample_work_order.is_internal = True
+    db_session.commit()
+
+    response = client.post(
+        f"{PLANNER_URL}/workshops/{body_workshop.id}/cars",
+        headers=auth_headers,
+        json=_car_payload(work_order_id=str(sample_work_order.id)),
+    )
+    assert response.status_code == 201
+    assert response.json()["is_internal"] is True
+
+    listed = client.get(f"{PLANNER_URL}/workshops/{body_workshop.id}/cars", headers=auth_headers)
+    assert listed.json()[0]["is_internal"] is True
+
+
+def test_body_car_is_internal_false_without_linked_work_order(
+    client, auth_headers, body_workshop
+) -> None:
+    response = client.post(
+        f"{PLANNER_URL}/workshops/{body_workshop.id}/cars",
+        headers=auth_headers,
+        json=_car_payload(),
+    )
+    assert response.json()["is_internal"] is False
 
 
 def test_body_car_colors_rotate_round_robin(client, auth_headers, body_workshop) -> None:
