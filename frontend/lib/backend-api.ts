@@ -1071,6 +1071,11 @@ export type TelephonySettings = {
   // Per-call QA review + 1-10 rating (YandexGPT) - independent of
   // classify_calls_enabled above, either can run without the other.
   assess_quality_enabled: boolean;
+  // Swaps the usual light transcript touch-up for a much more aggressive
+  // YandexGPT rewrite (paraphrases freely, keeps only the client's request
+  // and the gist of the answer) - see backend services/yandexgpt_client.py's
+  // rewrite_transcript. Off by default, independent of classify/assess.
+  transcript_rewrite_enabled: boolean;
   // How often the transcribe/summarize/assess background loop re-runs
   // (minutes) once there's something to do, and how many pending calls it
   // takes on per run - see backend services/call_transcription_relay.py.
@@ -1096,6 +1101,7 @@ export type TelephonySettingsWrite = {
   classify_calls_enabled: boolean;
   yandexgpt_model: string;
   assess_quality_enabled: boolean;
+  transcript_rewrite_enabled: boolean;
   transcription_poll_interval_minutes: number;
   transcription_batch_size: number;
 };

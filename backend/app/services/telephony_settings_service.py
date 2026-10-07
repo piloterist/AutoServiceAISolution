@@ -48,6 +48,7 @@ def update_telephony_settings(
     classify_calls_enabled: bool,
     yandexgpt_model: str,
     assess_quality_enabled: bool,
+    transcript_rewrite_enabled: bool,
     transcription_poll_interval_minutes: int,
     transcription_batch_size: int,
 ) -> TelephonySettings:
@@ -69,6 +70,7 @@ def update_telephony_settings(
     settings.classify_calls_enabled = classify_calls_enabled
     settings.yandexgpt_model = yandexgpt_model
     settings.assess_quality_enabled = assess_quality_enabled
+    settings.transcript_rewrite_enabled = transcript_rewrite_enabled
     settings.transcription_poll_interval_minutes = transcription_poll_interval_minutes
     settings.transcription_batch_size = transcription_batch_size
     db.commit()

@@ -63,7 +63,8 @@ ORG_SOKOLOVA = "ИП СОКОЛОВА МАРИНА ЭМИЛЬЕВНА"
 
 
 def normalize_vin(raw: str | None) -> str | None:
-    """Uppercases/trims and validates as a real 17-character VIN (no I/O/Q).
+    """Uppercases/trims and validates as a real 17-character VIN (no I/Q -
+    see the "O" note below).
 
     Returns None for anything that doesn't look like a real VIN - a missing
     value, a malformed one, or free text - rather than guessing. No token
@@ -71,10 +72,23 @@ def normalize_vin(raw: str | None) -> str | None:
     from 1C's vehicle catalog, not free text that might have a VIN buried
     inside it (contrast the reference tool's extract_vin, which had to dig
     a VIN out of a free-text "Автомобиль" column).
+
+    One exception: a literal "O" is corrected to "0" before validating.
+    "O" is never legitimate in a real VIN (excluded industry-wide
+    specifically to avoid 0/O confusion - see _VALID_VIN's own comment),
+    so any "O" present is virtually certainly a mistyped "0", not a
+    different car - confirmed live, 2026-10-07: two real ЗН on the same
+    real car (ПМ00000031/ЭПЭП002502, VIN 5N1DLOMM1KC564548, both from 1C's
+    own vehicle catalog) carried the identical "O" typo, which silently
+    broke their car_key match - and so the "Внутренний" flag - before this
+    fix. "I"/"Q" are NOT corrected the same way - no equivalent real-world
+    case has come up for those, and unlike "O" they aren't visually
+    interchangeable with a single other character, so guessing would be
+    more likely to paper over a genuinely different VIN.
     """
     if not raw:
         return None
-    candidate = raw.strip().upper()
+    candidate = raw.strip().upper().replace("O", "0")
     return candidate if _VALID_VIN.fullmatch(candidate) else None
 
 

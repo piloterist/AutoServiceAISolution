@@ -32,10 +32,20 @@ def test_normalize_vin_rejects_wrong_length() -> None:
 
 
 def test_normalize_vin_rejects_forbidden_letters() -> None:
-    # I, O, Q are never valid in a real VIN.
+    # I and Q are never valid in a real VIN, and aren't auto-corrected (see
+    # normalize_vin's own docstring for why "O" below is different).
     assert normalize_vin("WVWZZZ1JZXWI00001") is None
-    assert normalize_vin("WVWZZZ1JZXWO00001") is None
     assert normalize_vin("WVWZZZ1JZXWQ00001") is None
+
+
+def test_normalize_vin_corrects_letter_o_to_zero() -> None:
+    """ "O" is never legitimate in a real VIN either, but - unlike I/Q - any
+    "O" found is corrected to "0" rather than rejected: confirmed live,
+    2026-10-07, two real ЗН on the same real car both carried the same "O"
+    typo from 1C's own vehicle catalog, which broke their car_key match
+    (see internal_order_rules.py's own docstring)."""
+    assert normalize_vin("WVWZZZ1JZXWO00001") == "WVWZZZ1JZXW000001"
+    assert normalize_vin("5N1DLOMM1KC564548") == "5N1DL0MM1KC564548"
 
 
 def test_normalize_vin_rejects_none_and_empty() -> None:

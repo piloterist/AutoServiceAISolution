@@ -39,13 +39,16 @@ async def poll_once() -> float:
     db = SessionLocal()
     try:
         settings = get_telephony_settings(db)
-        # Gated on classify_calls_enabled OR assess_quality_enabled, not
-        # just the base telephony `enabled` switch - each is a separate,
-        # explicit opt-in (an extra paid SpeechKit+YandexGPT call per
-        # answered call), off by default even when telephony stats import
-        # itself is on, and either can run without the other.
+        # Gated on classify_calls_enabled OR assess_quality_enabled OR
+        # transcript_rewrite_enabled, not just the base telephony `enabled`
+        # switch - each is a separate, explicit opt-in (an extra paid
+        # SpeechKit+YandexGPT call per answered call), off by default even
+        # when telephony stats import itself is on, and any one of them can
+        # run without the others.
         if not settings.enabled or not (
-            settings.classify_calls_enabled or settings.assess_quality_enabled
+            settings.classify_calls_enabled
+            or settings.assess_quality_enabled
+            or settings.transcript_rewrite_enabled
         ):
             return IDLE_RECHECK_SECONDS
 

@@ -117,6 +117,22 @@ class TelephonySettings(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # Swaps the usual light touch-up (services/yandexgpt_client.
+    # adapt_transcript - fixes obvious recognition errors, reassigns
+    # clearly-misattributed turns) for a much more aggressive rewrite
+    # (rewrite_transcript) - product ask, 2026-10-07: even after the light
+    # pass, "половина фраз - с ошибками или определена не тому говорящему
+    # ... хочется промпт который прям перепишет диалог". The rewrite
+    # paraphrases freely to produce a clean, readable dialogue, keeping
+    # only the client's actual request and the gist of the operator's
+    # answer - no longer a close wording match to what was actually said,
+    # which is why this is a separate opt-in rather than always picking
+    # the stronger prompt. Off by default, same reasoning as
+    # classify_calls_enabled/assess_quality_enabled above.
+    transcript_rewrite_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
     # How often services/call_transcription_relay.py re-runs (once there is
     # something to do - transcribe/classify_calls_enabled/
     # assess_quality_enabled), and how many pending calls it takes on per

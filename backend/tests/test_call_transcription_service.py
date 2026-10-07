@@ -33,7 +33,9 @@ NOW = datetime(2026, 10, 2, 12, 0, tzinfo=UTC)
 TOPIC_SAMPLE = "Покраска бампера после удара"
 
 
-def _settings(*, classify: bool = True, assess: bool = False) -> TelephonySettings:
+def _settings(
+    *, classify: bool = True, assess: bool = False, rewrite: bool = False
+) -> TelephonySettings:
     return TelephonySettings(
         id=1,
         zeon_api_url="https://zeon.example/api",
@@ -48,6 +50,7 @@ def _settings(*, classify: bool = True, assess: bool = False) -> TelephonySettin
         classify_calls_enabled=classify,
         yandexgpt_model="yandexgpt-lite/latest",
         assess_quality_enabled=assess,
+        transcript_rewrite_enabled=rewrite,
     )
 
 
@@ -104,6 +107,7 @@ def _patch_happy_path(
         lambda responses: [{"speaker": "Говорящий 1", "text": "Нужна покраска бампера"}],
     )
     monkeypatch.setattr(yandexgpt_client, "adapt_transcript", lambda client, settings, text: text)
+    monkeypatch.setattr(yandexgpt_client, "rewrite_transcript", lambda client, settings, text: text)
     monkeypatch.setattr(
         yandexgpt_client, "summarize_call_topic", lambda client, settings, text: topic
     )
@@ -185,6 +189,54 @@ def test_process_pending_calls_transcribes_only_when_classification_disabled(
     db_session.refresh(call)
     assert call.transcript_status == TRANSCRIPT_STATUS_TRANSCRIBED
     assert call.topic_tag is None
+
+
+def test_process_pending_calls_uses_rewrite_instead_of_adapt_when_enabled(
+    monkeypatch, db_session: Session
+) -> None:
+    """transcript_rewrite_enabled swaps adapt_transcript (light touch-up)
+    for rewrite_transcript (full paraphrase) - product ask, 2026-10-07.
+    Mutually exclusive: only one of the two ever runs for a given call."""
+    call = _call(db_session)
+    _patch_happy_path(monkeypatch)
+    monkeypatch.setattr(
+        yandexgpt_client,
+        "adapt_transcript",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+    monkeypatch.setattr(
+        yandexgpt_client, "rewrite_transcript", lambda client, settings, text: "Переписанный текст"
+    )
+
+    stats = svc.process_pending_calls(
+        db_session, _settings(classify=False, rewrite=True), limit=10, now=NOW
+    )
+
+    assert stats.transcribed == 1
+    db_session.refresh(call)
+    assert call.transcript_text == "Переписанный текст"
+    assert call.transcript_text_raw == "Говорящий 1: Нужна покраска бампера"
+
+
+def test_process_pending_calls_rewrite_works_without_classify_or_assess(
+    monkeypatch, db_session: Session
+) -> None:
+    """transcript_rewrite_enabled alone (classify/assess both off) must
+    still build gpt_settings and actually run - it's an independent
+    opt-in, not something that only takes effect alongside the other two."""
+    call = _call(db_session)
+    _patch_happy_path(monkeypatch)
+    monkeypatch.setattr(
+        yandexgpt_client, "rewrite_transcript", lambda client, settings, text: "Переписанный текст"
+    )
+
+    stats = svc.process_pending_calls(
+        db_session, _settings(classify=False, assess=False, rewrite=True), limit=10, now=NOW
+    )
+
+    assert stats.transcribed == 1
+    db_session.refresh(call)
+    assert call.transcript_text == "Переписанный текст"
 
 
 def test_process_pending_calls_marks_missing_link_as_failed(db_session: Session) -> None:

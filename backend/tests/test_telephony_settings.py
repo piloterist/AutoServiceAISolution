@@ -68,6 +68,19 @@ def test_write_settings_persists_classify_calls_fields(client, auth_headers) -> 
     assert body["yandexgpt_model"] == "yandexgpt/latest"
 
 
+def test_write_settings_persists_transcript_rewrite_enabled(client, auth_headers) -> None:
+    """ "Преобразовывать диалог" (product ask, 2026-10-07) - off by default,
+    independent of classify_calls_enabled/assess_quality_enabled."""
+    response = client.get(SETTINGS_URL, headers=auth_headers)
+    assert response.json()["transcript_rewrite_enabled"] is False
+
+    response = client.put(
+        SETTINGS_URL, headers=auth_headers, json={"transcript_rewrite_enabled": True}
+    )
+    assert response.status_code == 200
+    assert response.json()["transcript_rewrite_enabled"] is True
+
+
 def test_ping_fails_gracefully_when_unconfigured(client, auth_headers) -> None:
     response = client.post(PING_URL, headers=auth_headers)
 

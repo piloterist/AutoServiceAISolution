@@ -32,6 +32,7 @@ class TelephonySettingsResponse(BaseModel):
     classify_calls_enabled: bool
     yandexgpt_model: str
     assess_quality_enabled: bool
+    transcript_rewrite_enabled: bool
     transcription_poll_interval_minutes: int
     transcription_batch_size: int
 
@@ -56,6 +57,7 @@ class TelephonySettingsUpdate(BaseModel):
     classify_calls_enabled: bool = False
     yandexgpt_model: str = "yandexgpt/latest"
     assess_quality_enabled: bool = False
+    transcript_rewrite_enabled: bool = False
     transcription_poll_interval_minutes: int = Field(default=10, gt=0)
     transcription_batch_size: int = Field(default=20, gt=0)
 

@@ -36,6 +36,9 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
   const [classifyCallsEnabled, setClassifyCallsEnabled] = useState(initialSettings.classify_calls_enabled);
   const [yandexgptModel, setYandexgptModel] = useState(initialSettings.yandexgpt_model);
   const [assessQualityEnabled, setAssessQualityEnabled] = useState(initialSettings.assess_quality_enabled);
+  const [transcriptRewriteEnabled, setTranscriptRewriteEnabled] = useState(
+    initialSettings.transcript_rewrite_enabled,
+  );
   const [transcriptionPollIntervalMinutes, setTranscriptionPollIntervalMinutes] = useState(
     String(initialSettings.transcription_poll_interval_minutes),
   );
@@ -84,6 +87,7 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
         classify_calls_enabled: classifyCallsEnabled,
         yandexgpt_model: yandexgptModel,
         assess_quality_enabled: assessQualityEnabled,
+        transcript_rewrite_enabled: transcriptRewriteEnabled,
         transcription_poll_interval_minutes: Number(transcriptionPollIntervalMinutes) || 10,
         transcription_batch_size: Number(transcriptionBatchSize) || 20,
       });
@@ -365,6 +369,21 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
             Для каждого отвеченного звонка с расшифровкой запрашивает у YandexGPT краткий разбор и
             оценку по 10-балльной шкале — работает независимо от определения темы выше, использует
             тот же аккаунт Yandex Cloud.
+          </p>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={transcriptRewriteEnabled}
+              onChange={(e) => setTranscriptRewriteEnabled(e.target.checked)}
+            />
+            Преобразовывать диалог (YandexGPT)
+          </label>
+          <p className="settings-description">
+            Вместо лёгкой правки расшифровки (опечатки, разметка говорящих) — полный пересказ
+            разговора связным текстом: сохраняет суть запроса клиента и смысл ответа мастера, но
+            может отступать от дословной формулировки. Включается вместо обычной правки, а не
+            вместе с ней — исходная расшифровка SpeechKit по-прежнему доступна отдельно.
           </p>
 
           <div className="admin-form-actions">

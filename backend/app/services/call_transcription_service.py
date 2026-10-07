@@ -237,21 +237,28 @@ def _transcribe(
         db.commit()
         return False
 
-    # Lightly corrected by YandexGPT before it's used for anything else
-    # (topic summary, quality score) or shown in the UI - see
-    # yandexgpt_client.adapt_transcript's own docstring for why (product
-    # ask, 2026-10-05: raw SpeechKit output reads poorly, mis-splits
-    # speaker turns). Falls back to the raw text unchanged on any failure,
-    # never blocks on this - gpt_settings is None only if neither
-    # classify_calls_enabled nor assess_quality_enabled is on, which
+    # Corrected by YandexGPT before it's used for anything else (topic
+    # summary, quality score) or shown in the UI. Two strengths, mutually
+    # exclusive, picked by TelephonySettings.transcript_rewrite_enabled:
+    # the usual light touch-up (adapt_transcript - product ask, 2026-10-05:
+    # raw SpeechKit output reads poorly, mis-splits speaker turns) or, when
+    # that setting is on, a much more aggressive rewrite (rewrite_transcript
+    # - product ask, 2026-10-07: even the light pass still left "половина
+    # фраз - с ошибками или определена не тому говорящему"). Both fall back
+    # to the raw text unchanged on any failure, never block on this -
+    # gpt_settings is None only if none of classify_calls_enabled/
+    # assess_quality_enabled/transcript_rewrite_enabled is on, which
     # already keeps this whole function from running at all (see
-    # find_pending_calls), so this is just defensive.
+    # find_pending_calls), so the `else raw_text` below is just defensive.
     row.transcript_text_raw = raw_text
-    row.transcript_text = (
-        yandexgpt_client.adapt_transcript(gpt_client, gpt_settings, raw_text)
-        if gpt_settings is not None
-        else raw_text
-    )
+    if gpt_settings is None:
+        row.transcript_text = raw_text
+    elif settings.transcript_rewrite_enabled:
+        row.transcript_text = yandexgpt_client.rewrite_transcript(
+            gpt_client, gpt_settings, raw_text
+        )
+    else:
+        row.transcript_text = yandexgpt_client.adapt_transcript(gpt_client, gpt_settings, raw_text)
     row.transcript_status = TRANSCRIPT_STATUS_TRANSCRIBED
     row.transcript_error = None
     db.commit()
@@ -330,9 +337,15 @@ def process_pending_calls(
     stt_settings = _speechkit_settings(settings)
     classify = settings.classify_calls_enabled
     assess = settings.assess_quality_enabled
-    # One shared settings object for both YandexGPT steps - they use the
-    # same credentials (yc_api_key/yc_folder_id/yandexgpt_model).
-    gpt_settings = _yandexgpt_settings(settings) if (classify or assess) else None
+    # One shared settings object for every YandexGPT step - they use the
+    # same credentials (yc_api_key/yc_folder_id/yandexgpt_model). Also
+    # built when only transcript_rewrite_enabled is on, so "Преобразовывать
+    # диалог" works on its own without needing classify/assess too.
+    gpt_settings = (
+        _yandexgpt_settings(settings)
+        if (classify or assess or settings.transcript_rewrite_enabled)
+        else None
+    )
 
     with speechkit_client.new_client() as stt_client, yandexgpt_client.new_client() as gpt_client:
         for row in rows:

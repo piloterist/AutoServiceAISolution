@@ -118,6 +118,7 @@ def write_telephony_settings(
         classify_calls_enabled=payload.classify_calls_enabled,
         yandexgpt_model=payload.yandexgpt_model,
         assess_quality_enabled=payload.assess_quality_enabled,
+        transcript_rewrite_enabled=payload.transcript_rewrite_enabled,
         transcription_poll_interval_minutes=payload.transcription_poll_interval_minutes,
         transcription_batch_size=payload.transcription_batch_size,
     )
