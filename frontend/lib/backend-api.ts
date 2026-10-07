@@ -54,6 +54,13 @@ export type WorkOrderListItem = {
   // next to "Номер" on the list (see WorkOrdersTable.tsx). The comment
   // text itself isn't shipped here - see WorkOrderDetail.comment.
   has_comment: boolean;
+  // Staff-set "Закрыть без оплат" flag (product ask, 2026-10-07) -
+  // settable only by the Админ role (see
+  // app/api/work-orders/[id]/closed-without-payment/route.ts, middleware.ts).
+  // Drives the red ₽ icon next to "Номер" on the list and excludes this
+  // order from ДЗ (receivables) entirely - see backend
+  // work_order_query_service.list_work_orders/cockpit_service._receivables.
+  closed_without_payment: boolean;
 };
 
 export type WorkOrderListResponse = {
@@ -539,6 +546,16 @@ export function updateWorkOrderComment(
   return backendPatch<{ comment: string | null }>(`/api/v1/work-orders/${id}/comment`, {
     comment,
   });
+}
+
+export function updateWorkOrderClosedWithoutPayment(
+  id: string,
+  closedWithoutPayment: boolean,
+): Promise<{ closed_without_payment: boolean }> {
+  return backendPatch<{ closed_without_payment: boolean }>(
+    `/api/v1/work-orders/${id}/closed-without-payment`,
+    { closed_without_payment: closedWithoutPayment },
+  );
 }
 
 // ============================================================================

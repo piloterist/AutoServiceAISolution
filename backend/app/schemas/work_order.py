@@ -60,6 +60,12 @@ class WorkOrderListItem(BaseModel):
     # list. Same attach-before-validate pattern as is_scheduled above - see
     # endpoints/work_orders.py's get_work_orders.
     has_comment: bool
+    # Staff-set "Закрыть без оплат" flag - a real column (unlike
+    # is_scheduled/has_comment above), settable only by the Админ role (see
+    # models/work_order.py's own docstring). Drives both the red ₽ icon on
+    # the list and exclusion from ДЗ (receivables) - see
+    # work_order_query_service.list_work_orders/cockpit_service._receivables.
+    closed_without_payment: bool
 
     model_config = {"from_attributes": True}
 
@@ -273,3 +279,7 @@ class WorkOrderDetail(WorkOrderListItem):
 
 class WorkOrderCommentUpdate(BaseModel):
     comment: str | None = None
+
+
+class WorkOrderClosedWithoutPaymentUpdate(BaseModel):
+    closed_without_payment: bool

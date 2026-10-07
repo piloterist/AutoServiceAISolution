@@ -395,6 +395,73 @@ def test_list_work_orders_has_comment_flag(client, db_session, auth_headers) -> 
     assert items["WO-NO-COMMENT"]["has_comment"] is False
 
 
+def test_update_work_order_closed_without_payment_requires_auth(client, db_session) -> None:
+    work_order = _make_work_order(external_number="WO-CWP-AUTH")
+    db_session.add(work_order)
+    db_session.commit()
+
+    response = client.patch(
+        f"{LIST_URL}/{work_order.id}/closed-without-payment",
+        json={"closed_without_payment": True},
+    )
+
+    assert response.status_code == 401
+
+
+def test_update_work_order_closed_without_payment_saves_and_is_returned_on_detail(
+    client, db_session, auth_headers
+) -> None:
+    work_order = _make_work_order(external_number="WO-CWP-1")
+    db_session.add(work_order)
+    db_session.commit()
+    work_order_id = work_order.id
+
+    response = client.patch(
+        f"{LIST_URL}/{work_order_id}/closed-without-payment",
+        headers=auth_headers,
+        json={"closed_without_payment": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"closed_without_payment": True}
+
+    detail = client.get(f"{LIST_URL}/{work_order_id}", headers=auth_headers)
+    assert detail.json()["closed_without_payment"] is True
+
+
+def test_update_work_order_closed_without_payment_missing_returns_404(client, auth_headers) -> None:
+    response = client.patch(
+        f"{LIST_URL}/00000000-0000-0000-0000-000000000000/closed-without-payment",
+        headers=auth_headers,
+        json={"closed_without_payment": True},
+    )
+
+    assert response.status_code == 404
+
+
+def test_only_receivables_excludes_closed_without_payment(client, db_session, auth_headers) -> None:
+    """A work order closed by an off-system arrangement (product ask,
+    2026-10-07) must drop out of ДЗ entirely, even with positive debt_amount
+    - see work_order_query_service.list_work_orders's only_receivables."""
+    owed = _make_work_order(
+        external_number="WO-OWED-2", closed_date=datetime(2026, 7, 1), debt_amount=Decimal("500")
+    )
+    closed_without_payment = _make_work_order(
+        external_number="WO-CLOSED-NO-PAY",
+        closed_date=datetime(2026, 7, 1),
+        debt_amount=Decimal("500"),
+        closed_without_payment=True,
+    )
+    db_session.add_all([owed, closed_without_payment])
+    db_session.commit()
+
+    response = client.get(LIST_URL, headers=auth_headers, params={"only_receivables": "true"})
+
+    assert response.status_code == 200
+    numbers = {item["external_number"] for item in response.json()["items"]}
+    assert numbers == {"WO-OWED-2"}
+
+
 def test_list_work_orders_filters_by_department(client, db_session, auth_headers) -> None:
     db_session.add(_make_work_order(external_number="WO-BODY", department="Кузовной цех"))
     db_session.add(_make_work_order(external_number="WO-PAINT", department="Малярный цех"))

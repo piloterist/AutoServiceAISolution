@@ -438,6 +438,27 @@ def test_receivables_excludes_closed_order_with_zero_debt(db_session: Session, m
     assert snapshot.receivables_rub == Decimal("0")
 
 
+def test_receivables_excludes_closed_without_payment(db_session: Session, monkeypatch) -> None:
+    """A work order closed by an off-system arrangement (product ask,
+    2026-10-07) is dropped from ДЗ even with positive debt_amount - it will
+    never actually get paid, and was inflating this figure."""
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+        amount=Decimal("7000.00"),
+        debt_amount=Decimal("7000.00"),
+        closed_without_payment=True,
+    )
+    db_session.add(wo)
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("0")
+
+
 def test_receivables_excludes_closed_order_with_null_debt(db_session: Session, monkeypatch) -> None:
     """1C hasn't sent a settlement figure for this one yet - treated as
     "unknown", not "fully owed"."""

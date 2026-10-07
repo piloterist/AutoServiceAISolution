@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { WorkOrderClosedWithoutPayment } from "@/components/WorkOrderClosedWithoutPayment";
 import { WorkOrderComment } from "@/components/WorkOrderComment";
 import { WorkOrderLineTabs } from "@/components/WorkOrderLineTabs";
+import { ROLE_ADMIN } from "@/lib/auth";
 import { getWorkOrder } from "@/lib/backend-api";
+import { getCurrentUser } from "@/lib/session";
 
 // Must never be statically prerendered: if the backend happens to be
 // reachable at build time, Next.js could otherwise freeze this page with
@@ -44,6 +47,8 @@ export default async function WorkOrderDetailPage({
   const { id } = await params;
   const { from } = await searchParams;
   const backHref = from ? `/work-orders${from}` : "/work-orders";
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === ROLE_ADMIN;
 
   let workOrder;
   let error: string | null = null;
@@ -151,6 +156,11 @@ export default async function WorkOrderDetailPage({
               <span className="detail-label">Остаток долга</span>
               <span>{formatAmount(workOrder.debt_amount)}</span>
             </div>
+            <WorkOrderClosedWithoutPayment
+              workOrderId={workOrder.id}
+              initialValue={workOrder.closed_without_payment}
+              canEdit={isAdmin}
+            />
           </div>
 
           <WorkOrderComment workOrderId={workOrder.id} initialComment={workOrder.comment} />

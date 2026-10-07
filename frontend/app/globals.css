@@ -1036,8 +1036,12 @@ table.admin-data-table td.audit-changes-cell {
   background: var(--surface);
   overflow: auto;
   /* Its own scrollbar, independent of the page - lets the virtualizer know
-     a fixed viewport height to measure "what's visible" against. */
-  max-height: 70vh;
+     a fixed viewport height to measure "what's visible" against. Was 70vh -
+     bumped once the page's own <h1> (and the vertical space it took) was
+     removed (product ask, 2026-10-06), which left this much free space
+     below the table unused (product ask, 2026-10-07: "список по высоте,
+     чтобы это место использовалось с пользой"). */
+  max-height: 80vh;
 }
 
 .vt-header {
@@ -1093,12 +1097,29 @@ table.admin-data-table td.audit-changes-cell {
    page/sheet glyph marking a ЗН with something in its Комментарий field
    (see WorkOrderComment.tsx), without needing to open the card to find
    out. Muted by default - it's a hint, not an alert. */
-.vt-comment-icon {
-  width: 13px;
-  height: 13px;
+/* "Закрыт без оплат" - red ₽. A plain text glyph, not an svg -
+   inline-block + vertical-align: middle keeps it sitting right at the
+   number's own level instead of sinking below it (product feedback,
+   2026-10-07: "куда-то вниз влез, надо на уровне номера"; also bumped up
+   from the original 15px - "нужно крупнее"). */
+.vt-closed-without-payment-icon {
+  display: inline-block;
   margin-right: 0.3rem;
-  vertical-align: -2px;
-  color: var(--text-muted);
+  color: var(--down);
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.vt-comment-icon {
+  /* Was 13px - too easy to miss entirely (product feedback, 2026-10-07:
+     "его вообще не видно"). */
+  width: 20px;
+  height: 20px;
+  margin-right: 0.35rem;
+  vertical-align: -5px;
+  color: var(--text);
   flex-shrink: 0;
 }
 
@@ -1861,6 +1882,22 @@ table.admin-data-table td.audit-changes-cell {
 .detail-label {
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+.closed-without-payment-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.closed-without-payment-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.closed-without-payment-label input[type="checkbox"]:disabled {
+  cursor: not-allowed;
 }
 
 .work-order-comment-input {
@@ -2997,6 +3034,28 @@ table.admin-data-table td.audit-changes-cell {
 
 .job-resize-handle:hover {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Текущее время (product ask, 2026-10-07: "выделение текущего времени...
+   чтобы было видно, сколько сейчас времени", затем уточнение - сплошная
+   линия без точек, на всю ширину выбранного интервала, а не только в
+   колонке сегодняшнего дня). Drawn separately inside the sticky .timecol
+   and inside EVERY visible day/post .col cell (the grid has no single
+   spanning overlay - every day/post pair is its own CSS Grid cell, see
+   .col.today above), using the same top formula as .job cards - since every
+   .col shares the same local vertical origin, the same line repeated across
+   all of them reads as one continuous ruler across the whole grid, same as
+   a multi-resource/multi-day "now" indicator in FullCalendar/Google
+   Calendar-style schedulers. .timecol and .col are both already positioned
+   (sticky/relative), so no extra positioning context is needed here. */
+.now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--down);
+  z-index: 3;
+  pointer-events: none;
 }
 
 /* ---- Кузовной table ---- */

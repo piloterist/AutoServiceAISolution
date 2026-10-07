@@ -135,6 +135,25 @@ export function loadWorkOrdersCached(
   return inFlight;
 }
 
+/** Clears the cached list (both the in-memory copy and sessionStorage) so
+ * the next visit to /work-orders refetches instead of serving a snapshot
+ * taken before the edit - product ask, 2026-10-07: saving a comment on a
+ * work order's own detail card didn't show up on the list's new comment
+ * icon (has_comment) for up to CACHE_TTL_MS after returning to it, since
+ * the list is deliberately cached for instant loading and nothing told it
+ * this one row's data had just changed. Called after any edit made
+ * through the app's own UI (currently just WorkOrderComment.tsx) - 1C
+ * import changes don't need this, they only ever show up on a fresh visit
+ * anyway (a new day/session), not the same one the edit was made in. */
+export function invalidateWorkOrdersCache(): void {
+  memoryCache = null;
+  try {
+    sessionStorage.removeItem(CACHE_KEY);
+  } catch {
+    // Already gone/inaccessible (private browsing) - nothing to clear.
+  }
+}
+
 /** Always fetches fresh - see loadWorkOrdersCached's doc comment for why
  * a paid_from/paid_to (or only_receivables) view doesn't go through the
  * cache. */

@@ -1045,6 +1045,16 @@ export function WorkOrdersTable({
                         <path d="M5 8.2h6M5 10.8h4" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
                       </svg>
                     )}
+                    {row.item.closed_without_payment && (
+                      <span
+                        className="vt-closed-without-payment-icon"
+                        role="img"
+                        aria-label="Закрыт без оплат"
+                        title="Закрыт без оплат"
+                      >
+                        ₽
+                      </span>
+                    )}
                     {row.number}
                   </div>
                   <div className="vt-cell" role="gridcell">

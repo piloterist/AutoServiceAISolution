@@ -131,6 +131,20 @@ class WorkOrder(Base):
     # own `values`/`update_columns` (see services/import_service.py), so a
     # re-import can never touch/reset it.
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Staff-set "Закрыть без оплат" flag (product ask, 2026-10-07): some
+    # work orders are closed by an off-system arrangement and will never
+    # actually get paid, which was inflating the ДЗ (receivables) figure
+    # and list with debt that's never coming. Settable only by the Админ
+    # role (enforced in the frontend's own API route/middleware - there is
+    # no per-request backend auth yet, see endpoints/work_orders.py). Same
+    # pattern as `comment` above: purely internal, never sent by/to 1C, and
+    # deliberately absent from `_upsert_work_order`'s values/update_columns
+    # so a re-import can never reset it. See work_order_query_service.
+    # list_work_orders's only_receivables filter and cockpit_service.
+    # _receivables for where this actually excludes a work order from ДЗ.
+    closed_without_payment: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

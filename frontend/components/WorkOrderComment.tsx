@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { invalidateWorkOrdersCache } from "@/lib/work-orders-cache";
+
 /** Free-text staff note on the work order detail card (product ask,
  * 2026-10-06) - the one user-editable field on an otherwise read-only
  * (1C-imported) card. Saved explicitly via a button, not auto-saved on
@@ -25,6 +27,7 @@ export function WorkOrderComment({
         body: JSON.stringify({ comment: comment.trim() || null }),
       });
       if (!res.ok) throw new Error(await res.text());
+      invalidateWorkOrdersCache();
       setSaveState("saved");
     } catch {
       setSaveState("error");

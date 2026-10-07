@@ -92,6 +92,27 @@ export function roundToSlot(minutes: number, slot = 30): number {
   return Math.round(minutes / slot) * slot;
 }
 
+/** Current wall-clock time in Moscow (minutes since midnight), regardless of
+ * the viewer's own browser/OS timezone. Job start_time/end_time are plain
+ * "HH:MM" business-local (MSK) strings with no timezone of their own (same
+ * as every other time in this file), so a "current time" indicator has to
+ * be pinned to that same MSK wall clock too - product bug report,
+ * 2026-10-07: the planner's current-time line read wrong because it had
+ * been using the browser's own local time (`new Date().getHours()`), which
+ * drifts from MSK whenever the viewer's machine isn't set to it. Europe/
+ * Moscow has had no DST since 2014, so this needs no DST handling. */
+export function nowMinutesMsk(): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Moscow",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hour * 60 + minute;
+}
+
 export function diffDaysIso(a: string, b: string): number {
   return Math.round((parseIso(b).getTime() - parseIso(a).getTime()) / 86_400_000);
 }

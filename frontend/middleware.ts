@@ -94,7 +94,13 @@ export async function middleware(request: NextRequest) {
   // Planner envelope badge) are deliberately excluded, same reasoning as
   // /api/telephony/source-summary and /api/telephony/missed-calls above.
   const isLeadsAdminApi = pathname.startsWith("/api/leads/settings");
-  const isAdminApi = pathname.startsWith("/api/admin") || isTelephonyAdminApi || isLeadsAdminApi;
+  // "Закрыть без оплат" (product ask, 2026-10-07) - only Админ may set it
+  // (every other role still reads it fine through the plain /api/work-orders
+  // list/detail routes, which stay open to any role with that tab allowed -
+  // only this one write action is restricted).
+  const isWorkOrdersAdminApi = pathname.endsWith("/closed-without-payment");
+  const isAdminApi =
+    pathname.startsWith("/api/admin") || isTelephonyAdminApi || isLeadsAdminApi || isWorkOrdersAdminApi;
   const isAdminArea = pathname.startsWith("/settings") || isAdminApi;
 
   if (isAdminArea && user.role !== ROLE_ADMIN) {

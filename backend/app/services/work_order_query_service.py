@@ -114,11 +114,14 @@ def list_work_orders(
     separate copy rather than a shared helper, since a filter condition and
     an aggregate query aren't the same shape to reuse cleanly): closed work
     orders where `debt_amount` (1C's own already-computed settlement
-    balance - see WorkOrder's own docstring) is still positive. This is
-    what Cockpit's ДЗ bar links to, so clicking it shows exactly the orders
-    behind that number - `departments` here is expected to already be
-    resolved from a workshop via cockpit_service._mapped_source_departments
-    (see endpoints/work_orders.py), same as ДЗ's own workshop scoping.
+    balance - see WorkOrder's own docstring) is still positive, excluding
+    any order staff have flagged `closed_without_payment` (product ask,
+    2026-10-07 - orders closed by an off-system arrangement that will never
+    actually get paid were inflating this figure). This is what Cockpit's
+    ДЗ bar links to, so clicking it shows exactly the orders behind that
+    number - `departments` here is expected to already be resolved from a
+    workshop via cockpit_service._mapped_source_departments (see
+    endpoints/work_orders.py), same as ДЗ's own workshop scoping.
     """
     filters = _date_range_filters(WorkOrder.document_date, date_from, date_to)
     if departments:
@@ -135,6 +138,7 @@ def list_work_orders(
         app_settings = get_app_settings(db)
         filters.append(WorkOrder.closed_date.is_not(None))
         filters.append(WorkOrder.debt_amount > 0)
+        filters.append(WorkOrder.closed_without_payment.is_(False))
         if settings.revenue_statuses_list:
             filters.append(WorkOrder.status.in_(settings.revenue_statuses_list))
         if app_settings.exclude_internal_orders:
@@ -612,6 +616,23 @@ def update_work_order_comment(
     if work_order is None:
         return None
     work_order.comment = comment
+    db.commit()
+    db.refresh(work_order)
+    return work_order
+
+
+def update_work_order_closed_without_payment(
+    db: Session, work_order_id: UUID, closed_without_payment: bool
+) -> WorkOrder | None:
+    """Saves the detail card's "Закрыть без оплат" checkbox (Админ role
+    only - enforced in the frontend's API route/middleware, see
+    models/work_order.py's own docstring on this column). Returns None if
+    the work order doesn't exist, same not-found convention as
+    delete_work_order/update_work_order_comment."""
+    work_order = db.get(WorkOrder, work_order_id)
+    if work_order is None:
+        return None
+    work_order.closed_without_payment = closed_without_payment
     db.commit()
     db.refresh(work_order)
     return work_order

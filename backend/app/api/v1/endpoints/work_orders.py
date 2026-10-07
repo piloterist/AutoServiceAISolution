@@ -34,6 +34,7 @@ from app.schemas.work_order import (
     StatusSummaryResponse,
     TrendSummaryItem,
     TrendSummaryResponse,
+    WorkOrderClosedWithoutPaymentUpdate,
     WorkOrderCommentUpdate,
     WorkOrderDetail,
     WorkOrderLaborLineItem,
@@ -63,6 +64,7 @@ from app.services.work_order_query_service import (
     revenue_paid_amount,
     status_summary,
     trend_summary,
+    update_work_order_closed_without_payment,
     update_work_order_comment,
 )
 
@@ -377,6 +379,27 @@ def update_work_order_comment_endpoint(
     if work_order is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
     return WorkOrderCommentUpdate(comment=work_order.comment)
+
+
+@router.patch(
+    "/work-orders/{work_order_id}/closed-without-payment",
+    response_model=WorkOrderClosedWithoutPaymentUpdate,
+)
+def update_work_order_closed_without_payment_endpoint(
+    work_order_id: UUID, payload: WorkOrderClosedWithoutPaymentUpdate, db: Session = Depends(get_db)
+) -> WorkOrderClosedWithoutPaymentUpdate:
+    """Saves the detail card's "Закрыть без оплат" checkbox - Админ role
+    only. There's no per-request user auth on this API yet (see this
+    module's own docstring), so the role check happens in the frontend's
+    own API route/middleware, not here - see middleware.ts's isAdminApi."""
+    work_order = update_work_order_closed_without_payment(
+        db, work_order_id, payload.closed_without_payment
+    )
+    if work_order is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Work order not found")
+    return WorkOrderClosedWithoutPaymentUpdate(
+        closed_without_payment=work_order.closed_without_payment
+    )
 
 
 @router.delete("/work-orders/{work_order_id}", status_code=status.HTTP_204_NO_CONTENT)

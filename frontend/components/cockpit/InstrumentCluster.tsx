@@ -1077,9 +1077,26 @@ function StripEdgeMark({ align, label }: { align: "start" | "end"; label?: strin
  * actual fact value is printed small below instead. No plan entered yet on
  * the Бюджет page has nothing to divide by, so the strip just reads empty
  * rather than guessing a scale. */
-function RevenueProgressStrip({ revenue, planRub }: { revenue: number; planRub: number }) {
+function RevenueProgressStrip({
+  revenue,
+  planRub,
+  nzpActive,
+  effectiveRevenue,
+}: {
+  revenue: number;
+  planRub: number;
+  /** Same НЗП toggle the main gauge's own needle already reacts to (see
+   * MainGauge's displayValue) - this strip (and the digital row above it,
+   * see InstrumentCluster) now follows it too, product ask, 2026-10-07:
+   * before, pressing НЗП only moved the needle with nothing printed
+   * anywhere confirming by how much - the gauge's own central sum that
+   * used to show this was removed a day earlier per a separate ask. */
+  nzpActive: boolean;
+  effectiveRevenue: number;
+}) {
+  const displayRevenue = nzpActive ? effectiveRevenue : revenue;
   const segments = 9;
-  const filledFraction = planRub > 0 ? Math.min(1, Math.max(0, revenue / planRub)) : 0;
+  const filledFraction = planRub > 0 ? Math.min(1, Math.max(0, displayRevenue / planRub)) : 0;
   return (
     <div className="cockpit-strip">
       <div className="cockpit-strip-segments">
@@ -1089,7 +1106,7 @@ function RevenueProgressStrip({ revenue, planRub }: { revenue: number; planRub: 
       </div>
       <div className="cockpit-strip-footer">
         <StripEdgeMark align="start" label="E" />
-        <span className="cockpit-strip-value">{formatRub(revenue)} ₽</span>
+        <span className="cockpit-strip-value">{formatRub(displayRevenue)} ₽</span>
         <StripEdgeMark align="end" label="F" />
       </div>
     </div>
@@ -1162,10 +1179,25 @@ function DebtCapsule({
  * ~2x - see .cockpit-revenue-stack - after an earlier round had grouped it
  * together with ДЗ/КЗ into one combined right-side stack; that grouping is
  * gone, this is now independently positioned). */
-function RevenueStack({ revenue, planRub }: { revenue: number; planRub: number }) {
+function RevenueStack({
+  revenue,
+  planRub,
+  nzpActive,
+  effectiveRevenue,
+}: {
+  revenue: number;
+  planRub: number;
+  nzpActive: boolean;
+  effectiveRevenue: number;
+}) {
   return (
     <div className="cockpit-revenue-stack" aria-hidden="true">
-      <RevenueProgressStrip revenue={revenue} planRub={planRub} />
+      <RevenueProgressStrip
+        revenue={revenue}
+        planRub={planRub}
+        nzpActive={nzpActive}
+        effectiveRevenue={effectiveRevenue}
+      />
     </div>
   );
 }
@@ -1374,7 +1406,7 @@ export function InstrumentCluster({
               feedback, 2026-10-04: "еще чуть пониже, чтобы было понятно,
               что это подпись к этой линии"). */}
           <text x={1360} y={460} textAnchor="middle" className="cockpit-row-line">
-            {formatMillions(revenue)} / {formatMillions(budgetPlanRevenue)} млн
+            {formatMillions(nzpActive ? effectiveRevenue : revenue)} / {formatMillions(budgetPlanRevenue)} млн
           </text>
         </g>
       </svg>
@@ -1444,7 +1476,12 @@ export function InstrumentCluster({
       />
 
       <div className="cockpit-strips">
-        <RevenueStack revenue={revenue} planRub={budgetPlanRevenue} />
+        <RevenueStack
+          revenue={revenue}
+          planRub={budgetPlanRevenue}
+          nzpActive={nzpActive}
+          effectiveRevenue={effectiveRevenue}
+        />
         <PaymentsDebtStack receivables={receivables} workshopId={workshopId} />
       </div>
     </>

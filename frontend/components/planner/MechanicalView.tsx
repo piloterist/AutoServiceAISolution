@@ -9,6 +9,7 @@ import {
   addDaysIso,
   formatLongDay,
   minutesToTime,
+  nowMinutesMsk,
   roundToSlot,
   timeToMinutes,
   todayIso,
@@ -146,6 +147,16 @@ function MechanicalViewInner({
   onWritten: () => void;
 }) {
   const [search, setSearch] = useState(initialSearch ?? "");
+  // Drives the "now" line (product ask, 2026-10-07: "выделение текущего
+  // времени... чтобы было видно, сколько сейчас времени"). Just a re-render
+  // tick - the actual time comes from nowMinutesMsk() on every render, not
+  // from this value. A minute's worth of drift is invisible at this grid's
+  // scale (36px per 30 min), so a 1-minute tick is plenty.
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setNowTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
   const jobElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
   const didScrollToLinkRef = useRef(false);
   const [jobs, setJobs] = useState<WorkshopJob[]>([]);
@@ -450,6 +461,10 @@ function MechanicalViewInner({
 
   const colH = slots.length * SLOT_HEIGHT;
   const todayStr = todayIso();
+  const nowMinutes = nowMinutesMsk();
+  const nowInHours = nowMinutes >= dayStartMinutes && nowMinutes <= dayEndMinutes;
+  const nowTop = ((nowMinutes - dayStartMinutes) / SLOT_MINUTES) * SLOT_HEIGHT;
+  const todayVisible = days.includes(todayStr);
 
   return (
     <div className="planner-flex-col">
@@ -608,6 +623,15 @@ function MechanicalViewInner({
                     />
                   );
                 })}
+                {/* Across every visible day/post column, not just today's -
+                    per product ask, 2026-10-07: "линия должна быть на весь
+                    интервал который выбран, т.е. если неделя - неделя".
+                    Every .col shares the same local vertical origin (same
+                    colH, same CSS Grid row), so drawing it at the same
+                    `top` in each one reads as a single line spanning the
+                    whole grid, the way FullCalendar/Google Calendar-style
+                    "now" indicators do in a multi-column timeline. */}
+                {todayVisible && nowInHours && <div className="now-line" style={{ top: nowTop }} />}
                 {jobsFor(day, post).map((job) => {
                   const status = job.status_id ? statusById.get(job.status_id) : undefined;
                   const isBeingResized = dragState?.hasMoved && dragState.job.id === job.id && dragState.kind !== "move";

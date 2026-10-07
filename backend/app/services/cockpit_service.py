@@ -302,8 +302,18 @@ def _receivables(
     this can never disagree with what the operator sees on one order up
     close. Still scoped to CLOSED orders only (an open order isn't
     "receivable" yet, per the original product rule), but no longer needs
-    the invoice/payment-event tables at all."""
-    filters = [WorkOrder.closed_date.is_not(None), WorkOrder.debt_amount > 0]
+    the invoice/payment-event tables at all.
+
+    Also excludes any order staff have flagged `closed_without_payment`
+    (product ask, 2026-10-07): some orders are closed by an off-system
+    arrangement and will never actually get paid, which was inflating this
+    figure with debt that's never coming - see models/work_order.py's own
+    docstring on that column."""
+    filters = [
+        WorkOrder.closed_date.is_not(None),
+        WorkOrder.debt_amount > 0,
+        WorkOrder.closed_without_payment.is_(False),
+    ]
     if source_departments is not None:
         filters.append(WorkOrder.department.in_(source_departments))
     if revenue_statuses:
