@@ -119,9 +119,9 @@ export function SettingsForm({
           : "Сохранить";
 
   return (
-    <>
-      <div className="card settings-card">
-        <h2 className="chart-title">Страховые</h2>
+    <div className="card settings-general">
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Страховые</h3>
 
         <div className="settings-field">
           <label htmlFor="insurance-repair-type">Вид ремонта для страховых</label>
@@ -149,8 +149,8 @@ export function SettingsForm({
         </label>
       </div>
 
-      <div className="card settings-card settings-card--wide">
-        <h2 className="chart-title">Специфика PanMotors</h2>
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Специфика PanMotors</h3>
 
         <label className="settings-checkbox">
           <input
@@ -183,8 +183,8 @@ export function SettingsForm({
         </p>
       </div>
 
-      <div className="card settings-card">
-        <h2 className="chart-title">Сессия</h2>
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Сессия</h3>
 
         <div className="settings-field">
           <label htmlFor="daily-logout-time">Автовыход в</label>
@@ -203,8 +203,8 @@ export function SettingsForm({
         </p>
       </div>
 
-      <div className="card settings-card">
-        <h2 className="chart-title">Планировщик</h2>
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Планировщик</h3>
 
         <label className="settings-checkbox">
           <input
@@ -265,8 +265,8 @@ export function SettingsForm({
         </p>
       </div>
 
-      <div className="card settings-card">
-        <h2 className="chart-title">Интеграции</h2>
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Интеграции</h3>
 
         <label className="settings-checkbox">
           <input
@@ -282,7 +282,9 @@ export function SettingsForm({
           напрямую по гос.номеру через API 5Systems. Если выключить — кнопка в Планировщике
           станет недоступна, независимо от того, введён гос.номер или нет.
         </p>
+      </div>
 
+      <div className="settings-subgroup settings-subgroup--actions">
         <button
           type="button"
           className="settings-save"
@@ -292,6 +294,6 @@ export function SettingsForm({
           {saveLabel}
         </button>
       </div>
-    </>
+    </div>
   );
 }

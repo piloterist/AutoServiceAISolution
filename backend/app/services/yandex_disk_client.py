@@ -55,8 +55,22 @@ def ensure_folder(client: httpx.Client, token: str, path: str) -> bool:
 
 
 def ensure_path(client: httpx.Client, token: str, base: str, *parts: str) -> bool:
-    """Creates base/part1/part2/... level by level (base must already
-    exist). Returns True if the last segment was newly created."""
+    """Creates base/part1/part2/... level by level, creating `base` itself
+    first if it doesn't exist yet either (ensure_folder is idempotent, so
+    this is a no-op for every caller whose base already exists). Returns
+    True if the LAST segment was newly created.
+
+    Hardened 2026-10-14 after a real incident: lead_photos_service's own
+    `disk:/Leads` base folder didn't exist on the account at all (deleted,
+    or never created - never confirmed which), so every lead's photo
+    archive attempt failed at the very first ensure_folder call for about
+    two weeks before anyone noticed - archive_photos only logs this
+    (lead_photo_folder_failed) rather than raising, by design, so a lead
+    is never rejected over a broken photo archive. Ensuring `base` here
+    too means a missing top-level folder for ANY current or future
+    Yandex.Disk consumer heals itself on the very next call instead of
+    failing the same silent way."""
+    ensure_folder(client, token, base)
     created = False
     path = base
     for part in parts:

@@ -317,6 +317,11 @@ class ProcessStats:
     failed: int = 0
     skipped: int = 0
     errors: int = 0
+    # Rows found by find_pending_calls but never attempted this cycle
+    # because the cycle's own time budget ran out first (see
+    # process_pending_calls's cycle_deadline) - left for the next cycle to
+    # pick back up, same as any other not-yet-attempted row.
+    deferred: int = 0
 
 
 def process_pending_calls(
@@ -327,7 +332,19 @@ def process_pending_calls(
     commits its own progress as it goes, so a crash partway through never
     loses already-finished work, and a transient failure on one call just
     leaves it for the next cycle to retry (only an unusable recording is
-    marked permanently "failed" - see _transcribe)."""
+    marked permanently "failed" - see _transcribe).
+
+    Bails out once this cycle has already run for
+    `transcription_poll_interval_minutes` (the relay's own schedule, see
+    call_transcription_relay.py) instead of working through the full
+    `limit`-sized batch no matter how long that takes - incident,
+    2026-10-12: a degraded (not hard-down, just slow) SpeechKit let a
+    handful of calls each burn their full speechkit_timeout_min
+    (previously 60 min) one after another in the SAME cycle, stalling
+    every later cycle too since the relay awaits one cycle fully before
+    scheduling the next (see call_transcription_relay.poll_once). Any row
+    this skips is simply left for the next cycle - nothing here marks it
+    failed, same as a transient per-row failure."""
     stats = ProcessStats()
     rows = find_pending_calls(db, limit, now=now)
     if not rows:
@@ -347,8 +364,18 @@ def process_pending_calls(
         else None
     )
 
+    cycle_deadline = time.monotonic() + settings.transcription_poll_interval_minutes * 60
+
     with speechkit_client.new_client() as stt_client, yandexgpt_client.new_client() as gpt_client:
         for row in rows:
+            if time.monotonic() > cycle_deadline:
+                stats.deferred = len(rows) - rows.index(row)
+                logger.warning(
+                    "call_transcription_cycle_budget_exceeded",
+                    remaining=stats.deferred,
+                    budget_minutes=settings.transcription_poll_interval_minutes,
+                )
+                break
             # find_pending_calls can also hand back an already-"classified"
             # row (the one-off case where assess_quality_enabled was turned
             # on after that row was classified) - transcript_status is None
@@ -399,5 +426,6 @@ def process_pending_calls(
         failed=stats.failed,
         skipped=stats.skipped,
         errors=stats.errors,
+        deferred=stats.deferred,
     )
     return stats

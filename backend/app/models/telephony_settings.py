@@ -89,7 +89,19 @@ class TelephonySettings(Base):
     # operations still in flight before giving up on the rest of that
     # batch (see call_recording_service.transcribe_recordings) - the batch
     # is safe to just run again later, already-finished files are skipped.
-    speechkit_timeout_min: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    #
+    # Also reused (same settings field) as a PER-CALL deadline by the other,
+    # automatic pipeline - services/call_transcription_service._transcribe.
+    # Was 60 - incident, 2026-10-12: a degraded (not hard-down, just slow)
+    # SpeechKit let calls each block that pipeline's relay cycle for up to a
+    # full hour one after another, which (combined with the relay awaiting
+    # one whole cycle before scheduling the next) stalled transcription for
+    # hours. 5 is generous for how long a real transcription normally takes
+    # (well under a minute per call in practice) while keeping a single
+    # stuck call from eating the relay's own schedule - see that service's
+    # process_pending_calls for the matching per-cycle time budget this
+    # value should stay comfortably under.
+    speechkit_timeout_min: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
 
     # --- Call topic classification via YandexGPT (see
     # services/yandexgpt_client.py, services/call_transcription_relay.py) -

@@ -17,9 +17,13 @@ const ICON_DELAY_AFTER_TYPING_MS = 400;
  * 2026-09-30, with a reference photo of a real ESP dash light) - fades in
  * together with the rest of the cluster (see CockpitView's shared
  * `revealed`/data-revealed), then runs its own one-shot sequence once
- * mounted: the EN/RU tagline types itself out left-to-right, and once
- * that finishes the ESP indicator (icon + "ON") flickers on like a
- * fluorescent tube. */
+ * mounted: the EN/RU tagline types itself out left-to-right, then the ESP
+ * indicator (icon + "Ai", dot and all) flickers on together like a
+ * fluorescent tube, then a four-point star glints once over the dot on
+ * "i" (product ask, 2026-10-08 - an earlier attempt rebuilt "i" from
+ * scratch as a stem+dot that drew itself in afterward, which read as
+ * "жуть"; reverted back to this simpler version where "Ai" is just plain
+ * text and the star is a one-shot decoration over its existing dot). */
 export function EspBrand({ revealed }: { revealed: boolean }) {
   const [typedChars, setTypedChars] = useState(0);
   const [showIcon, setShowIcon] = useState(false);
@@ -56,18 +60,30 @@ export function EspBrand({ revealed }: { revealed: boolean }) {
 
   return (
     <div className="cockpit-brand-row" data-revealed={revealed}>
-      <span className="cockpit-esp-letters">ESP</span>
+      <span className="cockpit-esp-letters">
+        ESP<span className="cockpit-esp-letters-ai">Ai</span>
+      </span>
       <span className="cockpit-esp-tagline">
         <span className="cockpit-esp-tagline-en">{TAGLINE_EN.slice(0, typedChars)}</span>
         <span className="cockpit-esp-tagline-ru">{TAGLINE_RU.slice(0, typedChars)}</span>
       </span>
       {showIcon && (
-        <span className="cockpit-esp-indicator cockpit-esp-indicator--flicker" role="img" aria-label="ESP включён">
+        <span className="cockpit-esp-indicator cockpit-esp-indicator--flicker" role="img" aria-label="ESP Ai включён">
           {/* eslint-disable-next-line @next/next/no-img-element -- a tiny
               static icon in a client component; next/image's extra
               machinery buys nothing here. */}
           <img src="/esp-icon.jpg" alt="" aria-hidden="true" className="cockpit-esp-indicator-icon" />
-          <span className="cockpit-esp-indicator-on">ON</span>
+          <span className="cockpit-esp-indicator-on">
+            Ai
+            {/* Purely decorative one-shot glint over the dot on "i", timed
+                via CSS animation-delay to start once the flicker above
+                settles - see .cockpit-esp-indicator--flicker's own 2300ms
+                duration. aria-hidden since it carries no information of
+                its own. */}
+            <span className="cockpit-esp-indicator-sparkle" aria-hidden="true">
+              <span className="cockpit-esp-indicator-sparkle-glow" />
+            </span>
+          </span>
         </span>
       )}
     </div>

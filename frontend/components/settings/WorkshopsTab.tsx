@@ -149,10 +149,57 @@ export function WorkshopsTab({
   };
 
   return (
-    <div className="card">
-      <div className="admin-toolbar">
-        <h2 className="chart-title">Цеха</h2>
-        <div className="admin-toolbar-actions">
+    <div className="org-group">
+      <h2 className="org-group-title">Цеха</h2>
+      <div className="org-group-body">
+        <div className="org-group-table">
+          <table className="data-table admin-data-table">
+            <thead>
+              <tr>
+                <th>Подразделение</th>
+                <th>Цех</th>
+                <th className="num">Площадь</th>
+                <th className="num">Посты</th>
+                <th>Часы работы</th>
+                <th>Рабочие дни</th>
+                <th>По умолчанию</th>
+                <th className="num">Выручка в ноль</th>
+                <th className="num">Выручка цель</th>
+                <th className="num">Нормочасы</th>
+              </tr>
+            </thead>
+            <tbody>
+              {workshops.map((workshop) => (
+                <tr
+                  key={workshop.id}
+                  className={workshop.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+                  onClick={() => toggleSelect(workshop)}
+                >
+                  <td>{workshop.department_name}</td>
+                  <td>{workshop.workshop_type}</td>
+                  <td className="num">{workshop.area ?? "—"}</td>
+                  <td className="num">{workshop.workshop_type === "Кузовной" ? "—" : workshop.posts_count}</td>
+                  <td>
+                    {workshop.start_time.slice(0, 5)}–{workshop.end_time.slice(0, 5)}
+                  </td>
+                  <td>{workshop.working_days.map((d) => WEEKDAY_LABELS[d]).join(", ")}</td>
+                  <td>{workshop.is_default ? "Да" : "—"}</td>
+                  <td className="num">{workshop.zero_revenue ?? "—"}</td>
+                  <td className="num">{workshop.target_revenue ?? "—"}</td>
+                  <td className="num">{workshop.target_norm_hours ?? "—"}</td>
+                </tr>
+              ))}
+              {workshops.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="admin-empty-row">
+                    Цехов пока нет
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="org-group-actions">
           <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
             Изменить
           </button>
@@ -178,52 +225,6 @@ export function WorkshopsTab({
           </button>
         </div>
       </div>
-
-      <table className="data-table admin-data-table">
-        <thead>
-          <tr>
-            <th>Подразделение</th>
-            <th>Цех</th>
-            <th className="num">Площадь</th>
-            <th className="num">Посты</th>
-            <th>Часы работы</th>
-            <th>Рабочие дни</th>
-            <th>По умолчанию</th>
-            <th className="num">Выручка в ноль</th>
-            <th className="num">Выручка цель</th>
-            <th className="num">Нормочасы</th>
-          </tr>
-        </thead>
-        <tbody>
-          {workshops.map((workshop) => (
-            <tr
-              key={workshop.id}
-              className={workshop.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
-              onClick={() => toggleSelect(workshop)}
-            >
-              <td>{workshop.department_name}</td>
-              <td>{workshop.workshop_type}</td>
-              <td className="num">{workshop.area ?? "—"}</td>
-              <td className="num">{workshop.workshop_type === "Кузовной" ? "—" : workshop.posts_count}</td>
-              <td>
-                {workshop.start_time.slice(0, 5)}–{workshop.end_time.slice(0, 5)}
-              </td>
-              <td>{workshop.working_days.map((d) => WEEKDAY_LABELS[d]).join(", ")}</td>
-              <td>{workshop.is_default ? "Да" : "—"}</td>
-              <td className="num">{workshop.zero_revenue ?? "—"}</td>
-              <td className="num">{workshop.target_revenue ?? "—"}</td>
-              <td className="num">{workshop.target_norm_hours ?? "—"}</td>
-            </tr>
-          ))}
-          {workshops.length === 0 && (
-            <tr>
-              <td colSpan={10} className="admin-empty-row">
-                Цехов пока нет
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
 
       <AdminModal open={editing !== null} title={editing === "new" ? "Новый цех" : "Изменить цех"} onClose={close}>
         <div className="admin-form-grid">

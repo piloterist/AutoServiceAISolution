@@ -109,10 +109,59 @@ export function WorkshopSourceDepartmentsTab({
   };
 
   return (
-    <div className="card">
-      <div className="admin-toolbar">
-        <h2 className="chart-title">Соответствие 1С</h2>
-        <div className="admin-toolbar-actions">
+    <div className="org-group">
+      <h2 className="org-group-title">Соответствие 1С</h2>
+      <div className="org-group-body">
+        <div className="org-group-table">
+          <p className="admin-hint admin-source-department-intro">
+            Здесь указывается, какой строке подразделения из 1С (как её присылает Alpha-Auto, например «Кузовной цех
+            (Каховка)») соответствует какой цех в системе. Одному цеху может соответствовать несколько строк из 1С.
+            Выручка со строк, не указанных здесь, всё равно попадает в общий итог «Вся компания», но не попадёт в
+            сумму конкретного цеха.
+          </p>
+
+          <table className="data-table admin-data-table">
+            <thead>
+              <tr>
+                <th>Строка из 1С</th>
+                <th>Цех</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr
+                  key={row.id}
+                  className={row.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+                  onClick={() => toggleSelect(row)}
+                >
+                  <td>{row.source_department}</td>
+                  <td>{row.workshop_label}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="admin-empty-row">
+                    Соответствий пока нет
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {unmapped.length > 0 && (
+            <div className="admin-hint">
+              Ещё не размечено (встречается в заказ-нарядах, но нет цеха):
+              <div className="admin-unmapped-list">
+                {unmapped.map((value) => (
+                  <button key={value} type="button" className="admin-btn" onClick={() => openNew(value)}>
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="org-group-actions">
           <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
             Изменить
           </button>
@@ -138,54 +187,6 @@ export function WorkshopSourceDepartmentsTab({
           </button>
         </div>
       </div>
-
-      <p className="admin-hint admin-source-department-intro">
-        Здесь указывается, какой строке подразделения из 1С (как её присылает Alpha-Auto, например «Кузовной цех
-        (Каховка)») соответствует какой цех в системе. Одному цеху может соответствовать несколько строк из 1С.
-        Выручка со строк, не указанных здесь, всё равно попадает в общий итог «Вся компания», но не попадёт в
-        сумму конкретного цеха.
-      </p>
-
-      <table className="data-table admin-data-table">
-        <thead>
-          <tr>
-            <th>Строка из 1С</th>
-            <th>Цех</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr
-              key={row.id}
-              className={row.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
-              onClick={() => toggleSelect(row)}
-            >
-              <td>{row.source_department}</td>
-              <td>{row.workshop_label}</td>
-            </tr>
-          ))}
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={2} className="admin-empty-row">
-                Соответствий пока нет
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      {unmapped.length > 0 && (
-        <div className="admin-hint">
-          Ещё не размечено (встречается в заказ-нарядах, но нет цеха):
-          <div className="admin-unmapped-list">
-            {unmapped.map((value) => (
-              <button key={value} type="button" className="admin-btn" onClick={() => openNew(value)}>
-                {value}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       <AdminModal
         open={editing !== null}

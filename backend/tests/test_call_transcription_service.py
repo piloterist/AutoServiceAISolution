@@ -34,7 +34,11 @@ TOPIC_SAMPLE = "Покраска бампера после удара"
 
 
 def _settings(
-    *, classify: bool = True, assess: bool = False, rewrite: bool = False
+    *,
+    classify: bool = True,
+    assess: bool = False,
+    rewrite: bool = False,
+    poll_interval_minutes: int = 10,
 ) -> TelephonySettings:
     return TelephonySettings(
         id=1,
@@ -51,6 +55,11 @@ def _settings(
         yandexgpt_model="yandexgpt-lite/latest",
         assess_quality_enabled=assess,
         transcript_rewrite_enabled=rewrite,
+        # Generous enough that none of these tests' own (real, unmocked)
+        # execution time ever trips process_pending_calls's cycle-budget
+        # check - see test_process_pending_calls_stops_early_when_cycle_
+        # budget_exceeded below for the one test that deliberately does.
+        transcription_poll_interval_minutes=poll_interval_minutes,
     )
 
 
@@ -514,3 +523,32 @@ def test_process_pending_calls_raises_when_zeon_not_configured(db_session: Sessi
 
     with pytest.raises(svc.CallTranscriptionError):
         svc.process_pending_calls(db_session, settings, limit=10, now=NOW)
+
+
+def test_process_pending_calls_stops_early_when_cycle_budget_exceeded(
+    monkeypatch, db_session: Session
+) -> None:
+    """Incident, 2026-10-12: a degraded (not hard-down, just slow)
+    SpeechKit let several calls each burn their full per-call timeout one
+    after another in the same cycle, stalling every later cycle too since
+    the relay awaits one cycle fully before scheduling the next (see
+    call_transcription_relay.poll_once). process_pending_calls now bails
+    out once its own cycle has already run past
+    transcription_poll_interval_minutes, leaving whatever's left for the
+    next cycle - same as any other transient per-row failure, nothing here
+    marks a deferred row "failed"."""
+    first = _call(db_session)
+    second = _call(db_session)
+    _patch_happy_path(monkeypatch)
+    # A negative budget guarantees the very first check inside the loop
+    # already reads as "past deadline", regardless of the real clock's
+    # exact value at that instant - no need to mock time.monotonic itself.
+    settings = _settings(poll_interval_minutes=-1)
+
+    stats = svc.process_pending_calls(db_session, settings, limit=10, now=NOW)
+
+    assert stats == svc.ProcessStats(deferred=2)
+    db_session.refresh(first)
+    db_session.refresh(second)
+    assert first.transcript_status is None
+    assert second.transcript_status is None

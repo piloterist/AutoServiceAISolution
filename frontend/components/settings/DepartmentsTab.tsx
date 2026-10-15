@@ -75,10 +75,35 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
   };
 
   return (
-    <div className="card">
-      <div className="admin-toolbar">
-        <h2 className="chart-title">Подразделения</h2>
-        <div className="admin-toolbar-actions">
+    <div className="org-group">
+      <h2 className="org-group-title">Подразделения</h2>
+      <div className="org-group-body">
+        <div className="org-group-table">
+          <table className="data-table admin-data-table">
+            <thead>
+              <tr>
+                <th>Наименование</th>
+              </tr>
+            </thead>
+            <tbody>
+              {departments.map((department) => (
+                <tr
+                  key={department.id}
+                  className={department.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+                  onClick={() => toggleSelect(department)}
+                >
+                  <td>{department.name}</td>
+                </tr>
+              ))}
+              {departments.length === 0 && (
+                <tr>
+                  <td className="admin-empty-row">Подразделений пока нет</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="org-group-actions">
           <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
             Изменить
           </button>
@@ -98,30 +123,6 @@ export function DepartmentsTab({ initialDepartments }: { initialDepartments: Org
           </button>
         </div>
       </div>
-
-      <table className="data-table admin-data-table">
-        <thead>
-          <tr>
-            <th>Наименование</th>
-          </tr>
-        </thead>
-        <tbody>
-          {departments.map((department) => (
-            <tr
-              key={department.id}
-              className={department.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
-              onClick={() => toggleSelect(department)}
-            >
-              <td>{department.name}</td>
-            </tr>
-          ))}
-          {departments.length === 0 && (
-            <tr>
-              <td className="admin-empty-row">Подразделений пока нет</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
 
       <AdminModal
         open={editing !== null}

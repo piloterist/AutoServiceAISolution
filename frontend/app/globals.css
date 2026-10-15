@@ -445,11 +445,47 @@ main:has(.full-width-page) {
 
 /* --- Settings page --- */
 
-.settings-card {
-  max-width: 420px;
+/* "Общие" (product ask, 2026-10-14: was 5 separate boxed cards of
+   different widths stacked down the page - "тупо вниз все разного
+   размера"). One flowing card, each subgroup told apart by its own
+   heading + a divider line instead of its own rectangle - see
+   .settings-subgroup below. */
+.settings-general {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 1.75rem;
+}
+
+.settings-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-subgroup:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.settings-subgroup-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+
+.settings-subgroup--actions {
+  padding-top: 0.25rem;
+  border-top: none;
+}
+
+/* Inputs/selects below are width:100% of .settings-field (see that rule
+   further down) - this caps how wide that ends up now that the subgroup
+   itself spans the whole (unboxed) card instead of a narrow .settings-card. */
+.settings-general .settings-field {
+  max-width: 380px;
 }
 
 .settings-field {
@@ -507,10 +543,6 @@ main:has(.full-width-page) {
 .settings-save:disabled {
   opacity: 0.6;
   cursor: default;
-}
-
-.settings-card--wide {
-  max-width: 560px;
 }
 
 .settings-hint {
@@ -663,6 +695,101 @@ table.admin-data-table td {
 
 .admin-source-department-intro {
   margin: 0.75rem 0;
+}
+
+/* Settings -> "Орг. структура" (merged Подразделения/Цеха/Соответствие 1С/
+   Статусы слесарки, product ask, 2026-10-14) - ONE shared .card (see
+   OrgStructureTab.tsx), laid out as an explicit 3-column grid per the exact
+   spec given, 2026-10-14:
+
+     [Подразделения] [Статусы слесарки] [Цеха            ]
+     [   (cont.)    ] [    (cont.)     ] [Соответствие 1С ]
+
+   Columns 1-2 are content-width (auto); column 3 is 1fr, so Цеха and
+   Соответствие 1С always share the same width and reach the right edge
+   ("одинаковые по ширине, до конца вправо"). .org-structure-span (wrapping
+   Подразделения/Статусы слесарки in OrgStructureTab.tsx) spans both grid
+   rows, so their height always matches the combined height of Цеха +
+   Соответствие 1С automatically - "при увеличении их высот -
+   увеличиваются высоты подразделений и статусов" is just how a CSS Grid
+   row-span behaves once two cells share the same row tracks, no manual
+   height sync needed. DOM order matters for this to auto-place correctly -
+   see OrgStructureTab.tsx's own comment. */
+.org-structure-grid {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 1.25rem;
+}
+
+.org-structure-span {
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+}
+
+.org-structure-span .org-group {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+/* One group's fixed shape, per the exact spec given 2026-10-14: title
+   top-left, then the table part with a column of its own three
+   Изменить/Удалить/+Добавить buttons to the right - every group on this
+   tab follows this same layout. Each draws its own thin border/background
+   so adjacent groups read as distinct ("раздели группы линиями, а то всё в
+   куче") even when they sit flush against each other. */
+.org-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface2);
+}
+
+.org-group-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.org-group-body {
+  display: flex;
+  align-items: flex-start;
+  /* Was 1rem - product feedback, "кнопки не так близко к табличным
+     значениям" (sat right up against the table otherwise). */
+  gap: 2.25rem;
+}
+
+.org-group-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Подразделения/Статусы слесарки (in the grid's auto-width columns 1-2) -
+   shrink their own table to content, same reasoning as before: nothing in
+   either table needs to stretch to fill extra width. Цеха/Соответствие 1С
+   (column 3, 1fr) are NOT touched here - per the latest spec they should
+   fill that shared column instead, so their tables keep .data-table's own
+   default width:100%/table-layout:fixed. */
+.org-structure-span .org-group-table .data-table {
+  width: auto;
+  table-layout: auto;
+}
+
+.org-group-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.org-group-actions .admin-btn {
+  width: 100%;
 }
 
 .admin-unmapped-list {
@@ -2629,32 +2756,65 @@ table.admin-data-table td.audit-changes-cell {
   color: var(--text-muted);
 }
 
-.leads-photo-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
 .leads-detail-row td {
   background: var(--surface2);
   padding: 0.75rem 1rem;
 }
 
+.leads-detail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+/* Thumbnail grid for a lead's archived photos (per product ask,
+   2026-10-14: the old plain "Фото 1"/"Фото 2" text links read as an
+   afterthought - these are the whole point of a "Рассчитать по фото"
+   lead). Square crop keeps the grid even regardless of each photo's own
+   aspect ratio. */
+.leads-photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.leads-photo-thumb {
+  display: block;
+  width: 84px;
+  height: 84px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.leads-photo-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Replaces the old raw <dl> key/value dump (per product ask, 2026-10-14:
+   "текст вылезает, названия в виде тегов... сделай красиво") - each field
+   is its own small card instead of a loose grid of labels/values with no
+   visual grouping. Reuses .detail-label from the Work Order detail page
+   for the label styling, same muted-caption treatment across the app. */
 .leads-detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.4rem 1rem;
+  gap: 0.6rem;
+}
+
+.leads-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
   font-size: 0.85rem;
-}
-
-.leads-detail-grid dt {
-  color: var(--text-muted);
-  font-weight: 600;
-}
-
-.leads-detail-grid dd {
-  margin: 0 0 0.5rem;
-  color: var(--text);
   word-break: break-word;
 }
 
@@ -3816,6 +3976,15 @@ main:has(.cockpit-page) {
   flex-shrink: 0;
 }
 
+/* "Ai" after "ESP" (renamed 2026-10-08 - "ESP" the name collided with a
+   Chinese chip brand). A plain space here would inherit this font's full
+   word-gap, which read as too wide - this margin keeps the two names
+   close together but still clearly separated (product ask: "минимальный
+   пробел... но чтобы было заметно расстояние"). */
+.cockpit-esp-letters-ai {
+  margin-left: 0.18em;
+}
+
 .cockpit-esp-tagline {
   display: flex;
   flex-direction: column;
@@ -3858,10 +4027,124 @@ main:has(.cockpit-page) {
 }
 
 .cockpit-esp-indicator-on {
+  position: relative;
   font-family: "Arial Narrow", "Segoe UI", Roboto, sans-serif;
   font-weight: 800;
-  font-size: 1.4rem;
+  /* Was 1.4rem - product ask, 2026-10-08: "справа от машинки сделай Ai
+     покрупнее" (this used to just spell "ON", so it read fine smaller). */
+  font-size: 2.1rem;
   letter-spacing: 0.05em;
+}
+
+/* One-shot glint over the dot on "i", starting right as the flicker above
+   settles - animation-delay matches .cockpit-esp-indicator--flicker's own
+   2300ms duration rather than a separate React-driven stage (reverted,
+   2026-10-08, from a version that rebuilt "i" from scratch as a stem+dot
+   that drew itself in - "жуть какая-то"; "Ai" is plain text again, dot
+   included from the start, flickering together with "A").
+
+   Position is approximate/empirical (font-metrics-dependent, not measured)
+   - nudge top/right here if it drifts off the actual dot after a font or
+   size change. History: -9px/1px -> -3px/7px -> 3px/5px -> 5px/5px ->
+   7px/5px -> 8px/6px -> 9px/7px -> this value ("на 1 правее"). */
+.cockpit-esp-indicator-sparkle {
+  position: absolute;
+  top: 9px;
+  right: 6px;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* The glow at the light's source - warm amber/yellow, not white (product
+   feedback, 2026-10-08: "сделай её тёплым, жёлтым светом"). Fades back out
+   like the rays below, not persisting - the dot is the real text glyph's
+   own, already there underneath. */
+.cockpit-esp-indicator-sparkle-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff3c4 0%, rgba(255, 196, 59, 0.6) 45%, transparent 75%);
+  opacity: 0;
+  animation: cockpit-esp-sparkle-glow 700ms ease-out 2300ms 1 both;
+}
+
+/* Two crossed rays = a four-point star. Each spins through roughly a full
+   turn (via the shared keyframe, offset by its own --sparkle-base-rot) -
+   the "поворачивающийся свет, как маяк" part. Same warm amber as the glow
+   above. */
+.cockpit-esp-indicator-sparkle::before,
+.cockpit-esp-indicator-sparkle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  /* 20px -> 32px -> this (product ask, 2026-10-08: "лучи делаем еще
+     немного длиннее"). */
+  width: 42px;
+  height: 1.5px;
+  margin: -0.75px 0 0 -21px;
+  background: linear-gradient(90deg, transparent, #ffd23f 50%, transparent);
+  opacity: 0;
+  animation: cockpit-esp-sparkle-ray 700ms ease-out 2300ms 1 both;
+}
+
+.cockpit-esp-indicator-sparkle::before {
+  --sparkle-base-rot: 0deg;
+}
+
+.cockpit-esp-indicator-sparkle::after {
+  --sparkle-base-rot: 90deg;
+}
+
+@keyframes cockpit-esp-sparkle-glow {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  60% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+}
+
+@keyframes cockpit-esp-sparkle-ray {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--sparkle-base-rot)) scaleX(0.2);
+  }
+  30% {
+    opacity: 1;
+    transform: rotate(calc(var(--sparkle-base-rot) + 140deg)) scaleX(1);
+  }
+  60% {
+    opacity: 1;
+    transform: rotate(calc(var(--sparkle-base-rot) + 190deg)) scaleX(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(calc(var(--sparkle-base-rot) + 360deg)) scaleX(0.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cockpit-esp-indicator-sparkle-glow,
+  .cockpit-esp-indicator-sparkle::before,
+  .cockpit-esp-indicator-sparkle::after {
+    animation: none;
+  }
 }
 
 /* Snaps through a few rough on/off/dim steps before settling fully lit -

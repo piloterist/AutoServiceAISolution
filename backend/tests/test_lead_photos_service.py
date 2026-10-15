@@ -129,6 +129,46 @@ def test_archive_photos_drops_photo_on_upload_failure(monkeypatch) -> None:
     assert result == []
 
 
+def test_archive_photos_succeeds_when_base_leads_folder_is_missing(monkeypatch) -> None:
+    """Regression test for the real 2026-10-14 incident: disk:/Leads itself
+    didn't exist on the account (not just the per-lead subfolder), so every
+    archive attempt failed at ensure_path's first ensure_folder call for
+    about two weeks before anyone noticed. Fixed in yandex_disk_client.
+    ensure_path, which now creates `base` first - this simulates Yandex's
+    real behavior closely enough to actually exercise that fix: creating
+    disk:/Leads/<lead_id> only succeeds once disk:/Leads has been created,
+    exactly mirroring "a folder's parent must already exist" on the real
+    API. Without the fix, this test fails the same way the real incident
+    did (every photo silently dropped)."""
+    created_paths: set[str] = set()
+
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        if url == PHOTO_URL:
+            return _ok_photo_response()
+        return httpx.Response(200, json={"href": UPLOAD_HREF}, request=_request("GET", url))
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        params = kwargs.get("params") or {}
+        path = params.get("path")
+        if path is None:
+            # Not a /resources create call - the actual file-bytes upload.
+            return httpx.Response(201, request=_request("PUT", url))
+        if path != "disk:/Leads" and "disk:/Leads" not in created_paths:
+            return httpx.Response(
+                409, json={"error": "DiskPathDoesntExistsError"}, request=_request("PUT", url)
+            )
+        created_paths.add(path)
+        return httpx.Response(201, request=_request("PUT", url))
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+    result = lead_photos_service.archive_photos([PHOTO_URL], LEAD_ID, "a-token")
+
+    assert result == [f"/api/leads/{LEAD_ID}/photos/img1.jpg"]
+    assert "disk:/Leads" in created_paths
+
+
 def test_archive_photos_stops_after_folder_creation_fails(monkeypatch) -> None:
     def fake_get(self, url, **kwargs):  # noqa: ANN001
         return _ok_photo_response()

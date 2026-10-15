@@ -20,23 +20,17 @@ import type {
 } from "@/lib/backend-api";
 
 import { AuditLogTab } from "./AuditLogTab";
-import { DepartmentsTab } from "./DepartmentsTab";
 import { EmployeesTab } from "./EmployeesTab";
 import { LeadsTab } from "./LeadsTab";
+import { OrgStructureTab } from "./OrgStructureTab";
 import { RoleTabVisibilityCard } from "./RoleTabVisibilityCard";
-import { SlesarkaStatusesTab } from "./SlesarkaStatusesTab";
 import { TelephonyTab } from "./TelephonyTab";
 import { UsersTab } from "./UsersTab";
-import { WorkshopSourceDepartmentsTab } from "./WorkshopSourceDepartmentsTab";
-import { WorkshopsTab } from "./WorkshopsTab";
 
 type TabKey =
   | "general"
   | "users"
-  | "departments"
-  | "workshops"
-  | "source-departments"
-  | "statuses"
+  | "org-structure"
   | "employees"
   | "telephony"
   | "leads"
@@ -45,10 +39,7 @@ type TabKey =
 const TABS: { key: TabKey; label: string }[] = [
   { key: "general", label: "Общие" },
   { key: "users", label: "Пользователи" },
-  { key: "departments", label: "Подразделения" },
-  { key: "workshops", label: "Цеха" },
-  { key: "source-departments", label: "Соответствие 1С" },
-  { key: "statuses", label: "Статусы слесарки" },
+  { key: "org-structure", label: "Орг. структура" },
   { key: "employees", label: "Сотрудники" },
   { key: "telephony", label: "IP-телефония" },
   { key: "leads", label: "Заявки" },
@@ -112,16 +103,15 @@ export function SettingsTabs({
           <RoleTabVisibilityCard initialRows={roleTabVisibility} />
         </>
       )}
-      {tab === "departments" && <DepartmentsTab initialDepartments={departments} />}
-      {tab === "workshops" && <WorkshopsTab initialWorkshops={workshops} departments={departments} />}
-      {tab === "source-departments" && (
-        <WorkshopSourceDepartmentsTab
-          initialRows={sourceDepartments}
-          initialUnmapped={unmappedSourceDepartments}
+      {tab === "org-structure" && (
+        <OrgStructureTab
+          departments={departments}
           workshops={workshops}
+          sourceDepartments={sourceDepartments}
+          unmappedSourceDepartments={unmappedSourceDepartments}
+          statuses={statuses}
         />
       )}
-      {tab === "statuses" && <SlesarkaStatusesTab initialStatuses={statuses} />}
       {tab === "employees" && (
         <EmployeesTab initialEmployees={employees} departments={departments} workshops={workshops} />
       )}

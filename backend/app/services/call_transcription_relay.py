@@ -63,6 +63,7 @@ async def poll_once() -> float:
                 assessed=stats.assessed,
                 failed=stats.failed,
                 errors=stats.errors,
+                deferred=stats.deferred,
             )
         except CallTranscriptionError as exc:
             logger.error("call_transcription_relay_not_configured", error=str(exc))

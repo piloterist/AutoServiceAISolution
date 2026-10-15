@@ -90,10 +90,42 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
   };
 
   return (
-    <div className="card">
-      <div className="admin-toolbar">
-        <h2 className="chart-title">Статусы слесарки</h2>
-        <div className="admin-toolbar-actions">
+    <div className="org-group">
+      <h2 className="org-group-title">Статусы слесарки</h2>
+      <div className="org-group-body">
+        <div className="org-group-table">
+          <table className="data-table admin-data-table">
+            <thead>
+              <tr>
+                <th>Статус</th>
+                <th>Цвет</th>
+              </tr>
+            </thead>
+            <tbody>
+              {statuses.map((status) => (
+                <tr
+                  key={status.id}
+                  className={status.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
+                  onClick={() => toggleSelect(status)}
+                >
+                  <td>{status.name}</td>
+                  <td>
+                    <span className="admin-color-dot" style={{ background: status.color }} />
+                    {status.color}
+                  </td>
+                </tr>
+              ))}
+              {statuses.length === 0 && (
+                <tr>
+                  <td colSpan={2} className="admin-empty-row">
+                    Статусов пока нет
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="org-group-actions">
           <button type="button" className="admin-btn" disabled={!selected} onClick={openEdit}>
             Изменить
           </button>
@@ -118,37 +150,6 @@ export function SlesarkaStatusesTab({ initialStatuses }: { initialStatuses: Sles
           </button>
         </div>
       </div>
-
-      <table className="data-table admin-data-table">
-        <thead>
-          <tr>
-            <th>Статус</th>
-            <th>Цвет</th>
-          </tr>
-        </thead>
-        <tbody>
-          {statuses.map((status) => (
-            <tr
-              key={status.id}
-              className={status.id === selectedId ? "admin-row admin-row--selected" : "admin-row"}
-              onClick={() => toggleSelect(status)}
-            >
-              <td>{status.name}</td>
-              <td>
-                <span className="admin-color-dot" style={{ background: status.color }} />
-                {status.color}
-              </td>
-            </tr>
-          ))}
-          {statuses.length === 0 && (
-            <tr>
-              <td colSpan={2} className="admin-empty-row">
-                Статусов пока нет
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
 
       <AdminModal
         open={editing !== null}
