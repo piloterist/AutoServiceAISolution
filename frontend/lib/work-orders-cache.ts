@@ -6,7 +6,18 @@
 // Server Component - both callers are "use client".
 import type { WorkOrderListItem } from "@/lib/backend-api";
 
-const CACHE_KEY = "work-orders-cache:v1";
+// Bump this suffix whenever WorkOrderListItem gains a field a cached row
+// might be missing - product incident, 2026-10-20: a stale v1 cache (any
+// tab/session that had already fetched the list before the
+// is_individual_customer field shipped) left that field `undefined` on
+// every cached row, which made the new "Физ.лицо" checkbox filter out
+// EVERY row (matchesIndividualCustomerFilter(undefined, true) is falsy,
+// same as false) - not just miss the new pink highlight, but look fully
+// broken. A plain browser "clear cache" doesn't touch sessionStorage, so
+// this was invisible to the usual troubleshooting steps; bumping the key
+// here invalidates every existing cache outright on this deploy, instead
+// of relying on every affected session to clear site data manually.
+const CACHE_KEY = "work-orders-cache:v2";
 // Long enough to survive a normal dashboard-then-work-orders click, short
 // enough that a stale list can't linger unnoticed for the rest of a long
 // session after a new 1C export lands.
