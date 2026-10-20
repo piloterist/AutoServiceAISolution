@@ -251,6 +251,7 @@ export function CockpitView({
           onNzpToggle={handleNzpToggle}
           planUnusable={!snapshot.plan.usable}
           hasUnattributedRevenue={snapshot.has_unattributed_revenue && workshopId === ""}
+          hasUnpaidIndividualClosedOrders={snapshot.has_unpaid_individual_closed_orders}
           workshops={workshops}
           workshopId={workshopId}
           onWorkshopChange={handleWorkshopChange}

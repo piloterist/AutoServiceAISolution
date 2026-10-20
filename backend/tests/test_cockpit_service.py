@@ -850,3 +850,129 @@ def test_revenue_overflow_clamps_needle_and_flags(
     # The exact amount is still reported in full, unrounded - only the
     # needle/scale are clamped, per the product spec.
     assert snapshot.revenue_rub == Decimal("50000000.00")
+
+
+# ---- get_snapshot: has_unpaid_individual_closed_orders ---------------------
+#
+# Product ask, 2026-10-17: a Cockpit lamp lights up when a closed work order
+# for an individual customer hasn't been fully paid in the last 3 months -
+# independent of whatever period/workshop scope is selected on the page.
+
+
+def test_flags_closed_individual_order_with_no_payment(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        _make_work_order(
+            status="Закрыт",
+            closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+            customer_name="Иванов Иван Иванович",
+            payment_percent=None,
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.has_unpaid_individual_closed_orders is True
+
+
+def test_flags_closed_individual_order_with_partial_payment(
+    db_session: Session, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        _make_work_order(
+            status="Закрыт",
+            closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+            customer_name="Петрова Мария Сергеевна",
+            payment_percent=Decimal("60"),
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.has_unpaid_individual_closed_orders is True
+
+
+def test_does_not_flag_fully_paid_individual_order(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        _make_work_order(
+            status="Закрыт",
+            closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+            customer_name="Иванов Иван Иванович",
+            payment_percent=Decimal("100"),
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.has_unpaid_individual_closed_orders is False
+
+
+def test_does_not_flag_unpaid_legal_entity_order(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        _make_work_order(
+            status="Закрыт",
+            closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+            customer_name='ООО "Ромашка"',
+            payment_percent=None,
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.has_unpaid_individual_closed_orders is False
+
+
+def test_does_not_flag_unpaid_individual_order_still_open(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        _make_work_order(
+            status="В работе",
+            closed_date=None,
+            customer_name="Иванов Иван Иванович",
+            payment_percent=None,
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.has_unpaid_individual_closed_orders is False
+
+
+def test_does_not_flag_unpaid_individual_order_closed_too_long_ago(
+    db_session: Session, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        _make_work_order(
+            status="Закрыт",
+            # Well past the 90-day window behind NOW (2026-09-28).
+            closed_date=datetime(2026, 1, 1, tzinfo=UTC),
+            customer_name="Иванов Иван Иванович",
+            payment_percent=None,
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.has_unpaid_individual_closed_orders is False

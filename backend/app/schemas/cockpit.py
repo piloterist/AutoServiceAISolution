@@ -55,5 +55,6 @@ class CockpitSnapshotOut(BaseModel):
     payments_gauge: GaugeReadingOut
 
     has_unattributed_revenue: bool
+    has_unpaid_individual_closed_orders: bool
 
     model_config = {"from_attributes": True}

@@ -66,6 +66,13 @@ class WorkOrderListItem(BaseModel):
     # the list and exclusion from ДЗ (receivables) - see
     # work_order_query_service.list_work_orders/cockpit_service._receivables.
     closed_without_payment: bool
+    # Whether customer_name (контрагент) reads as an individual rather than
+    # a company/IP - services/internal_order_rules.is_physical_person
+    # applied to customer_name, not a real column. Drives the "Физ.лицо"
+    # list filter and the "closed, unpaid, individual" row highlight (see
+    # frontend/components/WorkOrdersTable.tsx) - product ask, 2026-10-17.
+    # Same attach-before-validate pattern as is_scheduled/has_comment above.
+    is_individual_customer: bool
 
     model_config = {"from_attributes": True}
 

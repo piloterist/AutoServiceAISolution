@@ -66,6 +66,27 @@ function matchesScheduledFilter(isScheduled: boolean, filter: ScheduledFilter): 
   return filter === "yes" ? isScheduled : !isScheduled;
 }
 
+/** "Физ.лицо" - a plain one-way checkbox, not a 3-state dropdown like
+ * Внутренний/Запланирован above (product ask, 2026-10-17: a checked box
+ * narrows to individuals only, unchecked shows everyone - there's no
+ * separate "only companies" mode asked for). */
+function matchesIndividualCustomerFilter(isIndividual: boolean, onlyIndividual: boolean): boolean {
+  return !onlyIndividual || isIndividual;
+}
+
+/** Row-highlight rule (product ask, 2026-10-17): closed, nothing ever paid,
+ * and the контрагент reads as an individual - a combination worth flagging
+ * since a closed order for a private customer with zero payment is
+ * unusual. "Нет оплат" is WorkOrder.paid_amount being null/zero, the same
+ * "no money received" signal used elsewhere on this page (see
+ * formatAmountOrDash). */
+function isUnpaidClosedIndividual(item: WorkOrderListItem): boolean {
+  if (item.status !== "Закрыт") return false;
+  if (!item.is_individual_customer) return false;
+  const paid = item.paid_amount ? Number(item.paid_amount) : 0;
+  return paid === 0;
+}
+
 /** "Оплата" bucket labels, derived from the same payment_percent 5S AUTO
  * already computes (see WorkOrderListItem) - not a new calculation. A null
  * payment_percent (no payment data from 1C yet) counts as "Без оплаты",
@@ -239,6 +260,7 @@ type PersistedFilters = {
   closedTo: string;
   internalFilter: InternalFilter;
   scheduledFilter: ScheduledFilter;
+  onlyIndividualCustomer: boolean;
 };
 
 const FILTERS_STORAGE_KEY = "work-orders-filters:v1";
@@ -430,6 +452,8 @@ export function WorkOrdersTable({
   paidTo,
   onlyReceivables,
   workshopId,
+  initialOnlyIndividualCustomer,
+  initialUnpaid,
 }: {
   /** Pre-applied filters, e.g. arriving from a click on the dashboard's
    * status chips (/work-orders?status=...&date_from=...&date_to=...) or the
@@ -457,6 +481,13 @@ export function WorkOrdersTable({
    * own цех filter; omitted means company-wide. */
   onlyReceivables?: boolean;
   workshopId?: string;
+  /** From Cockpit's "₽" lamp (product ask, 2026-10-17) - seeds the
+   * "Физ.лицо" checkbox. Client-side filter, like initialStatus above, not
+   * a server-side one like paidFrom/onlyReceivables. */
+  initialOnlyIndividualCustomer?: boolean;
+  /** From the same lamp - seeds "Оплата" to its two non-full-payment
+   * buckets ("нет полной оплаты"). */
+  initialUnpaid?: boolean;
 }) {
   const router = useRouter();
 
@@ -523,7 +554,13 @@ export function WorkOrdersTable({
   // is ever used, since every field below only reads it inside a lazy
   // useState initializer.
   const hasUrlFilters = Boolean(
-    initialStatus || initialDateFrom || initialDateTo || initialClosedFrom || initialClosedTo,
+    initialStatus ||
+      initialDateFrom ||
+      initialDateTo ||
+      initialClosedFrom ||
+      initialClosedTo ||
+      initialOnlyIndividualCustomer ||
+      initialUnpaid,
   );
   const persisted = hasUrlFilters ? null : readPersistedFilters();
 
@@ -553,7 +590,10 @@ export function WorkOrdersTable({
     () => (initialStatus ? [initialStatus] : persisted?.selectedStatuses ?? []),
   );
   const [selectedPayments, setSelectedPayments] = useState<string[]>(
-    () => persisted?.selectedPayments ?? [],
+    () =>
+      // The two non-"Полная оплата" buckets = "нет полной оплаты" (product
+      // ask, 2026-10-17, from Cockpit's "₽" lamp).
+      initialUnpaid ? PAYMENT_BUCKETS.slice(1) : persisted?.selectedPayments ?? [],
   );
   const [selectedRepairTypes, setSelectedRepairTypes] = useState<string[]>(
     () => persisted?.selectedRepairTypes ?? [],
@@ -570,6 +610,9 @@ export function WorkOrdersTable({
   const [scheduledFilter, setScheduledFilter] = useState<ScheduledFilter>(
     () => persisted?.scheduledFilter ?? "all",
   );
+  const [onlyIndividualCustomer, setOnlyIndividualCustomer] = useState(
+    () => initialOnlyIndividualCustomer ?? persisted?.onlyIndividualCustomer ?? false,
+  );
 
   useEffect(() => {
     writePersistedFilters({
@@ -584,6 +627,7 @@ export function WorkOrdersTable({
       closedTo,
       internalFilter,
       scheduledFilter,
+      onlyIndividualCustomer,
     });
   }, [
     search,
@@ -597,6 +641,7 @@ export function WorkOrdersTable({
     closedTo,
     internalFilter,
     scheduledFilter,
+    onlyIndividualCustomer,
   ]);
 
   const resetFilters = () => {
@@ -625,6 +670,7 @@ export function WorkOrdersTable({
     setClosedTo("");
     setInternalFilter("all");
     setScheduledFilter("all");
+    setOnlyIndividualCustomer(false);
     clearPersistedFilters();
   };
 
@@ -728,6 +774,9 @@ export function WorkOrdersTable({
       if (!matchesPaymentFilter(row.item.payment_percent, selectedPayments)) return false;
       if (!matchesInternalFilter(row.item.is_internal, internalFilter)) return false;
       if (!matchesScheduledFilter(row.item.is_scheduled, scheduledFilter)) return false;
+      if (!matchesIndividualCustomerFilter(row.item.is_individual_customer, onlyIndividualCustomer)) {
+        return false;
+      }
 
       return true;
     });
@@ -744,6 +793,7 @@ export function WorkOrdersTable({
     closedTo,
     internalFilter,
     scheduledFilter,
+    onlyIndividualCustomer,
   ]);
 
   // Recomputes with filteredRows - the whole point is that it tracks
@@ -893,6 +943,15 @@ export function WorkOrdersTable({
           </label>
         </div>
 
+        <label className="individual-customer-filter">
+          <input
+            type="checkbox"
+            checked={onlyIndividualCustomer}
+            onChange={(event) => setOnlyIndividualCustomer(event.target.checked)}
+          />
+          Физ.лицо
+        </label>
+
         <button type="button" className="filters-reset" onClick={resetFilters}>
           Сбросить
         </button>
@@ -1004,7 +1063,11 @@ export function WorkOrdersTable({
                   key={row.item.id}
                   data-index={virtualRow.index}
                   ref={rowVirtualizer.measureElement}
-                  className="vt-row vt-row--body"
+                  className={
+                    isUnpaidClosedIndividual(row.item)
+                      ? "vt-row vt-row--body vt-row--unpaid-individual"
+                      : "vt-row vt-row--body"
+                  }
                   role="row"
                   tabIndex={0}
                   style={{

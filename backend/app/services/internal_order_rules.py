@@ -39,15 +39,53 @@ _ORG_MARKER_PATTERNS = [
     re.compile(r"\bООО\b"),
     re.compile(r"\bОАО\b"),
     re.compile(r"\bПАО\b"),
+    re.compile(r"\bНАО\b"),
     re.compile(r"\bЗАО\b"),
     re.compile(r"\bАО\b"),
     re.compile(r"\bИП\b"),
+    # Broadened 2026-10-17 (product ask: "ФГБУ, ФГУП и прочее, любые
+    # сокращения") for the new "Физ.лицо" list filter/highlight (see
+    # endpoints/work_orders.py), which reuses this same function against
+    # customer_name - confirmed against real prod customer_name values that
+    # were previously slipping through as "physical person": ФГУП, ФГБУ,
+    # АНО, and the spelled-out "Общество с ограниченной ответственностью".
+    # The rest (ГУП/МУП/ГБУ/ГКУ/ФКУ/МБУ/МКУ/НКО/ТСЖ/СНТ/КФХ) are standard
+    # Russian legal/organizational-form abbreviations added proactively,
+    # same reasoning as the ones above even without their own confirmed hit.
+    re.compile(r"\bФГУП\b"),
+    re.compile(r"\bФГБУ\b"),
+    re.compile(r"\bГУП\b"),
+    re.compile(r"\bМУП\b"),
+    re.compile(r"\bГБУ\b"),
+    re.compile(r"\bГКУ\b"),
+    re.compile(r"\bФКУ\b"),
+    re.compile(r"\bМБУ\b"),
+    re.compile(r"\bМКУ\b"),
+    re.compile(r"\bНКО\b"),
+    re.compile(r"\bАНО\b"),
+    re.compile(r"\bТСЖ\b"),
+    re.compile(r"\bСНТ\b"),
+    re.compile(r"\bКФХ\b"),
+    # НОЧУ (Негосударственное образовательное частное учреждение) - real
+    # miss, 2026-10-18: 'НОЧУ "Британская международная школа"' slipped
+    # through every marker above. Also caught independently by the new
+    # structural checks below (an all-caps abbreviation + quotes), kept
+    # here too as an explicit, direct fix for the exact reported case.
+    re.compile(r"\bНОЧУ\b"),
+    re.compile(r"ОБЩЕСТВО"),
     re.compile(r"СТРАХ"),
     re.compile(r"БАНК"),
     re.compile(r"ГРУПП"),
     re.compile(r"ХОЛДИНГ"),
     re.compile(r"КОМПАНИ"),
 ]
+
+# Two structural tells, added 2026-10-18 after 'НОЧУ "Британская
+# международная школа"' slipped through every marker above (НОЧУ wasn't
+# one) despite both signals being present - see is_physical_person's own
+# use of these, which explains the mixed-case guard on the caps one.
+_CONSECUTIVE_CAPS_RUN = re.compile(r"[A-ZА-ЯЁ]{3,}")
+_QUOTE_CHARS = re.compile(r"[\"'«»„]")
 
 # ЗаказНаряд.ВидРемонта value that marks a work order "внешний" (страховой)
 # for this specific PanMotors rule - distinct from, and unrelated to, the
@@ -103,12 +141,43 @@ def norm_org(value: str | None) -> str:
 def is_physical_person(payer: str | None) -> bool:
     """True if `payer` reads as an individual rather than a company/IP.
 
+    Despite the parameter name, this is a plain text heuristic with no
+    payer-specific meaning baked in - also reused as-is against
+    WorkOrder.customer_name for the "Физ.лицо" list filter/highlight (see
+    endpoints/work_orders.py's is_individual_customer), not just the
+    internal-order payer rules below.
+
     An empty/missing payer is NOT treated as a physical person (returns
     False) - this asymmetry is intentional and matches the reference
     implementation exactly; it's why ORG_SOKOLOVA's rule below checks for
     an empty payer as its own separate allowed case rather than relying on
     this function to cover it.
+
+    Two structural checks run first, against the ORIGINAL casing (before
+    norm_org's own uppercasing, which would otherwise make every name look
+    "all caps" too) - product ask, 2026-10-18, after 'НОЧУ "Британская
+    международная школа"' read as a physical person despite having neither
+    marker: "не может быть трёх и более заглавных букв подряд и не может
+    быть кавычек - это явные признаки юрлица".
+
+    - A literal quote character (ООО "Ромашка", НОЧУ "Школа") - a real
+      person's name never has one, checked unconditionally.
+    - A run of 3+ consecutive capital letters (an abbreviation: НОЧУ, НИЦ,
+      ФГБОУВО, РПН...) - but ONLY when the rest of the string ISN'T also
+      all-caps. Confirmed against real prod customer_name values,
+      2026-10-18: several are a real individual's full name stored
+      ENTIRELY in caps (e.g. "КИЛЬДИН ВЛАДИМИР АНАТОЛЬЕВИЧ") - applying
+      this rule unconditionally would have flipped those real people into
+      "legal entity" instead, trading one misclassification for another.
+      Requiring at least one lowercase letter elsewhere restricts this to
+      an abbreviation standing out INSIDE an otherwise mixed-case name,
+      which a real all-caps person's name never has either.
     """
+    raw = str(payer or "")
+    if _QUOTE_CHARS.search(raw):
+        return False
+    if any(ch.islower() for ch in raw) and _CONSECUTIVE_CAPS_RUN.search(raw):
+        return False
     text = norm_org(payer)
     if not text:
         return False

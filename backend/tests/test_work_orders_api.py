@@ -395,6 +395,25 @@ def test_list_work_orders_has_comment_flag(client, db_session, auth_headers) -> 
     assert items["WO-NO-COMMENT"]["has_comment"] is False
 
 
+def test_list_work_orders_is_individual_customer_flag(client, db_session, auth_headers) -> None:
+    """is_individual_customer drives the "Физ.лицо" list filter and the
+    closed-unpaid-individual row highlight (see WorkOrdersTable.tsx) -
+    product ask, 2026-10-17. Computed from customer_name via
+    internal_order_rules.is_physical_person, not a real column."""
+    db_session.add(
+        _make_work_order(external_number="WO-PERSON", customer_name="Иванов Иван Иванович")
+    )
+    db_session.add(_make_work_order(external_number="WO-ORG", customer_name='ООО "Ромашка"'))
+    db_session.commit()
+
+    response = client.get(LIST_URL, headers=auth_headers)
+
+    assert response.status_code == 200
+    items = {item["external_number"]: item for item in response.json()["items"]}
+    assert items["WO-PERSON"]["is_individual_customer"] is True
+    assert items["WO-ORG"]["is_individual_customer"] is False
+
+
 def test_update_work_order_closed_without_payment_requires_auth(client, db_session) -> None:
     work_order = _make_work_order(external_number="WO-CWP-AUTH")
     db_session.add(work_order)

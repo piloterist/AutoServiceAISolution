@@ -55,6 +55,7 @@ from app.models.work_order import WorkOrder
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
+from app.services.internal_order_rules import is_physical_person
 from app.services.settings_service import get_app_settings
 
 # Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
@@ -232,6 +233,39 @@ def _has_unattributed_revenue(
         filters.append(WorkOrder.is_internal.is_(False))
     count = db.execute(select(func.count()).select_from(WorkOrder).where(*filters)).scalar_one()
     return count > 0
+
+
+def _has_unpaid_individual_closed_orders(db: Session, *, now: datetime) -> bool:
+    """Whether any work order closed in the last 3 months, for a customer
+    who reads as an individual (internal_order_rules.is_physical_person
+    applied to customer_name), still isn't fully paid - drives Cockpit's
+    own "Физ.лицо, нет полной оплаты" lamp (product ask, 2026-10-17). A
+    fixed rolling window from `now`, independent of whatever period/scope
+    is currently selected on the page - 90 days is a plain approximation of
+    "3 months", same spirit as MAX_CALL_AGE_DAYS elsewhere in this codebase
+    rather than exact calendar-month arithmetic. "Not fully paid" matches
+    the Work Orders list's own "Оплата" bucket definition exactly (frontend
+    WorkOrdersTable.tsx's paymentBucketLabel): payment_percent null or <
+    100 counts as not fully paid, not just zero.
+
+    is_physical_person is a plain regex heuristic, not expressible in SQL -
+    filters status/date/payment server-side first (bounding the candidate
+    set to just closed, underpaid orders in the window), then checks the
+    customer_name heuristic in Python only against that much smaller set."""
+    window_start = now - timedelta(days=90)
+    customer_names = (
+        db.execute(
+            select(WorkOrder.customer_name).where(
+                WorkOrder.status == "Закрыт",
+                WorkOrder.closed_date >= window_start,
+                WorkOrder.closed_date <= now,
+                or_(WorkOrder.payment_percent.is_(None), WorkOrder.payment_percent < 100),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return any(is_physical_person(name) for name in customer_names)
 
 
 def _payments(
@@ -422,6 +456,7 @@ class CockpitSnapshot:
     payments_gauge: GaugeReading
 
     has_unattributed_revenue: bool
+    has_unpaid_individual_closed_orders: bool
 
 
 def get_snapshot(
@@ -434,6 +469,7 @@ def get_snapshot(
     now: datetime | None = None,
 ) -> CockpitSnapshot:
     period_start, period_end = period_bounds(now, year=year, month=month)
+    effective_now = now or datetime.now(UTC)
     settings = get_settings()
     app_settings = get_app_settings(db)
     revenue_statuses = settings.revenue_statuses_list
@@ -518,6 +554,11 @@ def get_snapshot(
             exclude_internal=exclude_internal,
         )
 
+    # Company-wide health-check, not scoped to the selected цех/period - same
+    # "running total" reasoning as receivables (ДЗ) above, not a
+    # period-bound figure like revenue/payments.
+    has_unpaid_individual = _has_unpaid_individual_closed_orders(db, now=effective_now)
+
     return CockpitSnapshot(
         period_start=period_start,
         period_end=period_end,
@@ -534,4 +575,5 @@ def get_snapshot(
         revenue_gauge=revenue_gauge,
         payments_gauge=payments_gauge,
         has_unattributed_revenue=has_unattributed,
+        has_unpaid_individual_closed_orders=has_unpaid_individual,
     )

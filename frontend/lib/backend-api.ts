@@ -61,6 +61,12 @@ export type WorkOrderListItem = {
   // order from ДЗ (receivables) entirely - see backend
   // work_order_query_service.list_work_orders/cockpit_service._receivables.
   closed_without_payment: boolean;
+  // Whether customer_name (контрагент) reads as an individual rather than
+  // a company/IP - backend services/internal_order_rules.is_physical_person
+  // applied to customer_name, not a real column. Drives the "Физ.лицо"
+  // list filter and the closed/unpaid/individual row highlight (see
+  // WorkOrdersTable.tsx) - product ask, 2026-10-17.
+  is_individual_customer: boolean;
 };
 
 export type WorkOrderListResponse = {
@@ -1470,6 +1476,11 @@ export type CockpitSnapshot = {
   revenue_gauge: GaugeReading;
   payments_gauge: GaugeReading;
   has_unattributed_revenue: boolean;
+  // Closed work order, individual customer, not fully paid, within the
+  // last 3 months - a fixed rolling window, independent of the selected
+  // period/scope (see backend cockpit_service._has_unpaid_individual_
+  // closed_orders). Drives a Cockpit lamp - product ask, 2026-10-17.
+  has_unpaid_individual_closed_orders: boolean;
 };
 
 export function getCockpitSnapshot(params?: {

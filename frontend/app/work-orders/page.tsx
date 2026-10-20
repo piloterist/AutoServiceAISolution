@@ -25,6 +25,14 @@ type SearchParams = {
   // paid_from/paid_to above.
   only_receivables?: string;
   workshop_id?: string;
+  // Arriving from Cockpit's new "₽" lamp (see components/cockpit/
+  // InstrumentCluster.tsx's openUnpaidIndividual) - seeds the "Физ.лицо"
+  // checkbox and the "Оплата" bucket dropdown to its two non-full-payment
+  // buckets, respectively. Client-side filters, unlike paid_from/paid_to/
+  // only_receivables above - status/closed_from/closed_to (already
+  // supported) carry the rest of that same deep link.
+  individual?: string;
+  unpaid?: string;
 };
 
 export default async function WorkOrdersPage({
@@ -51,6 +59,8 @@ export default async function WorkOrdersPage({
         paidTo={params.paid_to}
         onlyReceivables={params.only_receivables === "1"}
         workshopId={params.workshop_id}
+        initialOnlyIndividualCustomer={params.individual === "1"}
+        initialUnpaid={params.unpaid === "1"}
       />
     </div>
   );

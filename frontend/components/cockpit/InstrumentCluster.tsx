@@ -997,21 +997,58 @@ function DepartmentWheel({
   );
 }
 
+// Same rolling window backend cockpit_service._has_unpaid_individual_
+// closed_orders uses for the lamp's own active state ("нет полной оплаты"
+// over the last ~3 months) - kept in sync by using the identical constant,
+// not recomputed independently, so the lamp and the list it opens always
+// agree on the exact same window.
+const UNPAID_INDIVIDUAL_WINDOW_DAYS = 90;
+
+function toIsoDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 function WarningIcons({
   missedCallsCount,
   openLeadsCount,
+  hasUnpaidIndividualClosedOrders,
   onRefresh,
   refreshing,
 }: {
   missedCallsCount: number;
   openLeadsCount: number;
+  hasUnpaidIndividualClosedOrders: boolean;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
+  const router = useRouter();
+
+  // Opens the Work Orders list pre-filtered to exactly the orders behind
+  // this lamp (product ask, 2026-10-17) - same "/work-orders?..." deep-link
+  // pattern PaymentsDebtStack's own ДЗ click-through already uses. `status`/
+  // `closed_from`/`closed_to` are the same params a dashboard status
+  // chip/revenue tile already seed (see app/work-orders/page.tsx);
+  // `individual`/`unpaid` are new, seeding WorkOrdersTable's "Физ.лицо"
+  // checkbox and its "Оплата" bucket dropdown respectively.
+  const openUnpaidIndividual = () => {
+    const now = new Date();
+    const windowStart = new Date(now);
+    windowStart.setDate(windowStart.getDate() - UNPAID_INDIVIDUAL_WINDOW_DAYS);
+    const params = new URLSearchParams({
+      status: "Закрыт",
+      individual: "1",
+      unpaid: "1",
+      closed_from: toIsoDate(windowStart),
+      closed_to: toIsoDate(now),
+    });
+    router.push(`/work-orders?${params.toString()}`);
+  };
+
   const icons: {
     key: string;
     label: string;
-    path: string;
+    path?: string;
+    text?: string;
     filled?: boolean;
     active?: boolean;
     onClick?: () => void;
@@ -1020,7 +1057,13 @@ function WarningIcons({
     { key: "warn", label: "Предупреждения — демо, действие пока не назначено", path: "M12 2 L23 21 H1 Z M12 9v6 M12 17.5v.1" },
     { key: "phone", label: "Пропущенные звонки", path: PHONE_PATH, filled: true, active: missedCallsCount > 0 },
     { key: "leads", label: "Новые заявки", path: ENVELOPE_PATH, filled: true, active: openLeadsCount > 0 },
-    { key: "pay", label: "Платежи — демо, действие пока не назначено", path: "M2 6h20v13H2Z M2 10h20 M6 16h4" },
+    {
+      key: "unpaid",
+      label: "Закрытые ЗН физлиц без полной оплаты за 3 месяца",
+      text: "₽",
+      active: hasUnpaidIndividualClosedOrders,
+      onClick: openUnpaidIndividual,
+    },
     { key: "sync", label: "Обновить данные", path: REFRESH_PATH, onClick: onRefresh, spinning: refreshing },
     { key: "service", label: "Сервис — демо, действие пока не назначено", path: "M14.7 6.3a4 4 0 0 1-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 1 5.4-5.4L21 6l-3-3Z" },
   ];
@@ -1042,7 +1085,19 @@ function WarningIcons({
             aria-hidden="true"
             className={icon.spinning ? "cockpit-warning-icon-spin" : undefined}
           >
-            {icon.filled ? (
+            {icon.text ? (
+              <text
+                x={12}
+                y={12}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={16}
+                fontWeight={700}
+                fill="currentColor"
+              >
+                {icon.text}
+              </text>
+            ) : icon.filled ? (
               <path d={icon.path} fill="currentColor" />
             ) : (
               <path d={icon.path} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
@@ -1264,6 +1319,7 @@ export function InstrumentCluster({
   onResetPeriod,
   missedCallsCount,
   openLeadsCount,
+  hasUnpaidIndividualClosedOrders,
   onRefresh,
   refreshing,
 }: {
@@ -1291,6 +1347,7 @@ export function InstrumentCluster({
   onResetPeriod: () => void;
   missedCallsCount: number;
   openLeadsCount: number;
+  hasUnpaidIndividualClosedOrders: boolean;
   onRefresh: () => void;
   refreshing: boolean;
 }) {
@@ -1471,6 +1528,7 @@ export function InstrumentCluster({
       <WarningIcons
         missedCallsCount={missedCallsCount}
         openLeadsCount={openLeadsCount}
+        hasUnpaidIndividualClosedOrders={hasUnpaidIndividualClosedOrders}
         onRefresh={onRefresh}
         refreshing={refreshing}
       />

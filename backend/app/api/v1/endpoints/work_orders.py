@@ -44,6 +44,7 @@ from app.schemas.work_order import (
 )
 from app.services import planner_service
 from app.services.cockpit_service import _mapped_source_departments
+from app.services.internal_order_rules import is_physical_person
 from app.services.settings_service import get_app_settings
 from app.services.work_order_query_service import (
     delete_work_order,
@@ -132,6 +133,7 @@ def get_work_orders(
         # comment for why a plain transient attribute works fine here.
         item.is_scheduled = item.id in scheduled_ids
         item.has_comment = item.comment is not None
+        item.is_individual_customer = is_physical_person(item.customer_name)
     return WorkOrderListResponse(
         items=[WorkOrderListItem.model_validate(item) for item in items],
         total=total,
@@ -337,6 +339,7 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
     record = planner_service.find_planner_record(db, work_order_id)
     work_order.is_scheduled = record is not None
     work_order.has_comment = work_order.comment is not None
+    work_order.is_individual_customer = is_physical_person(work_order.customer_name)
 
     return WorkOrderDetail(
         **WorkOrderListItem.model_validate(work_order).model_dump(),

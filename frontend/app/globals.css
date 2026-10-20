@@ -1203,6 +1203,17 @@ table.admin-data-table td.audit-changes-cell {
   background: var(--bg);
 }
 
+/* Закрыт + нет оплат + контрагент физлицо (product ask, 2026-10-17) - a
+   combination worth flagging, so the tint survives hover too instead of
+   reverting to the generic .vt-row--body:hover background. */
+.vt-row--unpaid-individual {
+  background: color-mix(in srgb, #ff4da6 16%, var(--surface));
+}
+
+.vt-row--unpaid-individual:hover {
+  background: color-mix(in srgb, #ff4da6 26%, var(--surface));
+}
+
 .vt-row--body:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -1275,6 +1286,19 @@ table.admin-data-table td.audit-changes-cell {
   letter-spacing: normal;
   color: var(--text);
   background: var(--surface);
+}
+
+/* "Физ.лицо" checkbox (product ask, 2026-10-17) - sits in the same
+   .toolbar row as the other filters, just before .filters-reset's own
+   margin-left:auto pushes that button to the row's right edge. */
+.individual-customer-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+  align-self: center;
 }
 
 .filters-reset {
@@ -2815,7 +2839,14 @@ table.admin-data-table td.audit-changes-cell {
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 0.85rem;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  /* Grid items default to min-width:auto, which refuses to shrink below
+     the longest unbroken run of text/a link's content - overflow-wrap
+     alone can't kick in until the box is actually allowed to narrow to
+     the grid track's width (product feedback, 2026-10-16: "текст
+     вылезает из полей" - a long акция/text value spilling past the
+     card's own right edge instead of wrapping). */
+  min-width: 0;
 }
 
 /* Deliberately its own class, not a reuse of .toolbar (the Work Orders

@@ -103,6 +103,41 @@ def test_is_physical_person_false_for_substring_markers() -> None:
     assert is_physical_person("ПАО Сбербанк") is False
 
 
+def test_is_physical_person_false_for_broadened_org_markers() -> None:
+    """Added 2026-10-17 for the "Физ.лицо" list filter - confirmed against
+    real prod customer_name values that previously slipped through as
+    "physical person" despite clearly being organizations."""
+    assert is_physical_person('ФГУП "Дирекция по инвестиционной деятельности"') is False
+    assert is_physical_person("ФГБУ «РЭА» Минэнерго России") is False
+    assert is_physical_person('АНО по развитию городской среды "МВС СТ"') is False
+    assert is_physical_person("Общество с ограниченной ответственностью Газпромбанк") is False
+    assert is_physical_person("ГУП Мосгортранс") is False
+    assert is_physical_person("ТСЖ Ромашка") is False
+
+
+def test_is_physical_person_false_for_quoted_or_all_caps_run() -> None:
+    """Real miss, 2026-10-18: 'НОЧУ "Британская международная школа"'
+    slipped through every marker above (НОЧУ wasn't one) - two general
+    structural tells catch this family of cases instead of needing a
+    marker for every possible abbreviation: a quoted name, or a run of 3+
+    capital letters standing out inside an otherwise mixed-case string."""
+    assert is_physical_person('НОЧУ "Британская международная школа"') is False
+    assert is_physical_person("НИЦ Курчатовский институт") is False  # caps run, no quotes
+    assert is_physical_person("Иванов Иван 'Торговый дом'") is False  # quotes, no marker/caps run
+
+
+def test_is_physical_person_true_for_real_name_stored_entirely_in_caps() -> None:
+    """The caps-run check must NOT trip on a string that's uppercase
+    throughout - confirmed against real prod customer_name values,
+    2026-10-18: several are a genuine individual's full name stored
+    entirely in caps (not an abbreviation standing out in otherwise
+    mixed-case text), e.g. "КИЛЬДИН ВЛАДИМИР АНАТОЛЬЕВИЧ". Applying the
+    caps rule unconditionally would misclassify these as a legal entity -
+    the opposite mistake from the one being fixed."""
+    assert is_physical_person("КИЛЬДИН ВЛАДИМИР АНАТОЛЬЕВИЧ") is True
+    assert is_physical_person("ЮРИЙ") is True
+
+
 def test_internal_order_allowed_pan_stanislav_requires_non_physical_payer() -> None:
     assert internal_order_allowed(ORG_PAN_STANISLAV, "ООО Ромашка") is True
     assert internal_order_allowed(ORG_PAN_STANISLAV, "Иванов Иван Иванович") is False
