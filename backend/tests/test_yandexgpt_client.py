@@ -11,7 +11,9 @@ from app.services.yandexgpt_client import (
     TOPIC_UNDETERMINED,
     YandexGPTError,
     YandexGPTSettings,
+    adapt_transcript,
     assess_call_quality,
+    rewrite_transcript,
     summarize_call_topic,
 )
 
@@ -214,3 +216,59 @@ def test_assess_call_quality_raises_on_http_error(monkeypatch) -> None:
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     with httpx.Client() as client, pytest.raises(YandexGPTError):
         assess_call_quality(client, SETTINGS, "текст")
+
+
+# ---- adapt_transcript / rewrite_transcript ----------------------------------
+
+RAW_TRANSCRIPT = "Говорящий 1: Алло.\nГоворящий 2: Добрый день, компания Пан Моторс."
+
+
+@pytest.mark.parametrize("fn", [adapt_transcript, rewrite_transcript])
+def test_adapt_and_rewrite_transcript_returns_model_answer(monkeypatch, fn) -> None:
+    adapted = "Говорящий 1: Алло.\nГоворящий 2: Добрый день, Пан Моторс."
+    monkeypatch.setattr(httpx.Client, "post", lambda *a, **kw: _completion_response(adapted))
+    with httpx.Client() as client:
+        assert fn(client, SETTINGS, RAW_TRANSCRIPT) == adapted
+
+
+@pytest.mark.parametrize("fn", [adapt_transcript, rewrite_transcript])
+def test_adapt_and_rewrite_transcript_falls_back_on_model_refusal(monkeypatch, fn) -> None:
+    """Real incident, 2026-10-21: YandexGPT answered "Я не могу обсуждать
+    эту тему. Давайте поговорим о чём-нибудь ещё." instead of adapting an
+    entirely unremarkable repair-estimate call - a non-empty string, so the
+    old `adapted or transcript_text` check let it straight through as the
+    "adapted" transcript, and quality assessment then reviewed the refusal
+    text itself. Any answer without at least one "Говорящий N:" line must
+    fall back to the original, unadapted transcript instead."""
+    refusal = "Я не могу обсуждать эту тему. Давайте поговорим о чём-нибудь ещё."
+    monkeypatch.setattr(httpx.Client, "post", lambda *a, **kw: _completion_response(refusal))
+    with httpx.Client() as client:
+        assert fn(client, SETTINGS, RAW_TRANSCRIPT) == RAW_TRANSCRIPT
+
+
+@pytest.mark.parametrize("fn", [adapt_transcript, rewrite_transcript])
+def test_adapt_and_rewrite_transcript_falls_back_on_empty_answer(monkeypatch, fn) -> None:
+    monkeypatch.setattr(httpx.Client, "post", lambda *a, **kw: _completion_response("   "))
+    with httpx.Client() as client:
+        assert fn(client, SETTINGS, RAW_TRANSCRIPT) == RAW_TRANSCRIPT
+
+
+@pytest.mark.parametrize("fn", [adapt_transcript, rewrite_transcript])
+def test_adapt_and_rewrite_transcript_falls_back_on_empty_transcript(monkeypatch, fn) -> None:
+    monkeypatch.setattr(
+        httpx.Client,
+        "post",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("must not call the API")),
+    )
+    with httpx.Client() as client:
+        assert fn(client, SETTINGS, "   ") == "   "
+
+
+@pytest.mark.parametrize("fn", [adapt_transcript, rewrite_transcript])
+def test_adapt_and_rewrite_transcript_falls_back_on_http_error(monkeypatch, fn) -> None:
+    def fake_post(self, url, json=None, headers=None):  # noqa: ANN001
+        return httpx.Response(500, json={"message": "internal"}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    with httpx.Client() as client:
+        assert fn(client, SETTINGS, RAW_TRANSCRIPT) == RAW_TRANSCRIPT

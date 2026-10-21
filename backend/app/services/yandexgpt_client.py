@@ -438,6 +438,26 @@ _ADAPT_SYSTEM_PROMPT = (
 )
 
 
+# Both _ADAPT_SYSTEM_PROMPT and _REWRITE_SYSTEM_PROMPT explicitly require
+# this exact output format back ("каждая реплика на отдельной строке
+# «Говорящий N: текст»") - a real adapted/rewritten transcript always has
+# at least one such line.
+_SPEAKER_LINE_RE = re.compile(r"Говорящий\s*\d+\s*:")
+
+
+def _looks_like_transcript(text: str) -> bool:
+    """Guards against a model refusal or other off-task answer standing in
+    for the real transcript (confirmed live, 2026-10-21: YandexGPT answered
+    "Я не могу обсуждать эту тему. Давайте поговорим о чём-нибудь ещё." for
+    an entirely unremarkable repair-estimate call, no sensitive content at
+    all - just an occasional false-positive refusal). That text is
+    non-empty, so the old `adapted or transcript_text` check let it straight
+    through as if it were the real transcript - and the quality-assessment
+    step then reviewed the refusal text itself, producing a nonsensical
+    review quoting a sentence the operator never said."""
+    return bool(_SPEAKER_LINE_RE.search(text))
+
+
 def adapt_transcript(
     client: httpx.Client, settings: YandexGPTSettings, transcript_text: str
 ) -> str:
@@ -445,8 +465,10 @@ def adapt_transcript(
     mis-split speaker turns) before it's used for topic summary/quality
     assessment - see module comment above. Falls back to returning the
     original text unchanged on any failure (an empty transcript, a request/
-    API error, or an empty model answer) rather than raising - adaptation
-    is a quality improvement, never a reason to lose the call's transcript
+    API error, an empty model answer, or an answer that doesn't look like
+    an actual transcript - see _looks_like_transcript) rather than raising -
+    adaptation is a quality improvement, never a reason to lose the call's
+    transcript
     entirely (see call_transcription_service.py's caller)."""
     transcript = transcript_text.strip()[:MAX_ADAPT_TRANSCRIPT_CHARS]
     if not transcript:
@@ -474,7 +496,9 @@ def adapt_transcript(
         return transcript_text
 
     adapted = raw_answer.strip()
-    return adapted or transcript_text
+    if not adapted or not _looks_like_transcript(adapted):
+        return transcript_text
+    return adapted
 
 
 # --- Transcript rewrite (product ask, 2026-10-07: even after adapt_
@@ -576,7 +600,9 @@ def rewrite_transcript(
         return transcript_text
 
     rewritten = raw_answer.strip()
-    return rewritten or transcript_text
+    if not rewritten or not _looks_like_transcript(rewritten):
+        return transcript_text
+    return rewritten
 
 
 def new_client() -> httpx.Client:
