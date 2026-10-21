@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.call_record import CallRecord
 from app.models.leads_settings import LeadsSettings
+from app.models.website_lead import WebsiteLead
 
 INTAKE_URL = "/api/v1/leads/intake"
 LEADS_URL = "/api/v1/leads"
@@ -49,6 +50,13 @@ def _call(
     db_session.add(call)
     db_session.commit()
     return call
+
+
+def _lead(db_session: Session, *, phone: str) -> WebsiteLead:
+    lead = WebsiteLead(id=uuid.uuid4(), source="other", phone=phone, raw_payload={})
+    db_session.add(lead)
+    db_session.commit()
+    return lead
 
 
 # ---- Intake ----------------------------------------------------------------
@@ -348,3 +356,84 @@ def test_update_settings_persists(client, auth_headers) -> None:
     refetched = client.get(SETTINGS_URL, headers=auth_headers).json()
     assert refetched["enabled"] is True
     assert refetched["stale_after_days"] == 14
+
+
+# ---- Call history (expanded lead detail card, product ask 2026-10-21) ------
+
+
+def test_lead_calls_lists_calls_matching_phone_in_both_directions(
+    client, db_session, auth_headers
+) -> None:
+    lead = _lead(db_session, phone="9991234567")
+    inbound = _call(
+        db_session,
+        phone="9991234567",
+        when=datetime(2026, 10, 1, 10, 0, tzinfo=UTC),
+        call_type="IN",
+        talk_sec=20,
+    )
+    outbound = _call(
+        db_session,
+        phone="9991234567",
+        when=datetime(2026, 10, 2, 10, 0, tzinfo=UTC),
+        call_type="OUT",
+        talk_sec=40,
+    )
+    # A call to an unrelated number must never show up here.
+    _call(db_session, phone="9990000000", when=datetime(2026, 10, 1, 11, 0, tzinfo=UTC))
+
+    response = client.get(f"{LEADS_URL}/{lead.id}/calls", headers=auth_headers)
+
+    assert response.status_code == 200
+    calls = response.json()["calls"]
+    # Oldest first, same convention as Телефония's own drill-down.
+    assert [c["call_id"] for c in calls] == [str(inbound.id), str(outbound.id)]
+    assert calls[0]["call_type"] == "IN"
+    assert calls[1]["call_type"] == "OUT"
+
+
+def test_lead_calls_includes_transcript_before_and_after_processing(
+    client, db_session, auth_headers
+) -> None:
+    lead = _lead(db_session, phone="9991234567")
+    call = _call(
+        db_session, phone="9991234567", when=datetime(2026, 10, 1, 10, 0, tzinfo=UTC), talk_sec=30
+    )
+    call.transcript_text = "Адаптированный текст"
+    call.transcript_text_raw = "Сырой текст"
+    call.topic_tag = "Замена масла"
+    call.quality_score = 8
+    call.quality_review = "Хороший звонок"
+    db_session.commit()
+
+    response = client.get(f"{LEADS_URL}/{lead.id}/calls", headers=auth_headers)
+
+    body = response.json()["calls"][0]
+    assert body["transcript_text"] == "Адаптированный текст"
+    assert body["transcript_text_raw"] == "Сырой текст"
+    assert body["topic_tag"] == "Замена масла"
+    assert body["quality_score"] == 8
+    assert body["quality_review"] == "Хороший звонок"
+
+
+def test_lead_calls_has_recording_reflects_raw_payload_link(
+    client, db_session, auth_headers
+) -> None:
+    lead = _lead(db_session, phone="9991234567")
+    with_link = _call(db_session, phone="9991234567", when=datetime(2026, 10, 1, 10, 0, tzinfo=UTC))
+    with_link.raw_payload = {"link": "abc123"}
+    without_link = _call(
+        db_session, phone="9991234567", when=datetime(2026, 10, 1, 11, 0, tzinfo=UTC)
+    )
+    db_session.commit()
+
+    response = client.get(f"{LEADS_URL}/{lead.id}/calls", headers=auth_headers)
+
+    by_id = {c["call_id"]: c["has_recording"] for c in response.json()["calls"]}
+    assert by_id[str(with_link.id)] is True
+    assert by_id[str(without_link.id)] is False
+
+
+def test_lead_calls_404_for_unknown_lead(client, auth_headers) -> None:
+    response = client.get(f"{LEADS_URL}/{uuid.uuid4()}/calls", headers=auth_headers)
+    assert response.status_code == 404

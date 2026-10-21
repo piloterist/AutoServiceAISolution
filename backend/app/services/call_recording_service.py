@@ -131,6 +131,38 @@ def _zeon_settings(settings: TelephonySettings) -> ZeonSettings:
     )
 
 
+def recording_link(row: CallRecord) -> str | None:
+    """Zeon's own recording reference for this call, or None if it doesn't
+    have one - a handful of calls (no answer, provider-side gaps) carry no
+    real link, Zeon sends `"0"` for those rather than omitting the field."""
+    link = str((row.raw_payload or {}).get("link") or "").strip()
+    return link if link not in ("", "0") else None
+
+
+def fetch_recording(settings: TelephonySettings, row: CallRecord) -> zeon_client.AudioFile:
+    """Live PLAY-button playback (product ask, 2026-10-21, both on the
+    Телефония call table and a lead's matched-calls list - see
+    endpoints/telephony.py's own `/calls/{id}/recording` and endpoints/
+    leads.py's twin use of this same function) - pulls straight from Zeon
+    via `link`, the same source export_recordings/transcribe_recordings
+    above and call_transcription_service already use.
+
+    Deliberately NOT served from the Yandex.Disk archive this module
+    exports to: that archive only has whatever a human has manually run
+    "Выгрузить и расшифровать" over (see this module's own docstring), so
+    it can't be relied on to have every call - a live Zeon fetch works for
+    any call Zeon itself still has the recording for, exported or not.
+    """
+    link = recording_link(row)
+    if link is None:
+        raise CallRecordingError("This call has no recording")
+    zeon_settings = _zeon_settings(settings)
+    try:
+        return zeon_client.download_audio(zeon_settings, link, method=settings.zeon_audio_method)
+    except ZeonError as exc:
+        raise CallRecordingError(f"Zeon download failed: {exc}") from exc
+
+
 def _speechkit_settings(settings: TelephonySettings) -> SpeechKitSettings:
     if not settings.yc_api_key:
         raise CallRecordingError(

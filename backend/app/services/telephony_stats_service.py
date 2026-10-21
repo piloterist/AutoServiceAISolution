@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session
 from app.models.call_record import CALL_TYPE_IN, CALL_TYPE_OUT, CallRecord
 from app.models.employee import Employee
 from app.models.phone_source import GROUP_OTHER, SOURCE_GROUPS, PhoneSource
-from app.services import call_workshop_service
+from app.services import call_recording_service, call_workshop_service
 
 CALLBACK_WINDOW = timedelta(hours=24)
 SHORT_ABANDON_SEC = 5
@@ -67,6 +67,8 @@ class _Rec:
     Zeon API dict."""
 
     id: str
+    call_id: uuid.UUID  # the real CallRecord.id - see LineCallEvent's own field
+    has_recording: bool
     time: datetime  # naive Moscow-local, like stats.py's Rec.time
     type: str
     client: str
@@ -114,6 +116,8 @@ class _Rec:
 def _row_to_rec(row: CallRecord) -> _Rec:
     return _Rec(
         id=row.external_id,
+        call_id=row.id,
+        has_recording=call_recording_service.recording_link(row) is not None,
         time=_utc_to_msk_naive(row.occurred_at),
         type=row.call_type,
         client=row.client or "",
@@ -615,6 +619,8 @@ def compute_source_summary(
 
 @dataclass
 class LineCallEvent:
+    call_id: uuid.UUID  # the real CallRecord.id - see endpoints/telephony.py's own PLAY route
+    has_recording: bool
     time: str  # "YYYY-MM-DD HH:MM:SS", Moscow-local
     direction: str  # "in" | "out"
     role: str  # "incoming" | "callback" | "client_recall"
@@ -696,6 +702,8 @@ def list_line_calls(
             answered_phone = None
         events.append(
             LineCallEvent(
+                call_id=rec.call_id,
+                has_recording=rec.has_recording,
                 time=rec.time.strftime("%Y-%m-%d %H:%M:%S"),
                 direction="in" if rec.type == "IN" else "out",
                 role=role,

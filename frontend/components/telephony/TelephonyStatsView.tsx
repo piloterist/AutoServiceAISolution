@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
+import { CallRecordingPlayer } from "@/components/telephony/CallRecordingPlayer";
 import type { LineCallEvent, SourceSummaryResponse, SourceSummaryRow } from "@/lib/backend-api";
 import { getLineCallsClient, getSourceSummaryClient } from "@/lib/telephony-client";
 
@@ -241,6 +242,7 @@ function LineCallsPanel({
             <th className="telephony-num">Разговор</th>
             <th>Тема</th>
             <th>Оценка</th>
+            <th>Запись</th>
           </tr>
         </thead>
         <tbody>
@@ -289,6 +291,9 @@ function LineCallsPanel({
                 ) : (
                   "—"
                 )}
+              </td>
+              <td>
+                <CallRecordingPlayer callId={event.call_id} hasRecording={event.has_recording} />
               </td>
             </tr>
           ))}

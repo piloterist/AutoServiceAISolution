@@ -3,7 +3,101 @@
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
-import type { LeadStatus, WebsiteLead } from "@/lib/backend-api";
+import { CallRecordingPlayer } from "@/components/telephony/CallRecordingPlayer";
+import type { LeadCall, LeadStatus, WebsiteLead } from "@/lib/backend-api";
+
+const CALL_TYPE_LABELS: Record<string, string> = {
+  IN: "Входящий",
+  OUT: "Исходящий",
+  LOCAL: "Внутренний",
+  TRANSIT: "Транзит",
+};
+
+function formatCallTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${day}.${month} ${hours}:${minutes}`;
+}
+
+// Звонки с номером заявки (product ask, 2026-10-21): находить вручную,
+// звонил ли кто-то с/на этот номер, внутри всей Телефонии неудобно - этот
+// блок показывает их прямо в карточке заявки, вместе с расшифровкой (как
+// в Телефонии - "до"/"после" обработки YandexGPT) и кнопкой PLAY. Fetched
+// lazily on expand, not preloaded with the rest of the leads list.
+function LeadCallsSection({ leadId }: { leadId: string }) {
+  const [state, setState] = useState<"loading" | "error" | "ready">("loading");
+  const [calls, setCalls] = useState<LeadCall[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/leads/${leadId}/calls`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json() as Promise<{ calls: LeadCall[] }>;
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setCalls(data.calls);
+          setState("ready");
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Не удалось загрузить звонки");
+          setState("error");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [leadId]);
+
+  if (state === "loading") return <p className="admin-hint">Загрузка звонков…</p>;
+  if (state === "error") return <p className="admin-form-error">{error}</p>;
+  if (calls.length === 0) return <p className="admin-hint">Звонков с этим номером не найдено</p>;
+
+  return (
+    <div className="leads-calls-list">
+      {calls.map((call) => (
+        <div key={call.call_id} className="leads-call-item">
+          <div className="leads-call-item-header">
+            <span className="leads-call-time">{formatCallTime(call.occurred_at)}</span>
+            <span className="leads-call-direction">
+              {CALL_TYPE_LABELS[call.call_type] ?? call.call_type}
+            </span>
+            {call.operator && <span className="leads-call-operator">доб. {call.operator}</span>}
+            <span className="leads-call-duration">
+              {call.answered ? `${call.talk_sec} с` : "без ответа"}
+            </span>
+            <CallRecordingPlayer callId={call.call_id} hasRecording={call.has_recording} />
+          </div>
+          {call.quality_score !== null && (
+            <p className="leads-call-quality">
+              Оценка: {call.quality_score}/10
+              {call.quality_review ? ` — ${call.quality_review}` : ""}
+            </p>
+          )}
+          {call.transcript_text && (
+            <div className="leads-call-transcript">
+              <p>{call.transcript_text}</p>
+              {call.transcript_text_raw && call.transcript_text_raw !== call.transcript_text && (
+                <details>
+                  <summary>Исходная расшифровка (до обработки YandexGPT)</summary>
+                  <p>{call.transcript_text_raw}</p>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const SOURCE_LABELS: Record<string, string> = {
   quiz_body: "Квиз: кузовной ремонт",
@@ -186,6 +280,10 @@ function LeadDetail({ lead }: { lead: WebsiteLead }) {
           ) : (
             <p className="admin-hint">Дополнительных данных нет</p>
           )}
+          <div className="leads-calls-section">
+            <span className="detail-label">Звонки с этим номером</span>
+            <LeadCallsSection leadId={lead.id} />
+          </div>
         </div>
       </td>
     </tr>

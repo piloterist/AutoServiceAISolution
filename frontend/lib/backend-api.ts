@@ -283,6 +283,21 @@ export async function fetchLeadPhoto(
   return { body: await res.arrayBuffer(), contentType: res.headers.get("content-type") ?? "application/octet-stream" };
 }
 
+// PLAY button (product ask, 2026-10-21, both Телефония and a lead's call
+// list) - same proxy-through-our-backend shape as fetchLeadPhoto above, so
+// the browser never needs Zeon credentials. See backend endpoints/
+// telephony.py's GET /calls/{call_id}/recording.
+export async function fetchCallRecording(
+  callId: string,
+): Promise<{ body: ArrayBuffer; contentType: string } | null> {
+  const res = await fetch(new URL(`/api/v1/telephony/calls/${callId}/recording`, API_URL), {
+    headers: { Authorization: `Bearer ${backendToken()}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  return { body: await res.arrayBuffer(), contentType: res.headers.get("content-type") ?? "audio/mpeg" };
+}
+
 async function backendPut<T>(
   path: string,
   body: unknown,
@@ -1276,6 +1291,10 @@ export function getSourceSummary(params?: { startDate?: string; endDate?: string
 }
 
 export type LineCallEvent = {
+  // The real CallRecord.id (product ask, 2026-10-21: a PLAY button per
+  // call) - fetch its recording from /api/telephony/calls/{call_id}/recording.
+  call_id: string;
+  has_recording: boolean;
   time: string; // "YYYY-MM-DD HH:MM:SS", Moscow-local
   direction: "in" | "out";
   role: "incoming" | "callback" | "client_recall";
@@ -1393,6 +1412,35 @@ export type WebsiteLead = {
   matched_work_order_id: string | null;
   matched_work_order_number: string | null;
 };
+
+// One call to/from this lead's own phone number (product ask, 2026-10-21:
+// an expanded lead's detail card shows its call history) - mirrors
+// LineCallEvent's transcript/quality fields, see backend schemas/leads.py's
+// LeadCallOut for the full rationale.
+export type LeadCall = {
+  call_id: string;
+  occurred_at: string;
+  call_type: "IN" | "OUT" | "LOCAL" | "TRANSIT";
+  operator: string | null;
+  answered: boolean;
+  wait_sec: number;
+  talk_sec: number;
+  transcript_status: string | null;
+  transcript_text: string | null;
+  transcript_text_raw: string | null;
+  topic_tag: string | null;
+  quality_score: number | null;
+  quality_review: string | null;
+  has_recording: boolean;
+};
+
+export type LeadCallsResponse = {
+  calls: LeadCall[];
+};
+
+export function getLeadCalls(leadId: string): Promise<LeadCallsResponse> {
+  return backendGet<LeadCallsResponse>(`/api/v1/leads/${leadId}/calls`);
+}
 
 export type WebsiteLeadsResponse = {
   leads: WebsiteLead[];

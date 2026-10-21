@@ -2860,6 +2860,69 @@ table.admin-data-table td.audit-changes-cell {
   min-width: 0;
 }
 
+/* Звонки с этим номером (product ask, 2026-10-21) - a lead's call history,
+   fetched lazily on expand (see LeadCallsSection in LeadsView.tsx). */
+.leads-calls-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.leads-calls-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.leads-call-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.leads-call-item-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.leads-call-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.leads-call-direction {
+  color: var(--text-muted);
+}
+
+.leads-call-operator,
+.leads-call-duration {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.leads-call-quality {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.leads-call-transcript p {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.leads-call-transcript details {
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
 /* Deliberately its own class, not a reuse of .toolbar (the Work Orders
    filter bar already owns that name with different rules - a genuine
    collision was here before, silently overriding that page's toolbar
@@ -3770,6 +3833,42 @@ table.bt {
   max-height: 60vh;
   overflow-y: auto;
   line-height: 1.5;
+}
+
+/* PLAY button (product ask, 2026-10-21) - CallRecordingPlayer.tsx, reused
+   by both the Телефония call table and a lead's call-history list. */
+.call-recording-play-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.call-recording-play-btn:hover {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.call-recording-play-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.call-recording-audio {
+  height: 2rem;
+  max-width: 220px;
+}
+
+.call-recording-none {
+  color: var(--text-muted);
 }
 
 .telephony-transcript-raw {

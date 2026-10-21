@@ -12,11 +12,12 @@ import uuid
 from datetime import date, datetime, time, timedelta
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
 from app.db.session import SessionLocal, get_db
+from app.models.call_record import CallRecord
 from app.schemas.telephony import (
     CallRecordingExportRequest,
     CallRecordingExportResponse,
@@ -373,6 +374,8 @@ def line_calls(
         end_date=range_end,
         events=[
             LineCallEventOut(
+                call_id=event.call_id,
+                has_recording=event.has_recording,
                 time=event.time,
                 direction=event.direction,
                 role=event.role,
@@ -427,6 +430,24 @@ def open_missed_calls(db: Session = Depends(get_db)) -> OpenMissedCallsResponse:
             for call in calls
         ],
     )
+
+
+@router.get("/calls/{call_id}/recording")
+def get_call_recording(call_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
+    """PLAY button (product ask, 2026-10-21 - both this call table and a
+    lead's matched-calls list, see endpoints/leads.py's own identical-
+    purpose route) - streams the recording live from Zeon via this call's
+    own raw_payload["link"] (see call_recording_service.fetch_recording's
+    own docstring for why this isn't served from the Yandex.Disk archive)."""
+    row = db.get(CallRecord, call_id)
+    if row is None:
+        raise _not_found("Call")
+    settings = telephony_settings_service.get_telephony_settings(db)
+    try:
+        audio = call_recording_service.fetch_recording(settings, row)
+    except CallRecordingError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return Response(content=audio.data, media_type=audio.content_type)
 
 
 # ---- Выгрузка записей + расшифровка ----------------------------------------

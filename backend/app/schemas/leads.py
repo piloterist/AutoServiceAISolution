@@ -54,3 +54,33 @@ class WebsiteLeadsResponse(BaseModel):
 class OpenLeadsResponse(BaseModel):
     count: int
     leads: list[WebsiteLeadOut]
+
+
+class LeadCallOut(BaseModel):
+    """One call to/from a lead's own phone number - see services/
+    leads_service.list_calls_for_lead. Mirrors schemas/telephony.py's
+    LineCallEventOut (same underlying CallRecord fields), kept as its own
+    separate type since this list isn't scoped to one line/source the way
+    that one is, and doesn't carry that one's цех/"Куда звонили" columns."""
+
+    call_id: uuid.UUID
+    occurred_at: datetime
+    call_type: str  # IN | OUT | LOCAL | TRANSIT - see models/call_record.py
+    operator: str | None  # who answered (IN) or dialed out (OUT)
+    answered: bool
+    wait_sec: int
+    talk_sec: int
+    transcript_status: str | None
+    # YandexGPT-adapted ("after processing") vs SpeechKit's raw output
+    # ("before processing") - same two fields/distinction as telephony's
+    # own transcript_text/transcript_text_raw.
+    transcript_text: str | None
+    transcript_text_raw: str | None
+    topic_tag: str | None
+    quality_score: int | None
+    quality_review: str | None
+    has_recording: bool
+
+
+class LeadCallsResponse(BaseModel):
+    calls: list[LeadCallOut]

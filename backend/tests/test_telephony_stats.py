@@ -319,6 +319,63 @@ def test_list_line_calls_topic_tag_is_none_before_classification(db_session: Ses
     assert events[0].transcript_text is None
 
 
+def test_list_line_calls_surfaces_call_id(db_session: Session) -> None:
+    """PLAY button (product ask, 2026-10-21) - the frontend needs the real
+    CallRecord.id, not Zeon's own external_id, to request a recording."""
+    call = _call(
+        db_session,
+        external_id="1",
+        hour_msk=10,
+        call_type="IN",
+        client="9990000099",
+        line="pan",
+    )
+    db_session.commit()
+
+    events = stats.list_line_calls(db_session, DAY, DAY, "pan")
+
+    assert events[0].call_id == call.id
+
+
+def test_list_line_calls_has_recording_true_when_raw_payload_has_a_link(
+    db_session: Session,
+) -> None:
+    call = _call(
+        db_session,
+        external_id="1",
+        hour_msk=10,
+        call_type="IN",
+        client="9990000099",
+        line="pan",
+    )
+    call.raw_payload = {"link": "abc123"}
+    db_session.commit()
+
+    events = stats.list_line_calls(db_session, DAY, DAY, "pan")
+
+    assert events[0].has_recording is True
+
+
+@pytest.mark.parametrize("raw_payload", [None, {}, {"link": ""}, {"link": "0"}])
+def test_list_line_calls_has_recording_false_without_a_real_link(
+    db_session: Session, raw_payload
+) -> None:
+    call = _call(
+        db_session,
+        external_id="1",
+        hour_msk=10,
+        call_type="IN",
+        client="9990000099",
+        line="pan",
+    )
+    call.raw_payload = raw_payload
+    db_session.commit()
+
+    events = stats.list_line_calls(db_session, DAY, DAY, "pan")
+
+    assert events[0].has_recording is False
+
+
 def test_compute_source_summary_defaults_to_no_reaction_when_never_followed_up(
     db_session: Session, scenario: None
 ) -> None:

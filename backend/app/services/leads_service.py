@@ -267,3 +267,23 @@ def get_open_leads(db: Session, *, now: datetime | None = None) -> list[WebsiteL
     outbound call, and not yet past stale_after_days - feeds the Planner's
     envelope badge. Newest first."""
     return [item.lead for item in list_leads(db, now=now) if item.status == "open"]
+
+
+def list_calls_for_lead(db: Session, lead: WebsiteLead) -> list[CallRecord]:
+    """Every call (either direction) to/from this lead's own phone number -
+    product ask, 2026-10-21: a lead's expanded detail card shows its call
+    history (who called whom, when, the transcript, a PLAY button),
+    because finding the one matching call by phone number inside the full
+    Телефония page is impractical. `lead.phone` and `CallRecord.client` are
+    already normalized the exact same way (last 10 digits - see
+    _normalize_phone/zeon_client._norm_phone), so a plain equality match is
+    enough - no further normalization needed here. Oldest first, same
+    chronological convention as telephony_stats_service.list_line_calls's
+    own drill-down."""
+    return list(
+        db.scalars(
+            select(CallRecord)
+            .where(CallRecord.client == lead.phone)
+            .order_by(CallRecord.occurred_at)
+        )
+    )

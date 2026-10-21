@@ -20,6 +20,8 @@ from app.api.deps import verify_api_token
 from app.db.session import get_db
 from app.models.website_lead import WebsiteLead
 from app.schemas.leads import (
+    LeadCallOut,
+    LeadCallsResponse,
     LeadsIntakeTokenOut,
     LeadsSettingsOut,
     LeadsSettingsUpdate,
@@ -28,6 +30,7 @@ from app.schemas.leads import (
     WebsiteLeadsResponse,
 )
 from app.services import (
+    call_recording_service,
     lead_photos_service,
     leads_service,
     telephony_settings_service,
@@ -44,6 +47,25 @@ def _settings_out(settings) -> LeadsSettingsOut:  # noqa: ANN001
         enabled=settings.enabled,
         stale_after_days=settings.stale_after_days,
         has_intake_token=bool(settings.intake_token),
+    )
+
+
+def _lead_call_out(row) -> LeadCallOut:  # noqa: ANN001 - app.models.call_record.CallRecord
+    return LeadCallOut(
+        call_id=row.id,
+        occurred_at=row.occurred_at,
+        call_type=row.call_type,
+        operator=row.operator,
+        answered=row.answered,
+        wait_sec=row.wait_sec,
+        talk_sec=row.talk_sec,
+        transcript_status=row.transcript_status,
+        transcript_text=row.transcript_text,
+        transcript_text_raw=row.transcript_text_raw,
+        topic_tag=row.topic_tag,
+        quality_score=row.quality_score,
+        quality_review=row.quality_review,
+        has_recording=call_recording_service.recording_link(row) is not None,
     )
 
 
@@ -118,6 +140,19 @@ def open_leads(db: Session = Depends(get_db)) -> OpenLeadsResponse:
     items = [item for item in leads_service.list_leads(db) if item.status == "open"]
     leads = [_lead_out(item) for item in items]
     return OpenLeadsResponse(count=len(leads), leads=leads)
+
+
+@router.get(
+    "/{lead_id}/calls", response_model=LeadCallsResponse, dependencies=[Depends(verify_api_token)]
+)
+def lead_calls(lead_id: uuid.UUID, db: Session = Depends(get_db)) -> LeadCallsResponse:
+    """Expanded lead detail card's call-history section (product ask,
+    2026-10-21) - see services/leads_service.list_calls_for_lead."""
+    lead = db.get(WebsiteLead, lead_id)
+    if lead is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+    rows = leads_service.list_calls_for_lead(db, lead)
+    return LeadCallsResponse(calls=[_lead_call_out(row) for row in rows])
 
 
 @router.get("/{lead_id}/photos/{filename}", dependencies=[Depends(verify_api_token)])

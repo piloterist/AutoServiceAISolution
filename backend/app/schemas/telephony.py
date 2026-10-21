@@ -175,6 +175,10 @@ class SourceSummaryResponse(BaseModel):
 
 
 class LineCallEventOut(BaseModel):
+    # The real CallRecord.id (product ask, 2026-10-21: a PLAY button per
+    # call) - see endpoints/telephony.py's own GET /calls/{call_id}/recording.
+    call_id: uuid.UUID
+    has_recording: bool
     time: str  # "YYYY-MM-DD HH:MM:SS", Moscow-local
     direction: str  # "in" | "out"
     role: str  # "incoming" | "callback" | "client_recall"
