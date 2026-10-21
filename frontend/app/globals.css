@@ -284,6 +284,17 @@ main:has(.wide-page) {
 /* Planner needs as much width as the viewport actually has (more days
    visible = the whole point) - wider than .wide-page's fixed cap, and
    with the side padding trimmed down too. */
+/* Финансы (Бюджеты/ДЗ) - cuts most of the default top gap (product ask,
+   2026-10-21: "больше строк таблицы влезало") since this page is a dense
+   table, not prose that benefits from breathing room above its heading. */
+main:has(.finance-page) {
+  padding-top: 0.75rem;
+}
+
+.finance-page > h1 {
+  margin: 0 0 0.6rem;
+}
+
 main:has(.full-width-page) {
   max-width: none;
   padding: 0.3rem 0.75rem;
@@ -5107,10 +5118,13 @@ main:has(.cockpit-page) {
 .receivables-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 1.25rem;
   margin-bottom: 0.8rem;
+}
+
+.receivables-toolbar .admin-hint {
+  margin-left: auto;
 }
 
 .receivables-table {
@@ -5126,9 +5140,20 @@ main:has(.cockpit-page) {
   padding: 0.5rem 0.6rem;
 }
 
+/* Every header the same weight/size (product ask, 2026-10-21: match "Дата
+   закрытия") - only text-align varies per column below. */
+.receivables-table th {
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
 .receivables-th-number,
 .receivables-td-number {
   text-align: left;
+}
+
+.receivables-td-number {
   font-weight: 600;
 }
 
@@ -5147,11 +5172,6 @@ main:has(.cockpit-page) {
 }
 
 .receivables-th-bucket {
-  color: var(--text-muted);
-  font-weight: 600;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
   text-align: right;
 }
 

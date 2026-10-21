@@ -18,7 +18,7 @@ export default async function FinancePage() {
   }
 
   return (
-    <div className="wide-page">
+    <div className="wide-page finance-page">
       <h1>Финансы</h1>
 
       {error && (

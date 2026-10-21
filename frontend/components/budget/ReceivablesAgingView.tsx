@@ -14,9 +14,13 @@ const BUCKETS: { key: ReceivablesAgingBucket; label: string }[] = [
   { key: "gte_90", label: "90+" },
 ];
 
-// Заказ-наряд, Дата закрытия, Дата счета, Статус, Контрагент, Дни - the
-// identifying columns before the bucket columns start.
-const LEADING_COLUMN_COUNT = 6;
+// Заказ-наряд, Дата закрытия, Статус, Контрагент, Дни - the identifying
+// columns before the bucket columns start. "Дата счета" is left out of the
+// table for now (product ask, 2026-10-21: 1C doesn't actually export
+// invoices yet - see receivables_service's own docstring - so the column
+// would just be a wall of dashes) even though the backend row already
+// carries invoice_date/reference_date for whenever that changes.
+const LEADING_COLUMN_COUNT = 5;
 
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
@@ -126,7 +130,6 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
             <tr>
               <th className="receivables-th-number">Заказ-наряд</th>
               <th className="receivables-th-date">Дата закрытия</th>
-              <th className="receivables-th-date">Дата счета</th>
               <th className="receivables-th-status">Статус</th>
               <th className="receivables-th-customer">Контрагент</th>
               <th className="receivables-th-days">Дни</th>
@@ -156,7 +159,6 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
               >
                 <td className="receivables-td-number">{row.work_order_number}</td>
                 <td className="receivables-td-date">{formatDateOrDash(row.closed_date)}</td>
-                <td className="receivables-td-date">{formatDateOrDash(row.invoice_date)}</td>
                 <td className="receivables-td-status">{row.status ?? "—"}</td>
                 <td className="receivables-td-customer">{row.customer_name ?? "—"}</td>
                 <td className="receivables-td-days">{row.days_overdue}</td>
