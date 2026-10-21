@@ -5155,6 +5155,14 @@ main:has(.cockpit-page) {
   text-align: right;
 }
 
+.receivables-th-days,
+.receivables-td-days {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* Larger than the other columns (product ask, 2026-10-21: the period/bucket
    amounts are the figures this report exists to show, so they get more
    visual weight than the identifying columns on the left). */

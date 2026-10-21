@@ -16,10 +16,16 @@ class ReceivablesAgingRow(BaseModel):
     work_order_number: str
     status: str | None
     customer_name: str | None
+    is_individual_customer: bool
     closed_date: datetime | None
-    # The date aging is measured from - the work order's own invoice date if
-    # one exists, else closed_date. See receivables_service.get_aging_report.
+    # The work order's own Счет на оплату date, if it has one - None when it
+    # doesn't (displayed as its own "Дата счета" column, distinct from
+    # reference_date below, which silently falls back to closed_date).
+    invoice_date: datetime | None
+    # The date aging is measured from - invoice_date if present, else
+    # closed_date. See receivables_service.get_aging_report.
     reference_date: datetime | None
+    days_overdue: int
     debt_amount: Decimal
     bucket: str  # one of AGING_BUCKET_KEYS
 

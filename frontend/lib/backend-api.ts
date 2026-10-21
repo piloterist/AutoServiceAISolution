@@ -1546,8 +1546,11 @@ export type ReceivablesAgingRow = {
   work_order_number: string;
   status: string | null;
   customer_name: string | null;
+  is_individual_customer: boolean;
   closed_date: string | null;
-  reference_date: string | null; // invoice date if the order has one, else closed_date
+  invoice_date: string | null; // the order's own Счет на оплату date, if it has one
+  reference_date: string | null; // invoice_date if present, else closed_date
+  days_overdue: number;
   debt_amount: string;
   bucket: ReceivablesAgingBucket;
 };

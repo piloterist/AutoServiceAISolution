@@ -27,6 +27,7 @@ from app.schemas.receivables import (
     ReceivablesAgingRow,
     ReceivablesAgingTotals,
 )
+from app.services.internal_order_rules import is_physical_person
 from app.services.settings_service import get_app_settings
 
 # Duplicated per this codebase's own established convention for this
@@ -111,7 +112,8 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
     totals = dict.fromkeys(AGING_BUCKET_KEYS, Decimal("0"))
     rows: list[ReceivablesAgingRow] = []
     for wo in work_orders:
-        reference_date = latest_invoice_date.get(wo.id) or wo.closed_date
+        invoice_date = latest_invoice_date.get(wo.id)
+        reference_date = invoice_date or wo.closed_date
         days_overdue = max(0, (effective_now.date() - reference_date.date()).days)
         bucket = _bucket_key(days_overdue)
         debt = wo.debt_amount or Decimal("0")
@@ -122,8 +124,11 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
                 work_order_number=wo.external_number,
                 status=wo.status,
                 customer_name=wo.customer_name,
+                is_individual_customer=is_physical_person(wo.customer_name),
                 closed_date=wo.closed_date,
+                invoice_date=invoice_date,
                 reference_date=reference_date,
+                days_overdue=days_overdue,
                 debt_amount=debt,
                 bucket=bucket,
             )

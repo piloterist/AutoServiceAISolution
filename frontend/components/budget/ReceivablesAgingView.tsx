@@ -14,6 +14,10 @@ const BUCKETS: { key: ReceivablesAgingBucket; label: string }[] = [
   { key: "gte_90", label: "90+" },
 ];
 
+// Заказ-наряд, Дата закрытия, Дата счета, Статус, Контрагент, Дни - the
+// identifying columns before the bucket columns start.
+const LEADING_COLUMN_COUNT = 6;
+
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("ru-RU", {
@@ -65,10 +69,16 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
   const router = useRouter();
   const [closedFrom, setClosedFrom] = useState("");
   const [closedTo, setClosedTo] = useState("");
+  const [onlyIndividualCustomer, setOnlyIndividualCustomer] = useState(false);
 
   const filteredRows = useMemo(
-    () => data.rows.filter((row) => isWithinDateRange(row.closed_date, closedFrom, closedTo)),
-    [data.rows, closedFrom, closedTo],
+    () =>
+      data.rows.filter(
+        (row) =>
+          isWithinDateRange(row.closed_date, closedFrom, closedTo) &&
+          (!onlyIndividualCustomer || row.is_individual_customer),
+      ),
+    [data.rows, closedFrom, closedTo, onlyIndividualCustomer],
   );
 
   const bucketTotals = useMemo(() => {
@@ -99,6 +109,14 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
             <DateInput value={closedTo} onChange={setClosedTo} ariaLabel="Дата закрытия по" />
           </label>
         </div>
+        <label className="individual-customer-filter">
+          <input
+            type="checkbox"
+            checked={onlyIndividualCustomer}
+            onChange={(event) => setOnlyIndividualCustomer(event.target.checked)}
+          />
+          Физ.лицо
+        </label>
         <span className="admin-hint">На {formatDateOrDash(data.as_of)}</span>
       </div>
 
@@ -108,8 +126,10 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
             <tr>
               <th className="receivables-th-number">Заказ-наряд</th>
               <th className="receivables-th-date">Дата закрытия</th>
+              <th className="receivables-th-date">Дата счета</th>
               <th className="receivables-th-status">Статус</th>
               <th className="receivables-th-customer">Контрагент</th>
+              <th className="receivables-th-days">Дни</th>
               {BUCKETS.map((bucket) => (
                 <th key={bucket.key} className="receivables-th-bucket">
                   {bucket.label}
@@ -117,7 +137,7 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
               ))}
             </tr>
             <tr className="receivables-row receivables-row--totals">
-              <td className="receivables-td-number" colSpan={4}>
+              <td className="receivables-td-number" colSpan={LEADING_COLUMN_COUNT}>
                 Итого
               </td>
               {BUCKETS.map((bucket) => (
@@ -136,8 +156,10 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
               >
                 <td className="receivables-td-number">{row.work_order_number}</td>
                 <td className="receivables-td-date">{formatDateOrDash(row.closed_date)}</td>
+                <td className="receivables-td-date">{formatDateOrDash(row.invoice_date)}</td>
                 <td className="receivables-td-status">{row.status ?? "—"}</td>
                 <td className="receivables-td-customer">{row.customer_name ?? "—"}</td>
+                <td className="receivables-td-days">{row.days_overdue}</td>
                 {BUCKETS.map((bucket) => (
                   <td key={bucket.key} className={bucketCellClass(bucket.key)}>
                     {bucket.key === row.bucket ? formatAmount(Number(row.debt_amount)) : ""}
@@ -147,7 +169,7 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
             ))}
             {filteredRows.length === 0 && (
               <tr>
-                <td className="receivables-td-empty" colSpan={4 + BUCKETS.length}>
+                <td className="receivables-td-empty" colSpan={LEADING_COLUMN_COUNT + BUCKETS.length}>
                   Нет заказ-нарядов с дебиторской задолженностью за выбранный период
                 </td>
               </tr>

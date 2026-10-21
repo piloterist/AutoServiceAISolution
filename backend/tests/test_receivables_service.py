@@ -79,8 +79,10 @@ def test_uses_closed_date_when_no_invoice_exists(db_session: Session, monkeypatc
     report = receivables_service.get_aging_report(db_session, now=NOW)
 
     assert len(report.rows) == 1
+    assert report.rows[0].invoice_date is None
     assert report.rows[0].reference_date == wo.closed_date
     # 2026-10-21 minus 2026-10-01 = 20 days overdue.
+    assert report.rows[0].days_overdue == 20
     assert report.rows[0].bucket == "d10_30"
 
 
@@ -106,7 +108,9 @@ def test_uses_invoice_date_instead_of_closed_date_when_present(
     report = receivables_service.get_aging_report(db_session, now=NOW)
 
     assert len(report.rows) == 1
+    assert report.rows[0].invoice_date == datetime(2026, 10, 16, tzinfo=UTC)
     assert report.rows[0].reference_date == datetime(2026, 10, 16, tzinfo=UTC)
+    assert report.rows[0].days_overdue == 5
     assert report.rows[0].bucket == "lt_10"
 
 
@@ -242,5 +246,32 @@ def test_row_includes_display_fields(db_session: Session, monkeypatch) -> None:
     assert row.work_order_number == wo.external_number
     assert row.status == "Закрыт"
     assert row.customer_name == "Иванов Иван Иванович"
+    assert row.is_individual_customer is True
     assert row.closed_date == wo.closed_date
+    assert row.invoice_date is None
     assert row.debt_amount == Decimal("4500.00")
+
+
+# ---- get_aging_report: is_individual_customer -------------------------------
+
+
+def test_is_individual_customer_true_for_a_plain_name(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(customer_name="Петров Петр Петрович")
+    db_session.add(wo)
+    db_session.commit()
+
+    report = receivables_service.get_aging_report(db_session, now=NOW)
+
+    assert report.rows[0].is_individual_customer is True
+
+
+def test_is_individual_customer_false_for_a_legal_entity(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(customer_name='ООО "Ромашка"')
+    db_session.add(wo)
+    db_session.commit()
+
+    report = receivables_service.get_aging_report(db_session, now=NOW)
+
+    assert report.rows[0].is_individual_customer is False
