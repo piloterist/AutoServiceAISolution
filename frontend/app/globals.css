@@ -658,6 +658,23 @@ table.data-table.leads-table {
   width: 100%;
 }
 
+/* Заявки (product ask, 2026-10-22): headers and every summary-row cell
+   centered - previously headers were left (.data-table th's own default)
+   next to a few right-aligned ("num") cells, an inconsistent skew. The
+   second rule's extra specificity is needed to beat .data-table td.num's
+   own text-align: right (see that rule's own definition) while still
+   keeping its font-variant-numeric: tabular-nums. Does not reach the
+   expanded detail card's own content - see .leads-detail-card's own
+   text-align: left reset below. */
+table.leads-table th,
+table.leads-table td {
+  text-align: center;
+}
+
+table.leads-table td.num {
+  text-align: center;
+}
+
 table.admin-data-table th,
 table.admin-data-table td {
   white-space: nowrap;
@@ -2813,6 +2830,10 @@ table.admin-data-table td.audit-changes-cell {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+  /* Resets the centered text-align the expanded row's own <td> inherits
+     from table.leads-table th/td above - the detail card's prose/fields/
+     call history should stay left-aligned regardless. */
+  text-align: left;
 }
 
 /* Thumbnail grid for a lead's archived photos (per product ask,
