@@ -645,6 +645,19 @@ table.admin-data-table {
   width: auto;
 }
 
+/* Заявки (product ask, 2026-10-22): columns still size to content
+   (table-layout: auto, inherited above), but the table itself always
+   spans the full card width, collapsed or expanded - without this, a
+   closed list of short values renders narrower than the card, and
+   opening a row's much wider detail card (grid of fields, photos, call
+   history) visibly stretches the whole table sideways. Two classes +
+   element (0,2,1) deliberately outweighs table.admin-data-table's own
+   (0,1,1) above regardless of source order, same reasoning as that
+   rule's own comment. */
+table.data-table.leads-table {
+  width: 100%;
+}
+
 table.admin-data-table th,
 table.admin-data-table td {
   white-space: nowrap;

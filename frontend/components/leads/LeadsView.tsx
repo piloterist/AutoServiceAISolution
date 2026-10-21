@@ -336,7 +336,7 @@ export function LeadsView({
         </div>
       </div>
 
-      <table className="data-table admin-data-table">
+      <table className="data-table admin-data-table leads-table">
         <thead>
           <tr>
             <th>Дата</th>
