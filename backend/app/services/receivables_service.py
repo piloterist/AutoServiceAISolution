@@ -86,8 +86,10 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
     if app_settings.exclude_internal_orders:
         filters.append(WorkOrder.is_internal.is_(False))
 
+    # Most recently closed first (product ask, 2026-10-21) - not the
+    # overdue-aging order, just a plain browsing order for the table.
     work_orders = (
-        db.execute(select(WorkOrder).where(*filters).order_by(WorkOrder.closed_date.asc()))
+        db.execute(select(WorkOrder).where(*filters).order_by(WorkOrder.closed_date.desc()))
         .scalars()
         .all()
     )

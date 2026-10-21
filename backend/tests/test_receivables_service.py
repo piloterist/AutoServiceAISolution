@@ -139,6 +139,22 @@ def test_uses_the_most_recent_invoice_when_several_exist(db_session: Session, mo
     assert report.rows[0].bucket == "lt_10"
 
 
+# ---- get_aging_report: row order ---------------------------------------
+
+
+def test_rows_are_ordered_most_recently_closed_first(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    oldest = _make_work_order(closed_date=datetime(2026, 1, 1, tzinfo=UTC))
+    newest = _make_work_order(closed_date=datetime(2026, 10, 20, tzinfo=UTC))
+    middle = _make_work_order(closed_date=datetime(2026, 6, 1, tzinfo=UTC))
+    db_session.add_all([oldest, newest, middle])
+    db_session.commit()
+
+    report = receivables_service.get_aging_report(db_session, now=NOW)
+
+    assert [row.work_order_id for row in report.rows] == [newest.id, middle.id, oldest.id]
+
+
 # ---- get_aging_report: same "what counts as ДЗ" filter as Cockpit ----------
 
 
