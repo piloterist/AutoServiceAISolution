@@ -2,15 +2,24 @@
 intake, listing, and the "still needs a callback" resolution logic that
 feeds the Planner's envelope badge (see components/planner/LeadsBadge.tsx).
 
-Resolution rule (confirmed product decision, 2026-09-29): unlike the
-telephony missed-calls badge (either direction resolves a miss), a lead is
-only "handled" by a real **outbound** call to it that was actually answered
-(>= MIN_REAL_TALK_SEC of talk time) - a lead is an inbound inquiry that
-needs *our* staff to call back, so an inbound call to the same number
-proves nothing about whether anyone followed up on it. A lead past
-`stale_after_days` with no such call stops counting as "open" (badge/count)
-but is never deleted - it just reads as "stale" on the full Заявки page
-instead of "new", so nothing quietly vanishes the way a missed call does.
+Resolution rule (revised 2026-10-21, see below for the superseded version):
+a lead is "handled" by any real, answered call to/from its phone number -
+either direction, same as the telephony missed-calls badge - with at least
+MIN_REAL_TALK_SEC of talk time. A lead past `stale_after_days` with no such
+call stops counting as "open" (badge/count) but is never deleted - it just
+reads as "stale" on the full Заявки page instead of "new", so nothing
+quietly vanishes the way a missed call does.
+
+Originally (confirmed product decision, 2026-09-29) only an **outbound**
+call counted - the reasoning being that a lead is an inbound inquiry that
+needs *our* staff to call back, so an inbound call proves nothing about
+whether anyone followed up. Dropped after a real counter-example: a lead
+left open "Просрочена" despite the client themselves calling back and
+having a full, substantive 260s conversation with staff that fully
+addressed the lead's request - an inbound call CAN prove follow-up
+happened, same as an outbound one, provided it's a real conversation and
+not just noise (which MIN_REAL_TALK_SEC already screens for, regardless of
+direction).
 """
 
 from __future__ import annotations
@@ -28,7 +37,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.call_record import CALL_TYPE_OUT, CallRecord
+from app.models.call_record import CallRecord
 from app.models.leads_settings import LeadsSettings
 from app.models.website_lead import (
     SOURCE_CONSULTATION,
@@ -98,7 +107,7 @@ def verify_intake_token(db: Session, token: str | None) -> bool:
 def _normalize_phone(value: Any) -> str:
     """Last 10 digits - same convention as telephony_calls.client (see
     services/zeon_client.py's _norm_phone), so a lead can be matched
-    against a real outbound call to the same number."""
+    against a real call to the same number."""
     digits = re.sub(r"\D", "", str(value or ""))
     return digits[-10:] if len(digits) >= 10 else digits
 
@@ -240,11 +249,12 @@ class LeadWithStatus:
 
 
 def _resolving_calls_by_phone(db: Session) -> dict[str, list[datetime]]:
-    """Every real (>=5s, answered) outbound call, grouped by client phone -
-    fetched once and matched in Python rather than one query per lead."""
+    """Every real (>=5s, answered) call, either direction, grouped by
+    client phone - fetched once and matched in Python rather than one
+    query per lead. See this module's own docstring for why direction
+    stopped mattering here."""
     rows = db.execute(
         select(CallRecord.client, CallRecord.occurred_at).where(
-            CallRecord.call_type == CALL_TYPE_OUT,
             CallRecord.talk_sec >= MIN_REAL_TALK_SEC,
             CallRecord.client.is_not(None),
         )
@@ -323,9 +333,9 @@ def list_leads(db: Session, *, now: datetime | None = None) -> list[LeadWithStat
 
 
 def get_open_leads(db: Session, *, now: datetime | None = None) -> list[WebsiteLead]:
-    """Leads that still need a callback - not yet reached by a real
-    outbound call, and not yet past stale_after_days - feeds the Planner's
-    envelope badge. Newest first."""
+    """Leads that still need a callback - not yet reached by a real call,
+    either direction, and not yet past stale_after_days - feeds the
+    Planner's envelope badge. Newest first."""
     return [item.lead for item in list_leads(db, now=now) if item.status == "open"]
 
 

@@ -380,9 +380,13 @@ def test_lead_resolved_by_later_real_outbound_call(client, db_session, auth_head
     assert leads[0]["status"] == "resolved"
 
 
-def test_lead_not_resolved_by_inbound_call(client, db_session, auth_headers) -> None:
-    """Only an OUTBOUND call resolves a lead - an inbound call proves
-    nothing about whether staff followed up (confirmed product decision)."""
+def test_lead_resolved_by_later_real_inbound_call(client, db_session, auth_headers) -> None:
+    """Revised 2026-10-21 (see services/leads_service.py's own module
+    docstring for the full story): a real, answered inbound call - the
+    client calling back and actually talking to staff - resolves a lead
+    too, same as an outbound one. Was previously "open" under the old
+    outbound-only rule, which left leads like this stuck as "Просрочена"
+    despite a real, substantive conversation having taken place."""
     _enable_intake(db_session)
     client.post(
         INTAKE_URL,
@@ -395,6 +399,28 @@ def test_lead_not_resolved_by_inbound_call(client, db_session, auth_headers) -> 
         when=datetime.now(UTC) + timedelta(minutes=1),
         call_type="IN",
         talk_sec=30,
+    )
+
+    leads = client.get(LEADS_URL, headers=auth_headers).json()["leads"]
+    assert leads[0]["status"] == "resolved"
+
+
+def test_lead_not_resolved_by_short_inbound_call(client, db_session, auth_headers) -> None:
+    """An inbound call still has to be a real conversation
+    (>= MIN_REAL_TALK_SEC) to count - same bar as outbound, just no longer
+    gated on direction too."""
+    _enable_intake(db_session)
+    client.post(
+        INTAKE_URL,
+        json={"form_name": "Рассрочка", "user_phone": "9220000003"},
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+    _call(
+        db_session,
+        phone="9220000003",
+        when=datetime.now(UTC) + timedelta(minutes=1),
+        call_type="IN",
+        talk_sec=2,
     )
 
     leads = client.get(LEADS_URL, headers=auth_headers).json()["leads"]
