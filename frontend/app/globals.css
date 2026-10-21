@@ -5132,6 +5132,37 @@ main:has(.cockpit-page) {
   min-width: 950px;
   border-collapse: collapse;
   font-size: 0.85rem;
+  /* Fixed, not auto (product ask, 2026-10-21: toggling a filter shrinks the
+     set of visible rows, which under auto layout recomputes every column's
+     width from whatever's now the longest cell left in it - "Контрагент"
+     especially - so columns visibly jump. Fixed layout takes widths only
+     from the header row below, once, regardless of which rows are
+     filtered in or out afterwards. */
+  table-layout: fixed;
+}
+
+.receivables-th-number {
+  width: 11%;
+}
+
+.receivables-th-date {
+  width: 8%;
+}
+
+.receivables-th-status {
+  width: 10%;
+}
+
+.receivables-th-customer {
+  width: 23%;
+}
+
+.receivables-th-days {
+  width: 6%;
+}
+
+.receivables-th-bucket {
+  width: 8.4%;
 }
 
 .receivables-table th,
