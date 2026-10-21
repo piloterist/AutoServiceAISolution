@@ -5097,3 +5097,88 @@ main:has(.cockpit-page) {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* --- Финансы -> Дебиторская задолженность tab --- */
+
+.receivables-card {
+  overflow: hidden;
+}
+
+.receivables-toolbar {
+  margin-bottom: 0.8rem;
+}
+
+.receivables-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.receivables-table th,
+.receivables-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0.6rem;
+}
+
+.receivables-th-number,
+.receivables-td-number {
+  text-align: left;
+  font-weight: 600;
+}
+
+.receivables-th-status,
+.receivables-td-status,
+.receivables-th-customer,
+.receivables-td-customer {
+  text-align: left;
+}
+
+.receivables-th-date,
+.receivables-td-date {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.receivables-th-bucket {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  text-align: right;
+}
+
+.receivables-td-bucket {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.receivables-td-bucket--overdue {
+  color: var(--down);
+}
+
+.receivables-row {
+  cursor: pointer;
+}
+
+.receivables-row:hover {
+  background: var(--surface2);
+}
+
+.receivables-row--totals {
+  cursor: default;
+  font-weight: 700;
+}
+
+.receivables-row--totals:hover {
+  background: transparent;
+}
+
+.receivables-td-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 1.5rem 0.6rem;
+}

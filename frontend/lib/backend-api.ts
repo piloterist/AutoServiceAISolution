@@ -1537,6 +1537,40 @@ export function getBudgetYear(year: number): Promise<BudgetYear> {
   return backendGet<BudgetYear>("/api/v1/budget", { year: String(year) });
 }
 
+// ---- Дебиторская задолженность (ДЗ aging report) ---------------------------
+
+export type ReceivablesAgingBucket = "lt_10" | "d10_30" | "d30_60" | "d60_90" | "gte_90";
+
+export type ReceivablesAgingRow = {
+  work_order_id: string;
+  work_order_number: string;
+  status: string | null;
+  customer_name: string | null;
+  closed_date: string | null;
+  reference_date: string | null; // invoice date if the order has one, else closed_date
+  debt_amount: string;
+  bucket: ReceivablesAgingBucket;
+};
+
+export type ReceivablesAgingTotals = {
+  lt_10: string;
+  d10_30: string;
+  d30_60: string;
+  d60_90: string;
+  gte_90: string;
+  total: string;
+};
+
+export type ReceivablesAging = {
+  as_of: string;
+  rows: ReceivablesAgingRow[];
+  totals: ReceivablesAgingTotals;
+};
+
+export function getReceivablesAging(): Promise<ReceivablesAging> {
+  return backendGet<ReceivablesAging>("/api/v1/receivables/aging");
+}
+
 export type BudgetField = "plan_revenue" | "expenses";
 
 /** Upserts one cell - the backend only ever stores the two manually-entered

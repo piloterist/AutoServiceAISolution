@@ -1,24 +1,25 @@
-import { BudgetView } from "@/components/budget/BudgetView";
-import { getBudgetYear } from "@/lib/backend-api";
+import { FinanceView } from "@/components/budget/FinanceView";
+import { getBudgetYear, getReceivablesAging } from "@/lib/backend-api";
 
 // Same reasoning as app/leads/page.tsx - never statically prerendered,
 // this always needs a fresh backend read.
 export const dynamic = "force-dynamic";
 
-export default async function BudgetPage() {
+export default async function FinancePage() {
   const year = new Date().getFullYear();
-  let data;
+  let budget;
+  let receivables;
   let error: string | null = null;
 
   try {
-    data = await getBudgetYear(year);
+    [budget, receivables] = await Promise.all([getBudgetYear(year), getReceivablesAging()]);
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
   }
 
   return (
     <div className="wide-page">
-      <h1>Бюджет</h1>
+      <h1>Финансы</h1>
 
       {error && (
         <div className="card" style={{ borderColor: "var(--down)" }}>
@@ -26,7 +27,9 @@ export default async function BudgetPage() {
         </div>
       )}
 
-      {data && <BudgetView initialData={data} />}
+      {budget && receivables && (
+        <FinanceView initialBudget={budget} initialReceivables={receivables} />
+      )}
     </div>
   );
 }

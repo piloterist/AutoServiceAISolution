@@ -10,6 +10,7 @@ from app.api.v1.endpoints import (
     import_work_orders,
     leads,
     planner,
+    receivables,
     settings,
     telephony,
     work_orders,
@@ -26,3 +27,4 @@ api_router.include_router(telephony.router)
 api_router.include_router(cockpit.router)
 api_router.include_router(leads.router)
 api_router.include_router(budget.router)
+api_router.include_router(receivables.router)
