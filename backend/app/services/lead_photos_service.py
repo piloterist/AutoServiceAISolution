@@ -44,6 +44,49 @@ def photo_disk_path(lead_id: uuid.UUID, filename: str) -> str:
     return f"{DISK_BASE_PATH}/{lead_id}/{filename}"
 
 
+class _FolderUnavailable(Exception):
+    """Internal signal, not raised past this module: the lead's own
+    Yandex.Disk folder couldn't be created - already logged by
+    _ensure_and_upload before raising. The whole batch stops on this
+    (every other photo needs that same folder too), unlike a plain
+    per-photo upload failure, which only drops that one photo."""
+
+
+def _ensure_and_upload(
+    disk_client: httpx.Client,
+    yandex_disk_token: str,
+    lead_id: uuid.UUID,
+    filename: str,
+    content: bytes,
+    folder_ready: bool,
+) -> bool:
+    """Shared tail of archive_photos (fetches bytes over HTTP first) and
+    archive_photo_bytes (bytes already in hand) - ensures the lead's own
+    Yandex.Disk folder exists (skipped once `folder_ready`, which the
+    caller should set True after any call that doesn't raise) and uploads
+    one photo there. Returns whether this one photo was uploaded; raises
+    _FolderUnavailable if the shared per-lead folder itself couldn't be
+    created."""
+    if not folder_ready:
+        try:
+            yandex_disk_client.ensure_path(
+                disk_client, yandex_disk_token, DISK_BASE_PATH, str(lead_id)
+            )
+        except YaDiskError as exc:
+            logger.error("lead_photo_folder_failed", lead_id=str(lead_id), error=str(exc))
+            raise _FolderUnavailable from exc
+
+    try:
+        yandex_disk_client.upload(
+            disk_client, yandex_disk_token, photo_disk_path(lead_id, filename), content
+        )
+    except YaDiskError as exc:
+        logger.error("lead_photo_upload_failed", filename=filename, error=str(exc))
+        return False
+
+    return True
+
+
 def archive_photos(
     photo_urls: list[str], lead_id: uuid.UUID, yandex_disk_token: str | None
 ) -> list[str]:
@@ -55,7 +98,17 @@ def archive_photos(
     is silently dropped rather than losing the whole lead over one bad
     link; if the token itself isn't configured, every photo is dropped
     (nothing to archive to) - the lead itself is still created either way,
-    see create_lead."""
+    see create_lead.
+
+    Confirmed live, 2026-10-21: this fetch essentially always loses the
+    race against the site's own tmp_files cleanup now (disk:/Leads existed
+    and was reachable, but had archived zero photos across weeks of real
+    leads - every fetch landed on an already-404'd link, same folder the
+    site's own Telegram-send code reads successfully moments earlier in
+    the same request). leads_service.create_lead now prefers
+    archive_photo_bytes (the site sending photo bytes inline, no separate
+    fetch - see Pan-Motors_web.md) whenever the payload has them; this
+    function is kept only as a fallback for payloads that don't."""
     if not photo_urls or not yandex_disk_token:
         return []
 
@@ -93,30 +146,53 @@ def archive_photos(
                     )
                     continue
 
-                if not folder_ready:
-                    try:
-                        yandex_disk_client.ensure_path(
-                            disk_client, yandex_disk_token, DISK_BASE_PATH, str(lead_id)
-                        )
-                    except YaDiskError as exc:
-                        logger.error(
-                            "lead_photo_folder_failed", lead_id=str(lead_id), error=str(exc)
-                        )
-                        return archived
-                    folder_ready = True
-
                 try:
-                    yandex_disk_client.upload(
+                    uploaded = _ensure_and_upload(
                         disk_client,
                         yandex_disk_token,
-                        photo_disk_path(lead_id, filename),
+                        lead_id,
+                        filename,
                         response.content,
+                        folder_ready,
                     )
-                except YaDiskError as exc:
-                    logger.error("lead_photo_upload_failed", url=url, error=str(exc))
-                    continue
+                except _FolderUnavailable:
+                    return archived
+                folder_ready = True
+                if uploaded:
+                    archived.append(f"/api/leads/{lead_id}/photos/{filename}")
+    except Exception as exc:  # noqa: BLE001 - a photo-archive bug must never reject the lead itself
+        logger.error("lead_photo_archive_unexpected_error", lead_id=str(lead_id), error=str(exc))
 
-                archived.append(f"/api/leads/{lead_id}/photos/{filename}")
+    return archived
+
+
+def archive_photo_bytes(
+    photos: list[tuple[str, bytes]], lead_id: uuid.UUID, yandex_disk_token: str | None
+) -> list[str]:
+    """Same destination/return shape as archive_photos, but for photo bytes
+    the caller already has in hand - no network fetch, just the same
+    ensure-folder-then-upload tail. Preferred path (product ask,
+    2026-10-21) once the site sends photos this way - see this module's
+    own docstring on archive_photos for why the URL-fetch approach stopped
+    being reliable, and services/leads_service._extract_inline_photos for
+    where `photos` comes from."""
+    if not photos or not yandex_disk_token:
+        return []
+
+    archived: list[str] = []
+    try:
+        with yandex_disk_client.new_client() as disk_client:
+            folder_ready = False
+            for filename, content in photos:
+                try:
+                    uploaded = _ensure_and_upload(
+                        disk_client, yandex_disk_token, lead_id, filename, content, folder_ready
+                    )
+                except _FolderUnavailable:
+                    return archived
+                folder_ready = True
+                if uploaded:
+                    archived.append(f"/api/leads/{lead_id}/photos/{filename}")
     except Exception as exc:  # noqa: BLE001 - a photo-archive bug must never reject the lead itself
         logger.error("lead_photo_archive_unexpected_error", lead_id=str(lead_id), error=str(exc))
 

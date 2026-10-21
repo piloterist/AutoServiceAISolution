@@ -182,3 +182,90 @@ def test_archive_photos_stops_after_folder_creation_fails(monkeypatch) -> None:
     result = lead_photos_service.archive_photos([PHOTO_URL], LEAD_ID, "a-token")
 
     assert result == []
+
+
+# ---- archive_photo_bytes ----------------------------------------------------
+#
+# The site sending photo bytes inline (product ask, 2026-10-21 - see this
+# module's own archive_photos docstring for why the URL-fetch path above
+# stopped being reliable) - no HTTP fetch here, so these only need to
+# exercise the shared ensure-folder-then-upload tail (_ensure_and_upload),
+# already covered above from the fetch side.
+
+
+def test_archive_photo_bytes_returns_empty_without_token() -> None:
+    assert lead_photos_service.archive_photo_bytes([("img1.jpg", b"bytes")], LEAD_ID, None) == []
+
+
+def test_archive_photo_bytes_returns_empty_without_photos() -> None:
+    assert lead_photos_service.archive_photo_bytes([], LEAD_ID, "a-token") == []
+
+
+def test_archive_photo_bytes_happy_path(monkeypatch) -> None:
+    uploaded_content = {}
+
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        return httpx.Response(200, json={"href": UPLOAD_HREF}, request=_request("GET", url))
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        if url == UPLOAD_HREF:
+            uploaded_content["data"] = kwargs.get("content")
+        return httpx.Response(201, request=_request("PUT", url))
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+    result = lead_photos_service.archive_photo_bytes(
+        [("img1.jpg", b"real-photo-bytes")], LEAD_ID, "a-token"
+    )
+
+    assert result == [f"/api/leads/{LEAD_ID}/photos/img1.jpg"]
+    assert uploaded_content["data"] == b"real-photo-bytes"
+
+
+def test_archive_photo_bytes_uploads_every_photo_in_the_list(monkeypatch) -> None:
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        return httpx.Response(200, json={"href": UPLOAD_HREF}, request=_request("GET", url))
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        return httpx.Response(201, request=_request("PUT", url))
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+    result = lead_photos_service.archive_photo_bytes(
+        [("a.jpg", b"one"), ("b.jpg", b"two")], LEAD_ID, "a-token"
+    )
+
+    assert result == [
+        f"/api/leads/{LEAD_ID}/photos/a.jpg",
+        f"/api/leads/{LEAD_ID}/photos/b.jpg",
+    ]
+
+
+def test_archive_photo_bytes_drops_photo_on_upload_failure(monkeypatch) -> None:
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        return httpx.Response(200, json={"href": UPLOAD_HREF}, request=_request("GET", url))
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        if url.startswith(f"{API_BASE}/resources"):
+            return httpx.Response(201, request=_request("PUT", url))
+        return httpx.Response(500, request=_request("PUT", url))
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+    result = lead_photos_service.archive_photo_bytes([("img1.jpg", b"bytes")], LEAD_ID, "a-token")
+
+    assert result == []
+
+
+def test_archive_photo_bytes_stops_after_folder_creation_fails(monkeypatch) -> None:
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        return httpx.Response(500, request=_request("PUT", url))
+
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+    result = lead_photos_service.archive_photo_bytes([("img1.jpg", b"bytes")], LEAD_ID, "a-token")
+
+    assert result == []

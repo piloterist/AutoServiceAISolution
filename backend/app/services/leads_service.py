@@ -15,6 +15,8 @@ instead of "new", so nothing quietly vanishes the way a missed call does.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 import secrets
 import uuid
@@ -22,6 +24,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -38,6 +41,8 @@ from app.models.website_lead import (
 from app.models.work_order import WorkOrder
 from app.services import lead_photos_service, telephony_settings_service
 from app.services.telephony_stats_service import MIN_REAL_TALK_SEC
+
+logger = structlog.get_logger(__name__)
 
 SETTINGS_ID = 1
 
@@ -124,6 +129,49 @@ def _extract_photos(payload: dict[str, Any]) -> list[str] | None:
     return [f"https://pan-motors.ru/tmp_files/{folder}/{name}" for name in names]
 
 
+def _extract_inline_photos(payload: dict[str, Any]) -> list[tuple[str, bytes]]:
+    """`photos_data`: `[{"filename": ..., "content_base64": ...}, ...]` -
+    the site reading its own tmp_files/<folder>/<name> scratch files itself
+    and sending the bytes inline, instead of just the filenames/folder for
+    us to fetch separately (see Pan-Motors_web.md for the matching PHP).
+
+    Added 2026-10-21 after confirming live that the old fetch-by-URL path
+    (_extract_photos/lead_photos_service.archive_photos) essentially always
+    loses the race against the site's own tmp_files cleanup: disk:/Leads
+    existed and was reachable, but had archived zero photos across weeks of
+    real leads with files attached - every fetch was landing on an
+    already-404'd link, the very same file the site's own Telegram-send
+    code reads successfully moments earlier in the same request. Reading
+    the bytes at that same moment (instead of a second, later, separate
+    HTTP round trip) is the actual fix; see create_lead for how this is
+    preferred over the old path.
+
+    A malformed entry is skipped (logged), never raised - same "a lead must
+    never be rejected over a bad photo" principle as archive_photos
+    itself."""
+    entries = payload.get("photos_data")
+    if not isinstance(entries, list):
+        return []
+
+    photos: list[tuple[str, bytes]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        filename = str(entry.get("filename") or "").strip()
+        content_b64 = entry.get("content_base64")
+        if not filename or not isinstance(content_b64, str):
+            continue
+        try:
+            content = base64.b64decode(content_b64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            logger.warning("lead_photo_inline_decode_failed", filename=filename, error=str(exc))
+            continue
+        if not content:
+            continue
+        photos.append((filename, content))
+    return photos
+
+
 class LeadRejected(Exception):
     """A submitted lead has no usable phone number - see create_lead."""
 
@@ -134,17 +182,29 @@ def create_lead(db: Session, payload: dict[str, Any]) -> WebsiteLead:
         raise LeadRejected("user_phone is missing or too short")
 
     # Single-use, ~2500-char reCAPTCHA token - useless once verified
-    # client-side/by the site's own init.php, not worth storing.
-    stored_payload = {k: v for k, v in payload.items() if k != "recaptcha_response"}
+    # client-side/by the site's own init.php, not worth storing. photos_data
+    # is excluded too - it's base64 image bytes, already archived to
+    # Yandex.Disk below, so keeping a second copy in raw_payload would just
+    # bloat this JSONB column for nothing.
+    stored_payload = {
+        k: v for k, v in payload.items() if k not in ("recaptcha_response", "photos_data")
+    }
 
     # The site's own /tmp_files/<folder>/<name> links are a short-lived
     # upload scratch area, not durable storage - archive onto our own
     # Yandex.Disk (see lead_photos_service) and store OUR serving paths
     # instead, so the photo survives that folder being cleaned up.
     lead_id = uuid.uuid4()
-    source_photo_urls = _extract_photos(payload) or []
     disk_token = telephony_settings_service.get_telephony_settings(db).yandex_disk_token
-    photos = lead_photos_service.archive_photos(source_photo_urls, lead_id, disk_token) or None
+    inline_photos = _extract_inline_photos(payload)
+    if inline_photos:
+        photos = lead_photos_service.archive_photo_bytes(inline_photos, lead_id, disk_token) or None
+    else:
+        # Fallback for a payload that doesn't send photos_data yet (or
+        # never will, e.g. an older/unrelated caller) - see this function's
+        # own docstring on why this path alone isn't reliable any more.
+        source_photo_urls = _extract_photos(payload) or []
+        photos = lead_photos_service.archive_photos(source_photo_urls, lead_id, disk_token) or None
 
     lead = WebsiteLead(
         id=lead_id,

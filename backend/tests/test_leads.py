@@ -211,6 +211,134 @@ def test_intake_archives_photos_when_disk_token_configured(
     assert lead["photos"] == [f"/api/leads/{lead_id}/photos/img1.jpg"]
 
 
+def test_intake_archives_inline_photo_bytes_when_present(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    """Product ask, 2026-10-21: the site's own tmp_files/<folder>/<name>
+    link gets cleaned up before our separate fetch can reliably reach it
+    (see services/lead_photos_service.archive_photos's own docstring), so
+    the site now sends photo bytes inline (`photos_data`) instead - see
+    services/leads_service._extract_inline_photos and Pan-Motors_web.md.
+    No external photo fetch at all here, unlike the files/folder path
+    above - just the Yandex.Disk upload."""
+    import base64
+
+    import httpx
+
+    from app.services.telephony_settings_service import get_telephony_settings
+    from app.services.yandex_disk_client import API_BASE
+
+    _enable_intake(db_session)
+    settings = get_telephony_settings(db_session)
+    settings.yandex_disk_token = "a-disk-token"
+    db_session.commit()
+
+    upload_href = "https://uploader.disk.yandex.net/fake-inline"
+    original_get = httpx.Client.get
+    original_put = httpx.Client.put
+
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        url_str = str(url)
+        if url_str == f"{API_BASE}/resources/upload":
+            return httpx.Response(
+                200, json={"href": upload_href}, request=httpx.Request("GET", url_str)
+            )
+        return original_get(self, url, **kwargs)
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        url_str = str(url)
+        if url_str == upload_href or url_str.startswith(f"{API_BASE}/resources"):
+            return httpx.Response(201, request=httpx.Request("PUT", url_str))
+        return original_put(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+    response = client.post(
+        INTAKE_URL,
+        json={
+            "user_phone": "+7 (900) 000-00-10",
+            "photos_data": [
+                {
+                    "filename": "img1.jpg",
+                    "content_base64": base64.b64encode(b"real-bytes").decode(),
+                }
+            ],
+        },
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+    assert response.status_code == 201
+    lead_id = response.json()["id"]
+
+    lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+    assert lead["photos"] == [f"/api/leads/{lead_id}/photos/img1.jpg"]
+    assert "photos_data" not in lead["raw_payload"]
+
+
+def test_intake_prefers_inline_photo_bytes_over_tmp_files_link(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    """When the site sends both (e.g. mid-rollout of the PHP change), the
+    inline bytes win outright - no separate, racy tmp_files fetch is even
+    attempted."""
+    import base64
+
+    import httpx
+
+    from app.services.telephony_settings_service import get_telephony_settings
+    from app.services.yandex_disk_client import API_BASE
+
+    _enable_intake(db_session)
+    settings = get_telephony_settings(db_session)
+    settings.yandex_disk_token = "a-disk-token"
+    db_session.commit()
+
+    upload_href = "https://uploader.disk.yandex.net/fake-prefer"
+    original_get = httpx.Client.get
+    original_put = httpx.Client.put
+    fetched_urls: list[str] = []
+
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        url_str = str(url)
+        fetched_urls.append(url_str)
+        if url_str == f"{API_BASE}/resources/upload":
+            return httpx.Response(
+                200, json={"href": upload_href}, request=httpx.Request("GET", url_str)
+            )
+        return original_get(self, url, **kwargs)
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        url_str = str(url)
+        if url_str == upload_href or url_str.startswith(f"{API_BASE}/resources"):
+            return httpx.Response(201, request=httpx.Request("PUT", url_str))
+        return original_put(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+    response = client.post(
+        INTAKE_URL,
+        json={
+            "user_phone": "+7 (900) 000-00-11",
+            "files": "other.jpg;",
+            "folder": "999",
+            "photos_data": [
+                {
+                    "filename": "img1.jpg",
+                    "content_base64": base64.b64encode(b"real-bytes").decode(),
+                }
+            ],
+        },
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+    assert response.status_code == 201
+    lead_id = response.json()["id"]
+
+    lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+    assert lead["photos"] == [f"/api/leads/{lead_id}/photos/img1.jpg"]
+    assert not any("tmp_files" in u for u in fetched_urls)
+
+
 def test_source_classification(client, db_session, auth_headers) -> None:
     _enable_intake(db_session)
     cases = [
