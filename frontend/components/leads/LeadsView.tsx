@@ -216,7 +216,16 @@ function _formatValue(value: unknown): string {
   return String(value);
 }
 
-function _fieldEntries(lead: WebsiteLead): { key: string; label: string; value: string }[] {
+// A field box this long (product ask, 2026-10-22: "Повреждённые элементы"
+// with several items selected, e.g. "Порог, Другое повреждение, Крыло
+// переднее левое") wraps onto multiple lines in the grid's normal
+// minmax(220px, 1fr) column - spanning two columns gives it roughly double
+// the width instead, while short fields (most of them) stay as they are.
+const WIDE_FIELD_VALUE_THRESHOLD = 30;
+
+function _fieldEntries(
+  lead: WebsiteLead,
+): { key: string; label: string; value: string; wide: boolean }[] {
   const entries = Object.entries(lead.raw_payload).filter(([key, value]) => {
     if (DETAIL_HIDDEN_KEYS.has(key)) return false;
     // Redundant with the Источник column for every source that already has
@@ -236,11 +245,15 @@ function _fieldEntries(lead: WebsiteLead): { key: string; label: string; value: 
     return ia - ib;
   });
 
-  return entries.map(([key, value]) => ({
-    key,
-    label: FIELD_LABELS[key] ?? _humanizeKey(key),
-    value: _formatValue(value),
-  }));
+  return entries.map(([key, value]) => {
+    const formatted = _formatValue(value);
+    return {
+      key,
+      label: FIELD_LABELS[key] ?? _humanizeKey(key),
+      value: formatted,
+      wide: formatted.length > WIDE_FIELD_VALUE_THRESHOLD,
+    };
+  });
 }
 
 function LeadDetail({ lead }: { lead: WebsiteLead }) {
@@ -264,8 +277,11 @@ function LeadDetail({ lead }: { lead: WebsiteLead }) {
           )}
           {entries.length > 0 ? (
             <div className="leads-detail-grid">
-              {entries.map(({ key, label, value }) => (
-                <div className="leads-detail-field" key={key}>
+              {entries.map(({ key, label, value, wide }) => (
+                <div
+                  className={wide ? "leads-detail-field leads-detail-field--wide" : "leads-detail-field"}
+                  key={key}
+                >
                   <span className="detail-label">{label}</span>
                   {key === "page_url" && pageUrl ? (
                     <a href={`https://pan-motors.ru${pageUrl}`} target="_blank" rel="noreferrer">

@@ -2894,6 +2894,16 @@ table.admin-data-table td.audit-changes-cell {
   min-width: 0;
 }
 
+/* Long values (product ask, 2026-10-22: "Повреждённые элементы" with
+   several items selected) get roughly double the width instead of
+   wrapping onto several lines in a normal minmax(220px, 1fr) column - see
+   WIDE_FIELD_VALUE_THRESHOLD in LeadsView.tsx for which fields qualify.
+   Harmless if the grid only has one column wide enough for one track at a
+   narrow viewport - it just places on its own row same as any field. */
+.leads-detail-field--wide {
+  grid-column: span 2;
+}
+
 /* Звонки с этим номером (product ask, 2026-10-21) - a lead's call history,
    fetched lazily on expand (see LeadCallsSection in LeadsView.tsx). */
 .leads-calls-section {
