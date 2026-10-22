@@ -413,6 +413,7 @@ main:has(.full-width-page) {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0.4rem;
   padding: 0.6rem;
   background: var(--surface);
@@ -421,29 +422,32 @@ main:has(.full-width-page) {
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
 }
 
+/* Plain block + inline layout (product bug, 2026-10-23: a nested flex row
+   here - checkbox and text as separate flex items - rendered narrow and
+   centered instead of stretching to the panel's own width, for reasons
+   that stayed unclear even after several attempts to coax that layout
+   into behaving). No flex at the row level at all now - a block-level
+   label containing a normal inline checkbox + text truncates with the
+   standard white-space/overflow/text-overflow trio exactly as it would
+   for a plain line of text, with no intrinsic-sizing or flex-stretch
+   behavior to go wrong. */
 .status-filter-checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.85rem;
   color: var(--text);
 }
 
 .status-filter-checkbox input {
-  flex: 0 0 auto;
+  margin-right: 0.5rem;
+  vertical-align: middle;
 }
 
 .status-filter-checkbox span {
-  /* flex: 1 1 auto + min-width: 0 (flex items default to min-width: auto,
-     which blocks shrinking/ellipsis entirely) lets every row's text start
-     at the exact same x position right after the checkbox, truncating
-     with "…" rather than wrapping/overflowing if it's ever too long for
-     the panel's fixed width above. */
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 
 .status-filter-empty {
