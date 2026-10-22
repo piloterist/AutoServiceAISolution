@@ -976,3 +976,39 @@ def test_does_not_flag_unpaid_individual_order_closed_too_long_ago(
     )
 
     assert snapshot.has_unpaid_individual_closed_orders is False
+
+
+def test_receivables_excludes_warranty_repair_types(db_session: Session, monkeypatch) -> None:
+    """Гарантийные work orders never get paid (product ask, 2026-10-23), so
+    they're dropped from ДЗ; other repair types and orders with no repair
+    type at all (NULL) still count."""
+    from app.models.app_settings import AppSettings
+
+    _patch_settings(monkeypatch)
+    db_session.add(AppSettings(id=1, warranty_repair_types=["Гарантийный ремонт"]))
+    db_session.add_all(
+        [
+            _make_work_order(
+                closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+                debt_amount=Decimal("1000.00"),
+                repair_type="Гарантийный ремонт",
+            ),
+            _make_work_order(
+                closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+                debt_amount=Decimal("200.00"),
+                repair_type="Платный",
+            ),
+            _make_work_order(
+                closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+                debt_amount=Decimal("30.00"),
+                repair_type=None,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("230.00")

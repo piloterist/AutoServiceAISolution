@@ -11,7 +11,7 @@ from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, delete, func, select
+from sqlalchemy import ColumnElement, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -143,6 +143,16 @@ def list_work_orders(
             filters.append(WorkOrder.status.in_(settings.revenue_statuses_list))
         if app_settings.exclude_internal_orders:
             filters.append(WorkOrder.is_internal.is_(False))
+        if app_settings.warranty_repair_types:
+            # Гарантийные (product ask, 2026-10-23): never get paid, so
+            # they're not receivable. NULL repair_type must stay in - a plain
+            # NOT IN would drop it (NULL NOT IN (...) is NULL, not true).
+            filters.append(
+                or_(
+                    WorkOrder.repair_type.is_(None),
+                    WorkOrder.repair_type.not_in(app_settings.warranty_repair_types),
+                )
+            )
 
     base_query = select(WorkOrder).where(*filters)
 

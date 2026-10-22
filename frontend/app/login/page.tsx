@@ -1,5 +1,6 @@
 import Image from "next/image";
 
+import { ClearSessionFilters } from "@/components/ClearSessionFilters";
 import { safeNextPath } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export default async function LoginPage({
 
   return (
     <div className="login-page">
+      <ClearSessionFilters />
       <form className="login-card" method="post" action="/api/auth/login">
         <Image
           src="/pan-motors-logo.png"

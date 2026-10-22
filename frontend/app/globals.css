@@ -450,6 +450,26 @@ main:has(.full-width-page) {
   vertical-align: middle;
 }
 
+/* Inside Settings, .settings-field input (width:100%, padding, border) and
+   .settings-field label (font-weight:600) also match the checkboxes of a
+   MultiSelectDropdown, stretching each checkbox across the whole row and
+   pushing the text aside (product bug, 2026-10-23: "галочки по центру").
+   Reset them so the checkbox sits at the left edge with the option name
+   right after it, one column of aligned rows. */
+.settings-field .status-filter-checkbox {
+  font-weight: 400;
+  text-align: left;
+}
+
+.settings-field .status-filter-checkbox input {
+  width: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  margin: 0 0.5rem 0 0;
+}
+
 .status-filter-empty {
   color: var(--text-muted);
   font-size: 0.85rem;
@@ -5338,6 +5358,41 @@ main:has(.cockpit-page) {
   flex-wrap: wrap;
   gap: 1.25rem;
   margin-bottom: 0.8rem;
+}
+
+/* Single-choice Все/Страховые/Текущие dropdown (product ask, 2026-10-23:
+   replaced the button group). */
+.receivables-scope-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.receivables-scope-filter select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Сбросить - rightmost item of the toolbar row, after the "На <дата>" hint. */
+.receivables-reset {
+  padding: 0.55rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.receivables-reset:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
 }
 
 .receivables-toolbar .admin-hint {

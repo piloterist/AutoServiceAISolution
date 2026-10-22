@@ -1,10 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { DateInput } from "@/components/DateInput";
 import type { ReceivablesAging, ReceivablesAgingBucket, ReceivablesAgingRow } from "@/lib/backend-api";
+import {
+  clearReceivablesFilters,
+  readReceivablesFilters,
+  writeReceivablesFilters,
+} from "@/lib/receivables-filters";
 
 const BUCKETS: { key: ReceivablesAgingBucket; label: string }[] = [
   { key: "lt_10", label: "< 10" },
@@ -104,6 +109,35 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
   const [closedTo, setClosedTo] = useState("");
   const [onlyIndividualCustomer, setOnlyIndividualCustomer] = useState(false);
   const [repairScope, setRepairScope] = useState<RepairScope>("all");
+  // Restored after mount (not in the useState initializers) so the first
+  // client render matches the server-rendered HTML; `restored` keeps the
+  // persist effect from overwriting the saved filters with the defaults
+  // before they've been read.
+  const [restored, setRestored] = useState(false);
+
+  useEffect(() => {
+    const saved = readReceivablesFilters();
+    if (saved) {
+      setClosedFrom(saved.closedFrom);
+      setClosedTo(saved.closedTo);
+      setOnlyIndividualCustomer(saved.onlyIndividualCustomer);
+      setRepairScope(saved.repairScope);
+    }
+    setRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (!restored) return;
+    writeReceivablesFilters({ closedFrom, closedTo, onlyIndividualCustomer, repairScope });
+  }, [restored, closedFrom, closedTo, onlyIndividualCustomer, repairScope]);
+
+  const resetFilters = () => {
+    setClosedFrom("");
+    setClosedTo("");
+    setOnlyIndividualCustomer(false);
+    setRepairScope("all");
+    clearReceivablesFilters();
+  };
 
   const filteredRows = useMemo(
     () =>
@@ -160,19 +194,24 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
           />
           Физ.лицо
         </label>
-        <div className="admin-tabs">
-          {REPAIR_SCOPES.map((scope) => (
-            <button
-              key={scope.key}
-              type="button"
-              className={scope.key === repairScope ? "admin-tab admin-tab--on" : "admin-tab"}
-              onClick={() => setRepairScope(scope.key)}
-            >
-              {scope.label}
-            </button>
-          ))}
-        </div>
+        <label className="receivables-scope-filter">
+          <span className="period-filter-label">Вид</span>
+          <select
+            value={repairScope}
+            onChange={(event) => setRepairScope(event.target.value as RepairScope)}
+            aria-label="Фильтр по виду ремонта"
+          >
+            {REPAIR_SCOPES.map((scope) => (
+              <option key={scope.key} value={scope.key}>
+                {scope.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <span className="admin-hint">На {formatDateOrDash(data.as_of)}</span>
+        <button type="button" className="receivables-reset" onClick={resetFilters}>
+          Сбросить
+        </button>
       </div>
 
       <div className="budget-scroll">

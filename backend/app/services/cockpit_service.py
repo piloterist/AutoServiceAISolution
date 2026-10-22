@@ -317,6 +317,7 @@ def _receivables(
     source_departments: list[str] | None,
     revenue_statuses: list[str],
     exclude_internal: bool,
+    warranty_repair_types: list[str] | None = None,
 ) -> Decimal:
     """ДЗ (дебиторская задолженность) - a running total, not scoped to a
     period (unlike revenue/payments above): the sum of WorkOrder.debt_amount
@@ -342,7 +343,11 @@ def _receivables(
     (product ask, 2026-10-07): some orders are closed by an off-system
     arrangement and will never actually get paid, which was inflating this
     figure with debt that's never coming - see models/work_order.py's own
-    docstring on that column."""
+    docstring on that column.
+
+    Likewise excludes Гарантийные repair types (Settings -> Общие, product
+    ask, 2026-10-23): warranty work is never paid by anyone, so it isn't
+    receivable. NULL repair_type stays in (plain NOT IN would drop it)."""
     filters = [
         WorkOrder.closed_date.is_not(None),
         WorkOrder.debt_amount > 0,
@@ -354,6 +359,13 @@ def _receivables(
         filters.append(WorkOrder.status.in_(revenue_statuses))
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
+    if warranty_repair_types:
+        filters.append(
+            or_(
+                WorkOrder.repair_type.is_(None),
+                WorkOrder.repair_type.not_in(warranty_repair_types),
+            )
+        )
     total = db.execute(select(func.sum(WorkOrder.debt_amount)).where(*filters)).scalar_one()
     return total or Decimal("0")
 
@@ -506,6 +518,7 @@ def get_snapshot(
         source_departments=source_departments,
         revenue_statuses=revenue_statuses,
         exclude_internal=exclude_internal,
+        warranty_repair_types=app_settings.warranty_repair_types,
     )
 
     period_start_msk = period_start.astimezone(MSK)
