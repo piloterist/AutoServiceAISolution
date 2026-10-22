@@ -430,6 +430,18 @@ main:has(.full-width-page) {
   color: var(--text);
 }
 
+.status-filter-checkbox span {
+  /* The wrapped second line of a long option (e.g. "Гарантийный
+     (бесплатный)") was reading as centered under the first line instead
+     of left-aligned under it (product bug, 2026-10-23) - a bare text node
+     as a flex item can wrap unpredictably; a real block-level child with
+     its own left alignment and room to actually shrink/wrap (min-width: 0
+     - flex items default to min-width: auto, which blocks wrapping) fixes
+     it outright. */
+  min-width: 0;
+  text-align: left;
+}
+
 .status-filter-empty {
   color: var(--text-muted);
   font-size: 0.85rem;

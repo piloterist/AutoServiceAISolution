@@ -69,7 +69,7 @@ export function MultiSelectDropdown({
                 checked={selected.includes(option)}
                 onChange={() => onToggle(option)}
               />
-              {option}
+              <span>{option}</span>
             </label>
           ))}
           {selected.length > 0 && (
