@@ -6,6 +6,7 @@
 // `import type`, erased at build time). Same shape as lib/admin-client.ts.
 import type {
   CallRecordingExportResult,
+  ClientCallHistoryResponse,
   LineCallsResponse,
   PhoneSource,
   PhoneSourceWrite,
@@ -98,6 +99,11 @@ export function getSourceSummaryClient(params: { startDate: string; endDate: str
     bust(`/api/telephony/source-summary?start_date=${params.startDate}&end_date=${params.endDate}`),
     noStoreFresh,
   );
+}
+
+export function getClientCallHistoryClient(phone: string): Promise<ClientCallHistoryResponse> {
+  const query = new URLSearchParams({ phone });
+  return proxyFetch<ClientCallHistoryResponse>(bust(`/api/telephony/calls/history?${query}`), noStoreFresh);
 }
 
 export function getLineCallsClient(params: {

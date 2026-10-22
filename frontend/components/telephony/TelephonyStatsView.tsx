@@ -5,8 +5,17 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
 import { CallRecordingPlayer } from "@/components/telephony/CallRecordingPlayer";
-import type { LineCallEvent, SourceSummaryResponse, SourceSummaryRow } from "@/lib/backend-api";
-import { getLineCallsClient, getSourceSummaryClient } from "@/lib/telephony-client";
+import type {
+  ClientCallHistoryResponse,
+  LineCallEvent,
+  SourceSummaryResponse,
+  SourceSummaryRow,
+} from "@/lib/backend-api";
+import {
+  getClientCallHistoryClient,
+  getLineCallsClient,
+  getSourceSummaryClient,
+} from "@/lib/telephony-client";
 
 function pctBadgeClass(pct: number | null): string {
   if (pct === null) return "telephony-badge telephony-badge--ok";
@@ -110,8 +119,22 @@ function formatEventTime(time: string): string {
 // missed twice in a row), and our own callback can fail to connect too.
 // Label and color follow `answered`, not just the role, so a second miss
 // reads as a miss instead of quietly looking like a resolved contact.
+const OUTCOME_LABELS: Record<NonNullable<LineCallEvent["outcome"]>, string> = {
+  called_back_reached: "перезвонили, дозвонились",
+  called_back_not_reached: "перезвонили, не дозвонились",
+  client_called_back: "клиент перезвонил сам",
+  no_reaction: "без реакции",
+};
+
 function eventLabel(event: LineCallEvent): string {
-  if (event.role === "incoming") return event.answered ? "Входящий" : "Входящий (пропущен)";
+  if (event.role === "incoming") {
+    if (event.answered) return "Входящий";
+    // Outcome only comes with the phone-number history search.
+    return event.outcome
+      ? `Входящий (пропущен) — ${OUTCOME_LABELS[event.outcome]}`
+      : "Входящий (пропущен)";
+  }
+  if (event.role === "outgoing") return event.answered ? "Исходящий" : "Исходящий (не дозвонились)";
   if (event.role === "callback") return event.answered ? "Наш перезвон" : "Наш перезвон (не дозвонились)";
   return event.answered ? "Клиент перезвонил" : "Клиент перезвонил (пропущен)";
 }
@@ -162,20 +185,20 @@ function sortEvents(events: LineCallEvent[], sortKey: EventSortKey, sortDir: "as
   });
 }
 
-function LineCallsPanel({
-  lineCode,
-  startDate,
-  endDate,
+/** The call table shared by the per-source drill-down (LineCallsPanel) and
+ * the phone-number history search (HistoryPanel) - `showSource` adds the
+ * "Источник" column, which only the history search fills. */
+function CallEventsTable({
+  events,
+  showSource = false,
+  defaultSortDir = "asc",
 }: {
-  lineCode: string;
-  startDate: string;
-  endDate: string;
+  events: LineCallEvent[];
+  showSource?: boolean;
+  defaultSortDir?: "asc" | "desc";
 }) {
-  const [state, setState] = useState<"loading" | "error" | "ready">("loading");
-  const [events, setEvents] = useState<LineCallEvent[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<EventSortKey>("time");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">(defaultSortDir);
   // Full transcript, opened explicitly by clicking a call's own topic
   // cell - a hover-only tooltip wasn't discoverable enough (per product
   // feedback, 2026-10-02: "как в интерфейсе посмотреть весь текст
@@ -192,29 +215,6 @@ function LineCallsPanel({
       setSortDir("asc");
     }
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    setState("loading");
-    getLineCallsClient({ lineCode, startDate, endDate })
-      .then((result) => {
-        if (cancelled) return;
-        setEvents(result.events);
-        setState("ready");
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Не удалось загрузить звонки");
-        setState("error");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [lineCode, startDate, endDate]);
-
-  if (state === "loading") return <p className="telephony-events-status">Загрузка…</p>;
-  if (state === "error") return <p className="admin-form-error">{error}</p>;
-  if (events.length === 0) return <p className="telephony-events-status">Звонков не найдено</p>;
 
   const sorted = sortEvents(events, sortKey, sortDir);
   const sortArrow = (key: EventSortKey) => (key === sortKey ? (sortDir === "asc" ? " ▲" : " ▼") : "");
@@ -235,6 +235,7 @@ function LineCallsPanel({
                 Номер{sortArrow("client")}
               </button>
             </th>
+            {showSource && <th>Источник</th>}
             <th>Куда звонили</th>
             <th>Кто ответил</th>
             <th>Цех</th>
@@ -251,6 +252,7 @@ function LineCallsPanel({
               <td>{formatEventTime(event.time)}</td>
               <td>{eventLabel(event)}</td>
               <td>{formatClient(event.client)}</td>
+              {showSource && <td>{event.source_name ?? "—"}</td>}
               <td>{calledLineCell(event)}</td>
               <td>{answeredByCell(event)}</td>
               <td>{event.workshop_label ?? "—"}</td>
@@ -343,6 +345,45 @@ function LineCallsPanel({
   );
 }
 
+function LineCallsPanel({
+  lineCode,
+  startDate,
+  endDate,
+}: {
+  lineCode: string;
+  startDate: string;
+  endDate: string;
+}) {
+  const [state, setState] = useState<"loading" | "error" | "ready">("loading");
+  const [events, setEvents] = useState<LineCallEvent[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState("loading");
+    getLineCallsClient({ lineCode, startDate, endDate })
+      .then((result) => {
+        if (cancelled) return;
+        setEvents(result.events);
+        setState("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Не удалось загрузить звонки");
+        setState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lineCode, startDate, endDate]);
+
+  if (state === "loading") return <p className="telephony-events-status">Загрузка…</p>;
+  if (state === "error") return <p className="admin-form-error">{error}</p>;
+  if (events.length === 0) return <p className="telephony-events-status">Звонков не найдено</p>;
+
+  return <CallEventsTable events={events} />;
+}
+
 export function TelephonyStatsView({ initialSummary }: { initialSummary: SourceSummaryResponse }) {
   const [summary, setSummary] = useState(initialSummary);
   const [startDate, setStartDate] = useState(initialSummary.start_date);
@@ -350,6 +391,32 @@ export function TelephonyStatsView({ initialSummary }: { initialSummary: SourceS
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedLine, setExpandedLine] = useState<string | null>(null);
+
+  // "Показать историю звонков" - search by a (partial) phone number.
+  const [phoneQuery, setPhoneQuery] = useState("");
+  const [history, setHistory] = useState<ClientCallHistoryResponse | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  const loadHistory = async () => {
+    const query = phoneQuery.trim();
+    if (!query) return;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      setHistory(await getClientCallHistoryClient(query));
+    } catch (err) {
+      setHistory(null);
+      setHistoryError(err instanceof Error ? err.message : "Не удалось загрузить историю звонков");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const closeHistory = () => {
+    setHistory(null);
+    setHistoryError(null);
+  };
 
   const load = async () => {
     setLoading(true);
@@ -381,9 +448,58 @@ export function TelephonyStatsView({ initialSummary }: { initialSummary: SourceS
         <button type="button" className="admin-btn admin-btn-primary telephony-filter-btn" onClick={load} disabled={loading}>
           {loading ? "Загрузка…" : "Показать"}
         </button>
+
+        <form
+          className="telephony-history-search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void loadHistory();
+          }}
+        >
+          <input
+            type="search"
+            className="telephony-history-input"
+            placeholder="Номер или часть номера"
+            value={phoneQuery}
+            onChange={(event) => setPhoneQuery(event.target.value)}
+            aria-label="Номер телефона для истории звонков"
+          />
+          <button
+            type="submit"
+            className="admin-btn admin-btn-primary telephony-filter-btn"
+            disabled={historyLoading || !phoneQuery.trim()}
+          >
+            {historyLoading ? "Загрузка…" : "Показать историю звонков"}
+          </button>
+        </form>
       </div>
 
       {error && <p className="admin-form-error">{error}</p>}
+
+      {historyError && <p className="admin-form-error">{historyError}</p>}
+
+      {history && (
+        <section className="telephony-history">
+          <div className="telephony-history-head">
+            <h2 className="chart-title">
+              История звонков по номеру «{history.query}»: {history.events.length}
+            </h2>
+            <button type="button" className="admin-btn" onClick={closeHistory}>
+              Закрыть
+            </button>
+          </div>
+          {history.events.length === 0 ? (
+            <p className="telephony-events-status">Звонков с таким номером не найдено</p>
+          ) : (
+            <CallEventsTable events={history.events} showSource defaultSortDir="desc" />
+          )}
+          {history.truncated && (
+            <p className="settings-description">
+              Показаны последние {history.events.length} звонков, более ранние скрыты — уточните номер.
+            </p>
+          )}
+        </section>
+      )}
 
       <h2 className="chart-title">
         Итог по каждому источнику: {summary.start_date} — {summary.end_date}

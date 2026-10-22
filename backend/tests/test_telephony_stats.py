@@ -382,3 +382,46 @@ def test_compute_source_summary_defaults_to_no_reaction_when_never_followed_up(
     rows = stats.compute_source_summary(db_session, DAY, DAY, [])
     pan = next(r for r in rows if r.line_code == "pan")
     assert pan.reached_pct == pytest.approx(50.0)  # 1 of 2 unique missed callers reached
+
+
+def test_list_client_calls_roles_outcomes_and_source(db_session: Session, scenario: None) -> None:
+    sources = [PhoneSource(line_code="pan", name="Карты Пан", group_name="Прочие")]
+
+    # Client ...02: missed on "pan", then our callback reached them.
+    events, truncated = stats.list_client_calls(db_session, "0000002", sources)
+
+    assert truncated is False
+    assert {e.client for e in events} == {"9990000002"}
+    assert [e.time for e in events] == sorted((e.time for e in events), reverse=True)
+    incoming = next(e for e in events if e.direction == "in")
+    assert incoming.source_name == "Карты Пан"
+    assert incoming.outcome == "called_back_reached"
+    callback = next(e for e in events if e.direction == "out")
+    assert callback.role == "callback"
+    assert callback.source_name is None and callback.outcome is None
+
+
+def test_list_client_calls_no_reaction_and_unknown_source(
+    db_session: Session, scenario: None
+) -> None:
+    events, _ = stats.list_client_calls(db_session, "0000003", [])
+
+    assert [e.outcome for e in events] == ["no_reaction"]
+    assert events[0].source_name == "Неизвестная линия pan"
+
+
+def test_list_client_calls_client_recall_and_partial_number(
+    db_session: Session, scenario: None
+) -> None:
+    # Client ...04: missed on "direct", then called back themselves.
+    events, _ = stats.list_client_calls(db_session, "0000004", [])
+
+    by_time = sorted(events, key=lambda e: e.time)
+    assert [e.role for e in by_time] == ["incoming", "client_recall"]
+    assert by_time[0].outcome == "client_called_back"
+
+
+def test_normalize_history_query_strips_country_prefix_and_formatting() -> None:
+    assert stats.normalize_history_query("+7 (999) 000-00-01") == "9990000001"
+    assert stats.normalize_history_query("8 999 000 00 01") == "9990000001"
+    assert stats.normalize_history_query("000-00") == "00000"

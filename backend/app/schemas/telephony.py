@@ -218,8 +218,19 @@ class LineCallEventOut(BaseModel):
     dst: str | None
     dst_extension: str | None
     answered_phone: str | None
+    # Only filled by the phone-number history search (GET /calls/history) -
+    # see telephony_stats_service.list_client_calls.
+    source_name: str | None = None
+    outcome: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ClientCallHistoryResponse(BaseModel):
+    query: str
+    # True if more calls matched than the cap and the oldest were cut off.
+    truncated: bool
+    events: list[LineCallEventOut]
 
 
 class LineCallsResponse(BaseModel):

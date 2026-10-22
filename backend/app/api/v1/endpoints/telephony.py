@@ -21,6 +21,7 @@ from app.models.call_record import CallRecord
 from app.schemas.telephony import (
     CallRecordingExportRequest,
     CallRecordingExportResponse,
+    ClientCallHistoryResponse,
     LineCallEventOut,
     LineCallsResponse,
     OpenMissedCallOut,
@@ -400,6 +401,42 @@ def line_calls(
             for event in events
         ],
     )
+
+
+@router.get("/calls/history", response_model=ClientCallHistoryResponse)
+def client_call_history(phone: str, db: Session = Depends(get_db)) -> ClientCallHistoryResponse:
+    """ "Показать историю звонков" on the Телефония page (product ask,
+    2026-10-23): every call (in/out, answered/missed, callbacks) for any
+    number containing `phone` - see telephony_stats_service.list_client_calls."""
+    digits = telephony_stats_service.normalize_history_query(phone)
+    if len(digits) < telephony_stats_service.MIN_HISTORY_QUERY_DIGITS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Введите не менее {telephony_stats_service.MIN_HISTORY_QUERY_DIGITS} "
+                "цифр номера"
+            ),
+        )
+
+    phone_sources = telephony_settings_service.list_phone_sources(db)
+    events, truncated = telephony_stats_service.list_client_calls(db, digits, phone_sources)
+    workshop_labels = _workshop_label_map(db)
+    out = []
+    for event in events:
+        item = LineCallEventOut.model_validate(
+            {
+                **{
+                    name: getattr(event, name)
+                    for name in LineCallEventOut.model_fields
+                    if name != "workshop_label"
+                },
+                "workshop_label": (
+                    workshop_labels.get(event.workshop_id) if event.workshop_id else None
+                ),
+            }
+        )
+        out.append(item)
+    return ClientCallHistoryResponse(query=digits, truncated=truncated, events=out)
 
 
 @router.get("/missed-calls/open", response_model=OpenMissedCallsResponse)

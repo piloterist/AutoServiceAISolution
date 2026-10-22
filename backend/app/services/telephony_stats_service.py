@@ -651,6 +651,12 @@ class LineCallEvent:
     dst: str | None
     dst_extension: str | None
     answered_phone: str | None
+    # Only set by list_client_calls (the phone-number history search): the
+    # human name of the advertising line an inbound call came in on, and -
+    # for an unanswered inbound call - what happened to it within
+    # CALLBACK_WINDOW (same codes as MissedClient.outcome).
+    source_name: str | None = None
+    outcome: str | None = None
 
 
 def list_line_calls(
@@ -735,6 +741,124 @@ def list_line_calls(
 
     events.sort(key=lambda e: e.time)
     return events
+
+
+# ---- История звонков по номеру (поиск на странице Телефония) --------------
+
+MIN_HISTORY_QUERY_DIGITS = 4
+MAX_HISTORY_CALLS = 300
+
+
+def normalize_history_query(value: str | None) -> str:
+    """Digits only; a full number typed with a leading 7/8 (+7...) is cut
+    to its last 10 digits, same convention as CallRecord.client - anything
+    shorter is kept as-is and matched as a substring."""
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) >= 11:
+        digits = digits[-10:]
+    return digits
+
+
+def list_client_calls(
+    db: Session, query: str, phone_sources: Iterable[PhoneSource]
+) -> tuple[list[LineCallEvent], bool]:
+    """Call history for every client whose number contains `query` (a full
+    number or any part of it, >= MIN_HISTORY_QUERY_DIGITS digits): every
+    call - inbound, outbound, answered or not - newest first, capped at
+    MAX_HISTORY_CALLS (second value = whether the cap cut something off).
+
+    Roles: "incoming" / "outgoing" (our own call-out not tied to a miss) /
+    "callback" (our call-out within CALLBACK_WINDOW after a missed inbound)
+    / "client_recall" (the client's own answered inbound within the window).
+    Each unanswered inbound also gets an `outcome` (same rules as
+    _analyze_missed). Unlike the stats tables, employee phones are NOT
+    excluded here - the operator asked for this exact number."""
+    digits = normalize_history_query(query)
+    rows = db.scalars(
+        select(CallRecord)
+        .where(CallRecord.client.like(f"%{digits}%"))
+        .order_by(CallRecord.occurred_at.desc())
+        .limit(MAX_HISTORY_CALLS + 1)
+    ).all()
+    truncated = len(rows) > MAX_HISTORY_CALLS
+    recs = sorted((_row_to_rec(r) for r in rows[:MAX_HISTORY_CALLS]), key=lambda r: r.time)
+
+    source_names = {src.line_code: src.name for src in phone_sources}
+    extensions_by_phone, fallback_phone_by_extension = call_workshop_service.phone_extension_index(
+        db
+    )
+    by_client: dict[str, list[_Rec]] = defaultdict(list)
+    for r in recs:
+        by_client[r.client].append(r)
+
+    events: list[LineCallEvent] = []
+    for r in recs:
+        role = "incoming" if r.type == "IN" else "outgoing"
+        outcome: str | None = None
+        earlier_miss = any(
+            x.type == "IN" and not x.answered and r.time - CALLBACK_WINDOW <= x.time < r.time
+            for x in by_client[r.client]
+        )
+        if r.type == "OUT" and earlier_miss:
+            role = "callback"
+        elif r.type == "IN" and r.answered and earlier_miss:
+            role = "client_recall"
+        if r.type == "IN" and not r.answered:
+            after = [x for x in by_client[r.client] if r.time < x.time <= r.time + CALLBACK_WINDOW]
+            outs = [x for x in after if x.type == "OUT"]
+            if any(x.answered for x in outs):
+                outcome = "called_back_reached"
+            elif outs:
+                outcome = "called_back_not_reached"
+            elif any(x.type == "IN" and x.answered for x in after):
+                outcome = "client_called_back"
+            else:
+                outcome = "no_reaction"
+
+        dst_norm = call_workshop_service.normalize_phone_or_line(r.dst) if r.dst else None
+        operator_norm = r.operator.strip().lower() if r.operator else None
+        dst_extensions = extensions_by_phone.get(dst_norm, set()) if dst_norm else set()
+        dst_extension = next(iter(dst_extensions)) if len(dst_extensions) == 1 else None
+        if operator_norm and operator_norm in dst_extensions:
+            answered_phone = r.dst
+        elif operator_norm:
+            answered_phone = fallback_phone_by_extension.get(operator_norm)
+        else:
+            answered_phone = None
+
+        source_name = None
+        if r.type == "IN":
+            source_name = source_names.get(r.line) or _unknown_source(r.line).name
+
+        events.append(
+            LineCallEvent(
+                call_id=r.call_id,
+                has_recording=r.has_recording,
+                time=r.time.strftime("%Y-%m-%d %H:%M:%S"),
+                direction="in" if r.type == "IN" else "out",
+                role=role,
+                client=r.client or None,
+                operator=r.operator or None,
+                rang_not_answered=list(r.lost),
+                answered=r.answered,
+                wait_sec=r.wait,
+                talk_sec=r.talk,
+                topic_tag=r.topic_tag,
+                transcript_text=r.transcript_text,
+                transcript_text_raw=r.transcript_text_raw,
+                quality_score=r.quality_score,
+                quality_review=r.quality_review,
+                workshop_id=r.workshop_id,
+                dst=r.dst,
+                dst_extension=dst_extension,
+                answered_phone=answered_phone,
+                source_name=source_name,
+                outcome=outcome,
+            )
+        )
+
+    events.sort(key=lambda e: e.time, reverse=True)
+    return events, truncated
 
 
 # ---- Открытые пропущенные (значок на Планировщике) -------------------------

@@ -1320,7 +1320,9 @@ export type LineCallEvent = {
   has_recording: boolean;
   time: string; // "YYYY-MM-DD HH:MM:SS", Moscow-local
   direction: "in" | "out";
-  role: "incoming" | "callback" | "client_recall";
+  // "outgoing" - our own call-out not tied to a missed call (only from the
+  // phone-number history search, see getClientCallHistory).
+  role: "incoming" | "outgoing" | "callback" | "client_recall";
   client: string | null;
   operator: string | null;
   // Extensions that also rang but didn't pick up (Zeon's "lost", minus
@@ -1358,7 +1360,27 @@ export type LineCallEvent = {
   dst: string | null;
   dst_extension: string | null;
   answered_phone: string | null;
+  // Only filled by the phone-number history search: the advertising line's
+  // human name for an inbound call, and - for an unanswered inbound - what
+  // happened to it within 24h.
+  source_name?: string | null;
+  outcome?:
+    | "called_back_reached"
+    | "called_back_not_reached"
+    | "client_called_back"
+    | "no_reaction"
+    | null;
 };
+
+export type ClientCallHistoryResponse = {
+  query: string;
+  truncated: boolean;
+  events: LineCallEvent[];
+};
+
+export function getClientCallHistory(phone: string): Promise<ClientCallHistoryResponse> {
+  return backendGet<ClientCallHistoryResponse>("/api/v1/telephony/calls/history", { phone });
+}
 
 export type LineCallsResponse = {
   line_code: string;
