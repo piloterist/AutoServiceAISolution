@@ -2196,6 +2196,50 @@ table.admin-data-table td.audit-changes-cell {
   width: 12%;
 }
 
+/* Счета на оплату tab (product ask, 2026-10-22) - Номер, Дата, Сумма,
+   Оплачено, Долг, Статус. */
+.data-table--invoices th:nth-child(1),
+.data-table--invoices td:nth-child(1) {
+  width: 14%;
+}
+.data-table--invoices th:nth-child(2),
+.data-table--invoices td:nth-child(2) {
+  width: 16%;
+}
+.data-table--invoices th:nth-child(3),
+.data-table--invoices td:nth-child(3) {
+  width: 16%;
+}
+.data-table--invoices th:nth-child(4),
+.data-table--invoices td:nth-child(4) {
+  width: 16%;
+}
+.data-table--invoices th:nth-child(5),
+.data-table--invoices td:nth-child(5) {
+  width: 16%;
+}
+.data-table--invoices th:nth-child(6),
+.data-table--invoices td:nth-child(6) {
+  width: 22%;
+}
+
+.invoice-status {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.invoice-status--paid {
+  color: var(--ok);
+}
+
+.invoice-status--partial {
+  color: var(--warn);
+}
+
+.invoice-status--unpaid {
+  color: var(--down);
+}
+
 /* --- Work order detail: status history timeline --- */
 
 .status-timeline {

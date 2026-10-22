@@ -218,6 +218,22 @@ export type PaymentEventItem = {
   source_document_number: string | null;
 };
 
+// Счёт на оплату linked to this work order - see backend
+// schemas/work_order.py's InvoiceItem and models/work_order_invoice.py.
+export type InvoiceItem = {
+  external_number: string | null;
+  document_date: string | null;
+  amount: string;
+  paid_amount: string | null;
+  debt_amount: string | null;
+  posted: boolean | null;
+  // Derived on the backend from amount vs paid_amount - "Оплачен" |
+  // "Частично оплачен" | "Не оплачен" (Alpha-Auto's own status field(s)
+  // for this document type aren't confirmed yet, so this isn't a raw 1C
+  // passthrough).
+  status: string;
+};
+
 // Where this ЗН is scheduled, for the detail page's "Перейти к записи"
 // button - see backend services/planner_service.find_planner_record.
 export type PlannerRecordRef = {
@@ -238,6 +254,7 @@ export type WorkOrderDetail = WorkOrderListItem & {
   status_history: StatusHistoryItem[];
   payment_history: PaymentHistoryItem[];
   payment_events: PaymentEventItem[];
+  invoices: InvoiceItem[];
   planner_record: PlannerRecordRef | null;
 };
 

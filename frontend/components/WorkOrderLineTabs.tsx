@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type {
+  InvoiceItem,
   PaymentEventItem,
   StatusHistoryItem,
   WorkOrderLaborLineItem,
@@ -27,6 +28,19 @@ function formatDateTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatDateTimeOrDash(iso: string | null): string {
+  return iso ? formatDateTime(iso) : "—";
+}
+
+// "Оплачен"/"Частично оплачен"/"Не оплачен" - see backend schemas/
+// work_order.py's InvoiceItem.from_model for where this exact text comes
+// from (not a free enum - matching on it here is safe).
+function invoiceStatusClass(status: string): string {
+  if (status === "Оплачен") return "invoice-status invoice-status--paid";
+  if (status === "Частично оплачен") return "invoice-status invoice-status--partial";
+  return "invoice-status invoice-status--unpaid";
 }
 
 function pluralize(n: number, one: string, few: string, many: string): string {
@@ -58,13 +72,14 @@ function formatDuration(ms: number): string {
   return `${minutes} ${pluralize(minutes, "минута", "минуты", "минут")}`;
 }
 
-type Tab = "labor" | "parts" | "history" | "payments";
+type Tab = "labor" | "parts" | "history" | "payments" | "invoices";
 
 export function WorkOrderLineTabs({
   labor,
   parts,
   statusHistory,
   paymentEvents,
+  invoices,
 }: {
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
@@ -72,6 +87,11 @@ export function WorkOrderLineTabs({
   /** Real, dated payments (work_order_payment_events) - each row's date is
    * the actual 1C payment date, not when we happened to observe it. */
   paymentEvents: PaymentEventItem[];
+  /** Счета на оплату linked to this work order (product ask, 2026-10-22:
+   * "записывать в историю оплат, что выставлен счет такой-то на такую-то
+   * сумму") - distinct from paymentEvents above: a Счёт is what was
+   * billed, not a real dated money-in movement. */
+  invoices: InvoiceItem[];
 }) {
   const [tab, setTab] = useState<Tab>("labor");
   const now = Date.now();
@@ -114,6 +134,15 @@ export function WorkOrderLineTabs({
           onClick={() => setTab("payments")}
         >
           История оплат ({paymentEvents.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "invoices"}
+          className={tab === "invoices" ? "tab tab-active" : "tab"}
+          onClick={() => setTab("invoices")}
+        >
+          Счета на оплату ({invoices.length})
         </button>
       </div>
 
@@ -245,6 +274,44 @@ export function WorkOrderLineTabs({
                 <tr>
                   <td colSpan={3} className="table-empty">
                     История оплат пока не накоплена.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === "invoices" && (
+        <div className="table-wrap">
+          <table className="data-table data-table--invoices">
+            <thead>
+              <tr>
+                <th>Номер</th>
+                <th>Дата</th>
+                <th className="num">Сумма</th>
+                <th className="num">Оплачено</th>
+                <th className="num">Долг</th>
+                <th>Статус</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((entry, index) => (
+                <tr key={index}>
+                  <td>{entry.external_number || "—"}</td>
+                  <td>{formatDateTimeOrDash(entry.document_date)}</td>
+                  <td className="num">{formatMoney(entry.amount)}</td>
+                  <td className="num">{formatMoney(entry.paid_amount)}</td>
+                  <td className="num">{formatMoney(entry.debt_amount)}</td>
+                  <td>
+                    <span className={invoiceStatusClass(entry.status)}>{entry.status}</span>
+                  </td>
+                </tr>
+              ))}
+              {invoices.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="table-empty">
+                    Счетов на оплату по этому заказ-наряду нет.
                   </td>
                 </tr>
               )}
