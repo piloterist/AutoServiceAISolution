@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import type { AppSettings, AutoMatchResult } from "@/lib/backend-api";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -182,20 +183,16 @@ export function SettingsForm({
           Скрыть внутренние <span className="settings-hint">(в разработке)</span>
         </label>
 
-        <div className="settings-field settings-field--wide">
+        <div className="settings-field">
           <span>Гарантийные (виды ремонта)</span>
-          <div className="settings-checkbox-list">
-            {repairTypes.map((type) => (
-              <label className="settings-checkbox" key={type}>
-                <input
-                  type="checkbox"
-                  checked={warrantyRepairTypes.includes(type)}
-                  onChange={() => toggleWarrantyRepairType(type)}
-                />
-                {type}
-              </label>
-            ))}
-          </div>
+          <MultiSelectDropdown
+            label="Виды ремонта"
+            options={repairTypes}
+            selected={warrantyRepairTypes}
+            onToggle={toggleWarrantyRepairType}
+            onClear={() => setWarrantyRepairTypes([])}
+            emptyMessage="Нет данных по видам ремонта"
+          />
           <p className="settings-description">
             Используется только фильтром «Текущие/Страховые» на вкладке Финансы →
             Дебиторская задолженность — на остальные показатели (дашборд, ДЗ на ESP, список
