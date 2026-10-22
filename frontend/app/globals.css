@@ -413,10 +413,20 @@ main:has(.full-width-page) {
 
 .status-filter-checkbox {
   display: flex;
-  align-items: center;
+  /* flex-start, not center (product bug, 2026-10-23): a long option like
+     "Гарантийный (бесплатный)" wraps onto a second line now that nowrap is
+     gone below - center would float the checkbox between the two lines
+     instead of against the first one. */
+  align-items: flex-start;
   gap: 0.5rem;
   font-size: 0.85rem;
-  white-space: nowrap;
+  /* Was nowrap, which let a long option's text overflow straight past the
+     panel's own border instead of wrapping inside it - every row's
+     checkbox still lined up on the left, but the text trailing off the
+     edge at different lengths per row read as "вразнобой" (product bug,
+     2026-10-23, surfaced by "Гарантийный (бесплатный)" - longer than any
+     label this dropdown had carried before). */
+  white-space: normal;
   color: var(--text);
 }
 
