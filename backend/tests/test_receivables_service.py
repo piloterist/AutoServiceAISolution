@@ -14,6 +14,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.orm import Session
 
+from app.models.app_settings import AppSettings
 from app.models.work_order import WorkOrder
 from app.models.work_order_invoice import WorkOrderInvoice
 from app.services import receivables_service
@@ -275,3 +276,54 @@ def test_is_individual_customer_false_for_a_legal_entity(db_session: Session, mo
     report = receivables_service.get_aging_report(db_session, now=NOW)
 
     assert report.rows[0].is_individual_customer is False
+
+
+# ---- get_aging_report: repair_type / Все-Страховые-Текущие filter data ----
+#
+# The actual Все/Страховые/Текущие split is applied client-side (see
+# ReceivablesAgingView.tsx) - this only needs to confirm the backend hands
+# over the raw ingredients (each row's own repair_type, plus the two
+# AppSettings values that classify it) correctly.
+
+
+def test_row_includes_repair_type(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    wo = _make_work_order(repair_type="Страховой")
+    db_session.add(wo)
+    db_session.commit()
+
+    report = receivables_service.get_aging_report(db_session, now=NOW)
+
+    assert report.rows[0].repair_type == "Страховой"
+
+
+def test_response_echoes_insurance_and_warranty_settings(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(
+        AppSettings(
+            id=1,
+            insurance_repair_type="Страховой",
+            warranty_repair_types=["Гарантийный ремонт", "Гарантия производителя"],
+        )
+    )
+    db_session.commit()
+    db_session.add(_make_work_order())
+    db_session.commit()
+
+    report = receivables_service.get_aging_report(db_session, now=NOW)
+
+    assert report.insurance_repair_type == "Страховой"
+    assert report.warranty_repair_types == ["Гарантийный ремонт", "Гарантия производителя"]
+
+
+def test_response_defaults_insurance_and_warranty_settings_when_unconfigured(
+    db_session: Session, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(_make_work_order())
+    db_session.commit()
+
+    report = receivables_service.get_aging_report(db_session, now=NOW)
+
+    assert report.insurance_repair_type is None
+    assert report.warranty_repair_types == []

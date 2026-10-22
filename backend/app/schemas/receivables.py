@@ -28,6 +28,11 @@ class ReceivablesAgingRow(BaseModel):
     days_overdue: int
     debt_amount: Decimal
     bucket: str  # one of AGING_BUCKET_KEYS
+    # ЗаказНаряд.ВидРемонта - drives the Все/Страховые/Текущие filter on the
+    # frontend (see AppSettings.insurance_repair_type/warranty_repair_types
+    # below and ReceivablesAgingView.tsx), applied client-side same as the
+    # existing date-range/Физ.лицо filters on this same table.
+    repair_type: str | None
 
 
 class ReceivablesAgingTotals(BaseModel):
@@ -43,3 +48,8 @@ class ReceivablesAgingResponse(BaseModel):
     as_of: datetime
     rows: list[ReceivablesAgingRow]
     totals: ReceivablesAgingTotals
+    # Mirrors AppSettings - product ask, 2026-10-23: the Все/Страховые/
+    # Текущие filter needs to know which ВидРемонта value means "страховой"
+    # and which ones mean "гарантийный" to classify each row client-side.
+    insurance_repair_type: str | None
+    warranty_repair_types: list[str]

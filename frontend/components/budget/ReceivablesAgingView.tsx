@@ -69,20 +69,59 @@ function isWithinDateRange(iso: string | null, dateFrom: string, dateTo: string)
   return true;
 }
 
+type RepairScope = "all" | "insurance" | "current";
+
+const REPAIR_SCOPES: { key: RepairScope; label: string }[] = [
+  { key: "all", label: "Все" },
+  { key: "insurance", label: "Страховые" },
+  { key: "current", label: "Текущие" },
+];
+
+/** Product ask, 2026-10-23:
+ * - "Все" (default) - everything, minus Гарантийные (warranty_repair_types).
+ * - "Страховые" - only insurance_repair_type.
+ * - "Текущие" - everything except both Страховые and Гарантийные.
+ * `row.repair_type` null never matches either special set, so it always
+ * passes "Все"/"Текущие" and never "Страховые" - same as any other
+ * unclassified order. */
+function matchesRepairScope(
+  row: ReceivablesAgingRow,
+  scope: RepairScope,
+  insuranceRepairType: string | null,
+  warrantyRepairTypes: string[],
+): boolean {
+  const isWarranty = row.repair_type !== null && warrantyRepairTypes.includes(row.repair_type);
+  const isInsurance = insuranceRepairType !== null && row.repair_type === insuranceRepairType;
+
+  if (scope === "insurance") return isInsurance;
+  if (scope === "current") return !isInsurance && !isWarranty;
+  return !isWarranty;
+}
+
 export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
   const router = useRouter();
   const [closedFrom, setClosedFrom] = useState("");
   const [closedTo, setClosedTo] = useState("");
   const [onlyIndividualCustomer, setOnlyIndividualCustomer] = useState(false);
+  const [repairScope, setRepairScope] = useState<RepairScope>("all");
 
   const filteredRows = useMemo(
     () =>
       data.rows.filter(
         (row) =>
           isWithinDateRange(row.closed_date, closedFrom, closedTo) &&
-          (!onlyIndividualCustomer || row.is_individual_customer),
+          (!onlyIndividualCustomer || row.is_individual_customer) &&
+          matchesRepairScope(row, repairScope, data.insurance_repair_type, data.warranty_repair_types),
       ),
-    [data.rows, closedFrom, closedTo, onlyIndividualCustomer],
+    [
+      data.rows,
+      data.insurance_repair_type,
+      data.warranty_repair_types,
+      closedFrom,
+      closedTo,
+      onlyIndividualCustomer,
+      repairScope,
+    ],
   );
 
   const bucketTotals = useMemo(() => {
@@ -121,6 +160,18 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
           />
           Физ.лицо
         </label>
+        <div className="admin-tabs">
+          {REPAIR_SCOPES.map((scope) => (
+            <button
+              key={scope.key}
+              type="button"
+              className={scope.key === repairScope ? "admin-tab admin-tab--on" : "admin-tab"}
+              onClick={() => setRepairScope(scope.key)}
+            >
+              {scope.label}
+            </button>
+          ))}
+        </div>
         <span className="admin-hint">На {formatDateOrDash(data.as_of)}</span>
       </div>
 

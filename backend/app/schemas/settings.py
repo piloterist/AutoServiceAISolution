@@ -13,12 +13,20 @@ def _validate_hhmm(value: str) -> str:
     return value
 
 
+def _none_to_empty_list(value: list[str] | None) -> list[str]:
+    """The ORM column is nullable (NULL until anyone ever saves this
+    setting) - the API contract is a plain list either way, same as every
+    other not-yet-configured list in this codebase."""
+    return value or []
+
+
 class AppSettingsResponse(BaseModel):
     insurance_repair_type: str | None
     exclude_internal_insurance: bool
     # "Специфика PanMotors" group - see models/app_settings.py.
     exclude_internal_orders: bool
     hide_internal_orders: bool
+    warranty_repair_types: list[str]
     fivesystems_api_enabled: bool
     daily_logout_time: str
     planner_auto_match_enabled: bool
@@ -27,12 +35,17 @@ class AppSettingsResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    _normalize_warranty_repair_types = field_validator("warranty_repair_types", mode="before")(
+        _none_to_empty_list
+    )
+
 
 class AppSettingsUpdate(BaseModel):
     insurance_repair_type: str | None = None
     exclude_internal_insurance: bool = False
     exclude_internal_orders: bool = False
     hide_internal_orders: bool = False
+    warranty_repair_types: list[str] = Field(default_factory=list)
     fivesystems_api_enabled: bool = False
     daily_logout_time: str = "23:30"
     planner_auto_match_enabled: bool = False

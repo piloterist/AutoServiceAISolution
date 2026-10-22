@@ -11,6 +11,7 @@ in this codebase.
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -47,6 +48,17 @@ class AppSettings(Base):
     hide_internal_orders: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # ЗаказНаряд.ВидРемонта values that count as warranty work (product ask,
+    # 2026-10-23) - picked from the same distinct-values list as
+    # insurance_repair_type above (see work_order_query_service.
+    # list_repair_types), but a multi-select here since several distinct
+    # repair-type strings can all mean "warranty" for this client. Feeds
+    # the Финансы -> Дебиторская задолженность aging table's own
+    # Все/Страховые/Текущие filter (see services/receivables_service.py) -
+    # not used anywhere else (not cockpit's own ДЗ figure, not the work
+    # orders list's only_receivables filter) per that product ask's own
+    # scope. None/empty = nothing configured as warranty yet.
+    warranty_repair_types: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
 
     # Runtime on/off switch for the Planner's "Получить ЗН" live 5Systems
     # plate lookup (see services/fivesystems_client.py) - distinct from

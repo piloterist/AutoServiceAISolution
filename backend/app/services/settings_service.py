@@ -30,6 +30,7 @@ def update_app_settings(
     exclude_internal_insurance: bool,
     exclude_internal_orders: bool,
     hide_internal_orders: bool,
+    warranty_repair_types: list[str],
     fivesystems_api_enabled: bool,
     daily_logout_time: str,
     planner_auto_match_enabled: bool,
@@ -41,6 +42,7 @@ def update_app_settings(
     settings.exclude_internal_insurance = exclude_internal_insurance
     settings.exclude_internal_orders = exclude_internal_orders
     settings.hide_internal_orders = hide_internal_orders
+    settings.warranty_repair_types = warranty_repair_types or None
     settings.fivesystems_api_enabled = fivesystems_api_enabled
     settings.daily_logout_time = daily_logout_time
     settings.planner_auto_match_enabled = planner_auto_match_enabled

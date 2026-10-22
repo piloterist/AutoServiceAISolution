@@ -499,6 +499,18 @@ main:has(.full-width-page) {
   max-width: 380px;
 }
 
+/* Гарантийные (виды ремонта) - a checkbox list can run longer than a
+   single-value dropdown/input, so it opts out of the 380px cap above. */
+.settings-general .settings-field--wide {
+  max-width: none;
+}
+
+.settings-checkbox-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;

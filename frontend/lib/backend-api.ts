@@ -124,6 +124,12 @@ export type AppSettings = {
   // Not wired to any filtering logic yet - deliberately inert (see
   // SettingsForm.tsx).
   hide_internal_orders: boolean;
+  // ЗаказНаряд.ВидРемонта values that count as warranty work - multi-select
+  // (several distinct repair-type strings can all mean "warranty" for this
+  // client). Feeds the Финансы -> Дебиторская задолженность aging table's
+  // own Все/Страховые/Текущие filter only (see ReceivablesAgingView.tsx) -
+  // not cockpit's own ДЗ figure, not the work orders list.
+  warranty_repair_types: string[];
   // Runtime on/off switch for the Planner's "Получить ЗН" live 5Systems
   // plate lookup - see backend/app/models/app_settings.py for how this
   // differs from ENABLE_FIVESYSTEMS_LOOKUP (the env var).
@@ -1618,6 +1624,9 @@ export type ReceivablesAgingRow = {
   days_overdue: number;
   debt_amount: string;
   bucket: ReceivablesAgingBucket;
+  // ЗаказНаряд.ВидРемонта - drives the Все/Страховые/Текущие filter (see
+  // ReceivablesAging's own insurance_repair_type/warranty_repair_types).
+  repair_type: string | null;
 };
 
 export type ReceivablesAgingTotals = {
@@ -1633,6 +1642,10 @@ export type ReceivablesAging = {
   as_of: string;
   rows: ReceivablesAgingRow[];
   totals: ReceivablesAgingTotals;
+  // Mirrors AppSettings - which ВидРемонта value means "страховой" and
+  // which ones mean "гарантийный", for the Все/Страховые/Текущие filter.
+  insurance_repair_type: string | null;
+  warranty_repair_types: string[];
 };
 
 export function getReceivablesAging(): Promise<ReceivablesAging> {

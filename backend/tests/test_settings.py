@@ -15,6 +15,7 @@ def test_get_settings_returns_defaults_on_first_access(client, auth_headers) -> 
     assert body["exclude_internal_insurance"] is False
     assert body["exclude_internal_orders"] is False
     assert body["hide_internal_orders"] is False
+    assert body["warranty_repair_types"] == []
     assert body["fivesystems_api_enabled"] is False
     assert body["daily_logout_time"] == "23:30"
     assert body["planner_search_exclude_closed_orders"] is False
@@ -70,6 +71,37 @@ def test_put_settings_can_clear_the_repair_type(client, auth_headers) -> None:
     body = response.json()
     assert body["insurance_repair_type"] is None
     assert body["exclude_internal_insurance"] is False
+
+
+def test_put_settings_persists_warranty_repair_types(client, auth_headers) -> None:
+    response = client.put(
+        SETTINGS_URL,
+        headers=auth_headers,
+        json={"warranty_repair_types": ["Гарантийный ремонт", "Гарантия производителя"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["warranty_repair_types"] == [
+        "Гарантийный ремонт",
+        "Гарантия производителя",
+    ]
+
+    follow_up = client.get(SETTINGS_URL, headers=auth_headers)
+    assert follow_up.json()["warranty_repair_types"] == [
+        "Гарантийный ремонт",
+        "Гарантия производителя",
+    ]
+
+
+def test_put_settings_can_clear_warranty_repair_types(client, auth_headers) -> None:
+    client.put(
+        SETTINGS_URL, headers=auth_headers, json={"warranty_repair_types": ["Гарантийный ремонт"]}
+    )
+
+    response = client.put(SETTINGS_URL, headers=auth_headers, json={"warranty_repair_types": []})
+
+    assert response.status_code == 200
+    assert response.json()["warranty_repair_types"] == []
 
 
 def test_put_settings_pm_fields_are_independent_of_the_insurance_fields(

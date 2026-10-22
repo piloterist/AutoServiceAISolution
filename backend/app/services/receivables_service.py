@@ -131,6 +131,7 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
                 days_overdue=days_overdue,
                 debt_amount=debt,
                 bucket=bucket,
+                repair_type=wo.repair_type,
             )
         )
 
@@ -145,4 +146,6 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
             gte_90=totals["gte_90"],
             total=sum(totals.values(), Decimal("0")),
         ),
+        insurance_repair_type=app_settings.insurance_repair_type,
+        warranty_repair_types=app_settings.warranty_repair_types or [],
     )

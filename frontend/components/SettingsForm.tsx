@@ -32,6 +32,17 @@ export function SettingsForm({
   const [hideInternalOrders, setHideInternalOrders] = useState(
     initialSettings.hide_internal_orders,
   );
+  // Which ВидРемонта values count as warranty work - multi-select, feeds
+  // only the Финансы -> Дебиторская задолженность aging table's own
+  // Все/Страховые/Текущие filter (see ReceivablesAgingView.tsx).
+  const [warrantyRepairTypes, setWarrantyRepairTypes] = useState<string[]>(
+    initialSettings.warranty_repair_types,
+  );
+  const toggleWarrantyRepairType = (type: string) => {
+    setWarrantyRepairTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type],
+    );
+  };
   // Planner's "Получить ЗН" live 5Systems plate lookup - a runtime switch
   // staff can flip here without a deploy. Still requires the backend's own
   // ENABLE_FIVESYSTEMS_LOOKUP env var (credentials configured) - this
@@ -76,6 +87,7 @@ export function SettingsForm({
           exclude_internal_insurance: excludeInternal,
           exclude_internal_orders: excludeInternalOrders,
           hide_internal_orders: hideInternalOrders,
+          warranty_repair_types: warrantyRepairTypes,
           fivesystems_api_enabled: fivesystemsApiEnabled,
           daily_logout_time: dailyLogoutTime,
           planner_auto_match_enabled: plannerAutoMatchEnabled,
@@ -169,6 +181,27 @@ export function SettingsForm({
           />
           Скрыть внутренние <span className="settings-hint">(в разработке)</span>
         </label>
+
+        <div className="settings-field settings-field--wide">
+          <span>Гарантийные (виды ремонта)</span>
+          <div className="settings-checkbox-list">
+            {repairTypes.map((type) => (
+              <label className="settings-checkbox" key={type}>
+                <input
+                  type="checkbox"
+                  checked={warrantyRepairTypes.includes(type)}
+                  onChange={() => toggleWarrantyRepairType(type)}
+                />
+                {type}
+              </label>
+            ))}
+          </div>
+          <p className="settings-description">
+            Используется только фильтром «Текущие/Страховые» на вкладке Финансы →
+            Дебиторская задолженность — на остальные показатели (дашборд, ДЗ на ESP, список
+            заказ-нарядов) не влияет.
+          </p>
+        </div>
 
         <p className="settings-description">
           <strong>Правила определения внутренних.</strong> Заказ-наряд считается «внутренним», если
