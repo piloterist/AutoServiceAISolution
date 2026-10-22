@@ -398,18 +398,17 @@ main:has(.full-width-page) {
   top: calc(100% + 4px);
   left: 0;
   z-index: 5;
-  /* Sized to its widest row (product bug, 2026-10-23: a fixed 220px
-     min-width was narrower than "Гарантийный (бесплатный)", which under
-     nowrap just overflowed past the panel's own border instead of growing
-     it - different rows then trailed off by different amounts and read as
-     misaligned). width: max-content makes the box grow to fit whatever
-     its longest option actually needs, same as how this panel already
-     behaves for a short option list (Оплата/Статус) - it simply never
-     needed to grow before now. max-width is a safety net for a
-     pathologically long value - see .status-filter-checkbox span below
-     for how that edge case still wraps cleanly if it's ever hit. */
-  width: max-content;
-  max-width: 340px;
+  /* Fixed, generous width (product bug, 2026-10-23 - two earlier attempts
+     at auto-sizing, min-width:220px+nowrap and width:max-content, both
+     still rendered too narrow for "Гарантийный (бесплатный)" in practice,
+     wrapping text mid-word). A plain fixed width sidesteps relying on
+     intrinsic-sizing keywords interacting with this panel's own
+     display:flex/overflow-y - 300px comfortably fits every real option
+     this dropdown has carried (Статус/Оплата/Вид ремонта/Гарантийные) on
+     one line; .status-filter-checkbox span below truncates with an
+     ellipsis instead of wrapping/breaking in the unlikely event a future
+     option is still too long for it. */
+  width: 300px;
   max-height: 280px;
   overflow-y: auto;
   display: flex;
@@ -430,15 +429,21 @@ main:has(.full-width-page) {
   color: var(--text);
 }
 
+.status-filter-checkbox input {
+  flex: 0 0 auto;
+}
+
 .status-filter-checkbox span {
-  /* Only matters if max-width above ever actually forces a wrap (not the
-     normal case - see that rule's own comment) - left-aligned, not the
-     centered default a wrapped bare text node in a flex row can produce,
-     and min-width: 0 since flex items default to min-width: auto, which
-     blocks wrapping altogether. */
+  /* flex: 1 1 auto + min-width: 0 (flex items default to min-width: auto,
+     which blocks shrinking/ellipsis entirely) lets every row's text start
+     at the exact same x position right after the checkbox, truncating
+     with "…" rather than wrapping/overflowing if it's ever too long for
+     the panel's fixed width above. */
+  flex: 1 1 auto;
   min-width: 0;
-  text-align: left;
-  overflow-wrap: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-filter-empty {
