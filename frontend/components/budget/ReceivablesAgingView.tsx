@@ -95,8 +95,13 @@ function matchesRepairScope(
   insuranceRepairType: string | null,
   warrantyRepairTypes: string[],
 ): boolean {
-  const isWarranty = row.repair_type !== null && warrantyRepairTypes.includes(row.repair_type);
-  const isInsurance = insuranceRepairType !== null && row.repair_type === insuranceRepairType;
+  // typeof checks (not `!== null`): a field a not-yet-redeployed backend never
+  // sends is `undefined`, and `undefined === undefined` used to make EVERY
+  // row "insurance" (the "Текущие" filter then showed nothing, 2026-10-23).
+  const repairType = typeof row.repair_type === "string" ? row.repair_type : null;
+  const isWarranty = repairType !== null && warrantyRepairTypes.includes(repairType);
+  const isInsurance =
+    typeof insuranceRepairType === "string" && repairType === insuranceRepairType;
 
   if (scope === "insurance") return isInsurance;
   if (scope === "current") return !isInsurance && !isWarranty;
