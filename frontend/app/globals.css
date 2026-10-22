@@ -398,7 +398,18 @@ main:has(.full-width-page) {
   top: calc(100% + 4px);
   left: 0;
   z-index: 5;
-  min-width: 220px;
+  /* Sized to its widest row (product bug, 2026-10-23: a fixed 220px
+     min-width was narrower than "Гарантийный (бесплатный)", which under
+     nowrap just overflowed past the panel's own border instead of growing
+     it - different rows then trailed off by different amounts and read as
+     misaligned). width: max-content makes the box grow to fit whatever
+     its longest option actually needs, same as how this panel already
+     behaves for a short option list (Оплата/Статус) - it simply never
+     needed to grow before now. max-width is a safety net for a
+     pathologically long value - see .status-filter-checkbox span below
+     for how that edge case still wraps cleanly if it's ever hit. */
+  width: max-content;
+  max-width: 340px;
   max-height: 280px;
   overflow-y: auto;
   display: flex;
@@ -413,33 +424,21 @@ main:has(.full-width-page) {
 
 .status-filter-checkbox {
   display: flex;
-  /* flex-start, not center (product bug, 2026-10-23): a long option like
-     "Гарантийный (бесплатный)" wraps onto a second line now that nowrap is
-     gone below - center would float the checkbox between the two lines
-     instead of against the first one. */
-  align-items: flex-start;
+  align-items: center;
   gap: 0.5rem;
   font-size: 0.85rem;
-  /* Was nowrap, which let a long option's text overflow straight past the
-     panel's own border instead of wrapping inside it - every row's
-     checkbox still lined up on the left, but the text trailing off the
-     edge at different lengths per row read as "вразнобой" (product bug,
-     2026-10-23, surfaced by "Гарантийный (бесплатный)" - longer than any
-     label this dropdown had carried before). */
-  white-space: normal;
   color: var(--text);
 }
 
 .status-filter-checkbox span {
-  /* The wrapped second line of a long option (e.g. "Гарантийный
-     (бесплатный)") was reading as centered under the first line instead
-     of left-aligned under it (product bug, 2026-10-23) - a bare text node
-     as a flex item can wrap unpredictably; a real block-level child with
-     its own left alignment and room to actually shrink/wrap (min-width: 0
-     - flex items default to min-width: auto, which blocks wrapping) fixes
-     it outright. */
+  /* Only matters if max-width above ever actually forces a wrap (not the
+     normal case - see that rule's own comment) - left-aligned, not the
+     centered default a wrapped bare text node in a flex row can produce,
+     and min-width: 0 since flex items default to min-width: auto, which
+     blocks wrapping altogether. */
   min-width: 0;
   text-align: left;
+  overflow-wrap: break-word;
 }
 
 .status-filter-empty {
