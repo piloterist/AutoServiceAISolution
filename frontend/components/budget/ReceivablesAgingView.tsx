@@ -104,6 +104,10 @@ function matchesRepairScope(
 }
 
 export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
+  // `?? []`: a backend that hasn't been redeployed yet doesn't send this
+  // field at all - without the fallback the whole page crashed client-side
+  // (2026-10-23, new frontend live before the new backend).
+  const warrantyRepairTypes = useMemo(() => data.warranty_repair_types ?? [], [data.warranty_repair_types]);
   const router = useRouter();
   const [closedFrom, setClosedFrom] = useState("");
   const [closedTo, setClosedTo] = useState("");
@@ -145,12 +149,12 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
         (row) =>
           isWithinDateRange(row.closed_date, closedFrom, closedTo) &&
           (!onlyIndividualCustomer || row.is_individual_customer) &&
-          matchesRepairScope(row, repairScope, data.insurance_repair_type, data.warranty_repair_types),
+          matchesRepairScope(row, repairScope, data.insurance_repair_type, warrantyRepairTypes),
       ),
     [
       data.rows,
       data.insurance_repair_type,
-      data.warranty_repair_types,
+      warrantyRepairTypes,
       closedFrom,
       closedTo,
       onlyIndividualCustomer,

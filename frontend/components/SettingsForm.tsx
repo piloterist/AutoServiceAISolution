@@ -37,7 +37,7 @@ export function SettingsForm({
   // only the Финансы -> Дебиторская задолженность aging table's own
   // Все/Страховые/Текущие filter (see ReceivablesAgingView.tsx).
   const [warrantyRepairTypes, setWarrantyRepairTypes] = useState<string[]>(
-    initialSettings.warranty_repair_types,
+    initialSettings.warranty_repair_types ?? [],
   );
   const toggleWarrantyRepairType = (type: string) => {
     setWarrantyRepairTypes((prev) =>
