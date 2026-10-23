@@ -1,4 +1,4 @@
-import { TelephonyStatsView } from "@/components/telephony/TelephonyStatsView";
+import { TelephonyTabs } from "@/components/telephony/TelephonyTabs";
 import { getSourceSummary } from "@/lib/backend-api";
 
 // Same reasoning as app/settings/page.tsx - never statically prerendered,
@@ -25,7 +25,7 @@ export default async function TelephonyPage() {
         </div>
       )}
 
-      {initialSummary && <TelephonyStatsView initialSummary={initialSummary} />}
+      {initialSummary && <TelephonyTabs initialSummary={initialSummary} />}
     </div>
   );
 }

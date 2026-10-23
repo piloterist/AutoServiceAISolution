@@ -1372,6 +1372,37 @@ export type LineCallEvent = {
     | null;
 };
 
+// Телефония -> "Конверсия" row: every call of one phone that led to the same
+// work order (work_order_id null = the calls with no work order created
+// after them).
+export type ConversionGroup = {
+  client: string;
+  work_order_id: string | null;
+  work_order_number: string | null;
+  // The work order's real creation date (ДатаСоздания), not our import time.
+  work_order_created_date: string | null;
+  // The phone already had a work order (any status) before this group's
+  // first call.
+  is_existing: boolean;
+  calls: LineCallEvent[]; // oldest first
+};
+
+export type ConversionResponse = {
+  start_date: string;
+  end_date: string;
+  groups: ConversionGroup[];
+};
+
+export function getConversion(params: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<ConversionResponse> {
+  return backendGet<ConversionResponse>("/api/v1/telephony/conversion", {
+    start_date: params.startDate ?? "",
+    end_date: params.endDate ?? "",
+  });
+}
+
 export type ClientCallHistoryResponse = {
   query: string;
   truncated: boolean;

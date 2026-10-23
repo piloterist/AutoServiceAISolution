@@ -1392,6 +1392,31 @@ table.admin-data-table td.audit-changes-cell {
   align-self: center;
 }
 
+/* "Телефон: +7 …" chip on the work orders toolbar (deep link from
+   Телефония -> Конверсия -> "Открыть ЗН"). */
+.phone-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: center;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.phone-filter-chip-clear {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
 .filters-reset {
   align-self: flex-start;
   /* Sits at the end of the (wrapping) toolbar row, pushed to its right
@@ -4090,6 +4115,82 @@ table.bt {
   align-items: center;
   gap: 0.75rem;
   margin-left: auto;
+}
+
+/* Телефония -> "Конверсия" */
+.telephony-conversion-stats {
+  margin: 0 0 1rem;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.telephony-conversion-stats strong {
+  color: var(--text);
+}
+
+.telephony-wo-link {
+  color: var(--accent, var(--text));
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.telephony-filter-row th {
+  padding: 0.25rem 0.4rem 0.5rem;
+  font-weight: 400;
+  vertical-align: top;
+}
+
+.telephony-col-filter {
+  width: 100%;
+  min-width: 5rem;
+  box-sizing: border-box;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-family: inherit;
+}
+
+.telephony-open-wo-btn {
+  display: inline-block;
+  white-space: nowrap;
+  text-decoration: none;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.telephony-filters-reset {
+  margin-left: auto;
+}
+
+.telephony-wo-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.telephony-expand-btn,
+.telephony-calls-count-btn {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+}
+
+.telephony-calls-count-btn {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.telephony-group-row--open {
+  background: var(--bg);
+}
+
+.telephony-more-btn {
+  margin: 1rem 0;
 }
 
 .telephony-history-input {

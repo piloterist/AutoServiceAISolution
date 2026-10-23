@@ -33,6 +33,9 @@ type SearchParams = {
   // supported) carry the rest of that same deep link.
   individual?: string;
   unpaid?: string;
+  // Arriving from Телефония -> "Конверсия"'s "Открыть ЗН" - restricts the
+  // (client-side) list to work orders on this phone number.
+  phone?: string;
 };
 
 export default async function WorkOrdersPage({
@@ -61,6 +64,7 @@ export default async function WorkOrdersPage({
         workshopId={params.workshop_id}
         initialOnlyIndividualCustomer={params.individual === "1"}
         initialUnpaid={params.unpaid === "1"}
+        initialPhone={params.phone}
       />
     </div>
   );

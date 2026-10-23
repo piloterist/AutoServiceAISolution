@@ -591,3 +591,45 @@ def test_lead_calls_has_recording_reflects_raw_payload_link(
 def test_lead_calls_404_for_unknown_lead(client, auth_headers) -> None:
     response = client.get(f"{LEADS_URL}/{uuid.uuid4()}/calls", headers=auth_headers)
     assert response.status_code == 404
+
+
+def test_lead_work_order_match_uses_real_creation_date_not_import_time(
+    db_session: Session,
+) -> None:
+    """The matched work order is the first one on the lead's phone whose
+    ДатаСоздания (created_date) is after the lead. created_at - when our
+    import first saw the row - is "now" for every row here, but must be
+    ignored: an order created in 2025 and merely imported today is not a
+    result of today's lead (product ask, 2026-10-23)."""
+    from decimal import Decimal
+
+    from app.models.work_order import WorkOrder
+    from app.services import leads_service
+
+    lead_time = datetime.now(UTC) - timedelta(days=2)
+    lead = WebsiteLead(
+        source="consultation",
+        phone="9990000007",
+        raw_payload={},
+        created_at=lead_time,
+    )
+    db_session.add(lead)
+    for number, created in (
+        ("OLD-IMPORTED-LATE", datetime.now(UTC) - timedelta(days=400)),
+        ("NEW", lead_time + timedelta(hours=5)),
+    ):
+        db_session.add(
+            WorkOrder(
+                external_number=number,
+                source_system="alpha-auto",
+                document_date=created,
+                created_date=created,
+                amount=Decimal("100.00"),
+                phone="+7 (999) 000-00-07",
+            )
+        )
+    db_session.commit()
+
+    (item,) = leads_service.list_leads(db_session)
+
+    assert item.matched_work_order_number == "NEW"

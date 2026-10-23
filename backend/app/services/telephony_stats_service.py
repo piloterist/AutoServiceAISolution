@@ -783,13 +783,47 @@ def list_client_calls(
     truncated = len(rows) > MAX_HISTORY_CALLS
     recs = sorted((_row_to_rec(r) for r in rows[:MAX_HISTORY_CALLS]), key=lambda r: r.time)
 
+    by_client: dict[str, list[_Rec]] = defaultdict(list)
+    for r in recs:
+        by_client[r.client].append(r)
+
+    events = build_history_events(db, recs, by_client, phone_sources)
+    events.sort(key=lambda e: e.time, reverse=True)
+    return events, truncated
+
+
+def list_conversion_calls(
+    db: Session, start_day: date, end_day: date, phone_sources: Iterable[PhoneSource]
+) -> list[LineCallEvent]:
+    """Every inbound call within [start_day, end_day] (Moscow days), newest
+    first - feeds Телефония -> "Конверсия". Employee phones are excluded,
+    same as every other stats table. Missed ones also get their `outcome`
+    (see build_history_events), looked up in the 24h tail past the period."""
+    period_recs, later_recs = _period_and_tail_recs(db, start_day, end_day)
+    by_client: dict[str, list[_Rec]] = defaultdict(list)
+    for r in period_recs + later_recs:
+        if r.client:
+            by_client[r.client].append(r)
+    inbound = sorted((r for r in period_recs if r.type == "IN"), key=lambda r: r.time)
+    events = build_history_events(db, inbound, by_client, phone_sources)
+    events.sort(key=lambda e: e.time, reverse=True)
+    return events
+
+
+def build_history_events(
+    db: Session,
+    recs: list[_Rec],
+    by_client: Mapping[str, list[_Rec]],
+    phone_sources: Iterable[PhoneSource],
+) -> list[LineCallEvent]:
+    """One LineCallEvent per rec in `recs`, with the role/outcome/source
+    fields the phone-number history search and the "Конверсия" tab share.
+    `by_client` is every rec (incl. ones outside `recs`, e.g. the 24h tail
+    after a period) grouped by client, used to work out callbacks/outcomes."""
     source_names = {src.line_code: src.name for src in phone_sources}
     extensions_by_phone, fallback_phone_by_extension = call_workshop_service.phone_extension_index(
         db
     )
-    by_client: dict[str, list[_Rec]] = defaultdict(list)
-    for r in recs:
-        by_client[r.client].append(r)
 
     events: list[LineCallEvent] = []
     for r in recs:
@@ -857,8 +891,7 @@ def list_client_calls(
             )
         )
 
-    events.sort(key=lambda e: e.time, reverse=True)
-    return events, truncated
+    return events
 
 
 # ---- Открытые пропущенные (значок на Планировщике) -------------------------

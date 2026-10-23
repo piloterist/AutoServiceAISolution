@@ -282,11 +282,20 @@ def _work_orders_by_phone(db: Session) -> dict[str, list[tuple[datetime, uuid.UU
     rather than a direct column comparison."""
     rows = db.execute(
         select(
-            WorkOrder.phone, WorkOrder.created_at, WorkOrder.id, WorkOrder.external_number
+            WorkOrder.phone,
+            WorkOrder.created_date,
+            WorkOrder.created_at,
+            WorkOrder.id,
+            WorkOrder.external_number,
         ).where(WorkOrder.phone.is_not(None))
     ).all()
     by_phone: dict[str, list[tuple[datetime, uuid.UUID, str]]] = {}
-    for phone, created_at, work_order_id, external_number in rows:
+    for phone, created_date, row_created_at, work_order_id, external_number in rows:
+        # The real creation date (ДатаСоздания, filled for every order) -
+        # not created_at, which is only when our import first saw the row
+        # (product ask, 2026-10-23: for the history loaded in one go that is
+        # the import day, so an old order looked "created after" a lead).
+        created_at = created_date or row_created_at
         normalized = _normalize_phone(phone)
         if len(normalized) < 10:
             continue

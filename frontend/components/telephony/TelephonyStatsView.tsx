@@ -58,7 +58,7 @@ function sumTotals(rows: SourceSummaryRow[]) {
   return { ...totals, missedPct, reachedPct };
 }
 
-function formatClient(client: string | null): string {
+export function formatClient(client: string | null): string {
   if (!client) return "—";
   // "9991234567" -> "+7 999 123-45-67" - Zeon's own normalized-to-10-digits
   // shape (see backend services/zeon_client.py), always exactly 10 digits.
@@ -90,7 +90,7 @@ function formatPhoneOrLine(value: string): string {
 // Телефон — Добавочный" table has one (dst_extension) - an advertising
 // line with no specific добавочный configured, or dst with nothing in
 // that table matching at all, just shows the raw line/number alone.
-function calledLineCell(event: LineCallEvent): string {
+export function calledLineCell(event: LineCallEvent): string {
   if (!event.dst) return "—";
   const base = formatPhoneOrLine(event.dst);
   return event.dst_extension ? `${base} (${event.dst_extension})` : base;
@@ -100,14 +100,14 @@ function calledLineCell(event: LineCallEvent): string {
 // number in parens when that same mapping table has one (answered_phone) -
 // an extension with no phone configured for it just shows the добавочный
 // alone, same as calledLineCell's own fallback.
-function answeredByCell(event: LineCallEvent): string {
+export function answeredByCell(event: LineCallEvent): string {
   if (!event.operator) return "—";
   return event.answered_phone
     ? `${formatPhoneOrLine(event.answered_phone)} (${event.operator})`
     : event.operator;
 }
 
-function formatEventTime(time: string): string {
+export function formatEventTime(time: string): string {
   // "YYYY-MM-DD HH:MM:SS" -> "ДД.ММ ЧЧ:ММ:СС"
   const [datePart, timePart] = time.split(" ");
   const [year, month, day] = datePart.split("-");
@@ -126,7 +126,7 @@ const OUTCOME_LABELS: Record<NonNullable<LineCallEvent["outcome"]>, string> = {
   no_reaction: "без реакции",
 };
 
-function eventLabel(event: LineCallEvent): string {
+export function eventLabel(event: LineCallEvent): string {
   if (event.role === "incoming") {
     if (event.answered) return "Входящий";
     // Outcome only comes with the phone-number history search.
@@ -145,23 +145,23 @@ function eventLabel(event: LineCallEvent): string {
 // ok/warn/down semantics pctBadgeClass above uses). Only ever called with a
 // non-null tag - see the `event.topic_tag &&` guard at the call site, which
 // renders nothing at all until the call has been summarized.
-const TOPIC_UNDETERMINED = "Тема не определена";
+export const TOPIC_UNDETERMINED = "Тема не определена";
 
-function topicBadgeClass(tag: string): string {
+export function topicBadgeClass(tag: string): string {
   if (tag === TOPIC_UNDETERMINED) return "telephony-topic-badge telephony-topic-badge--unknown";
   return "telephony-topic-badge telephony-topic-badge--summary";
 }
 
 // YandexGPT's QA rating (see TelephonySettings.assess_quality_enabled) -
 // banded the same way as the written methodology (9-10 / 7-8 / 4-6 / 1-3).
-function scoreBadgeClass(score: number): string {
+export function scoreBadgeClass(score: number): string {
   if (score >= 9) return "telephony-badge telephony-badge--ok";
   if (score >= 7) return "telephony-badge telephony-badge--ok";
   if (score >= 4) return "telephony-badge telephony-badge--warn";
   return "telephony-badge telephony-badge--down";
 }
 
-function eventRowClass(event: LineCallEvent): string {
+export function eventRowClass(event: LineCallEvent): string {
   if (!event.answered) return "telephony-event-row telephony-event-row--missed";
   if (event.role !== "incoming") return "telephony-event-row telephony-event-row--callback";
   return "telephony-event-row";
@@ -185,10 +185,91 @@ function sortEvents(events: LineCallEvent[], sortKey: EventSortKey, sortDir: "as
   });
 }
 
-/** The call table shared by the per-source drill-down (LineCallsPanel) and
- * the phone-number history search (HistoryPanel) - `showSource` adds the
- * "Источник" column, which only the history search fills. */
-function CallEventsTable({
+/** A call's full transcript + QA review in a modal - shared by every call
+ * table here (see CallEventsTable and ConversionView). Opened explicitly by
+ * clicking a call's own topic cell - a hover-only tooltip wasn't
+ * discoverable enough (per product feedback, 2026-10-02: "как в интерфейсе
+ * посмотреть весь текст расшифровки... ты куда-то вывел это?"). Shown
+ * whenever a transcript exists at all, even before it's been classified
+ * into a topic tag (or when classification is switched off entirely). */
+export function TranscriptModal({
+  event,
+  onClose,
+}: {
+  event: LineCallEvent | null;
+  onClose: () => void;
+}) {
+  return (
+    <AdminModal
+      open={event !== null}
+      title={
+        event
+          ? `Расшифровка · ${formatClient(event.client)} · ${formatEventTime(event.time)}`
+          : "Расшифровка"
+      }
+      onClose={onClose}
+      closeOnBackdropClick
+      wide
+    >
+      {event?.topic_tag && (
+        <p className="settings-description">
+          Тема: <span className={topicBadgeClass(event.topic_tag)}>{event.topic_tag}</span>
+        </p>
+      )}
+      {event?.quality_score !== null && event?.quality_score !== undefined && (
+        <div className="settings-description">
+          <p>
+            Оценка:{" "}
+            <span className={scoreBadgeClass(event.quality_score)}>{event.quality_score}/10</span>
+          </p>
+          {event.quality_review && <p>{event.quality_review}</p>}
+        </div>
+      )}
+      <p className="telephony-transcript-text">{event?.transcript_text}</p>
+      {event?.transcript_text_raw && event.transcript_text_raw !== event.transcript_text && (
+        <details className="telephony-transcript-raw">
+          <summary>Исходная расшифровка (до обработки YandexGPT)</summary>
+          <p className="telephony-transcript-text">{event.transcript_text_raw}</p>
+        </details>
+      )}
+    </AdminModal>
+  );
+}
+
+/** A call's topic cell: the topic badge, which opens the transcript when
+ * there is one. */
+export function TopicCell({
+  event,
+  onOpenTranscript,
+}: {
+  event: LineCallEvent;
+  onOpenTranscript: (event: LineCallEvent) => void;
+}) {
+  if (event.transcript_text) {
+    return (
+      <button
+        type="button"
+        className="telephony-topic-cell-btn"
+        onClick={() => onOpenTranscript(event)}
+        title="Показать расшифровку"
+      >
+        {event.topic_tag ? (
+          <span className={topicBadgeClass(event.topic_tag)}>{event.topic_tag}</span>
+        ) : (
+          <span className="telephony-topic-badge telephony-topic-badge--unknown">Расшифровка</span>
+        )}
+      </button>
+    );
+  }
+  return event.topic_tag ? (
+    <span className={topicBadgeClass(event.topic_tag)}>{event.topic_tag}</span>
+  ) : null;
+}
+
+/** The call table shared by the per-source drill-down (LineCallsPanel), the
+ * phone-number history search and the expanded rows of "Конверсия" -
+ * `showSource` adds the "Источник" column. */
+export function CallEventsTable({
   events,
   showSource = false,
   defaultSortDir = "asc",
@@ -199,12 +280,6 @@ function CallEventsTable({
 }) {
   const [sortKey, setSortKey] = useState<EventSortKey>("time");
   const [sortDir, setSortDir] = useState<"asc" | "desc">(defaultSortDir);
-  // Full transcript, opened explicitly by clicking a call's own topic
-  // cell - a hover-only tooltip wasn't discoverable enough (per product
-  // feedback, 2026-10-02: "как в интерфейсе посмотреть весь текст
-  // расшифровки... ты куда-то вывел это?"). Shown whenever a transcript
-  // exists at all, even before it's been classified into a topic tag (or
-  // when classification is switched off entirely).
   const [transcriptEvent, setTranscriptEvent] = useState<LineCallEvent | null>(null);
 
   const toggleSort = (key: EventSortKey) => {
@@ -259,26 +334,7 @@ function CallEventsTable({
               <td className="telephony-num">{event.wait_sec} с</td>
               <td className="telephony-num">{event.answered ? `${event.talk_sec} с` : "—"}</td>
               <td>
-                {event.transcript_text ? (
-                  <button
-                    type="button"
-                    className="telephony-topic-cell-btn"
-                    onClick={() => setTranscriptEvent(event)}
-                    title="Показать расшифровку"
-                  >
-                    {event.topic_tag ? (
-                      <span className={topicBadgeClass(event.topic_tag)}>{event.topic_tag}</span>
-                    ) : (
-                      <span className="telephony-topic-badge telephony-topic-badge--unknown">
-                        Расшифровка
-                      </span>
-                    )}
-                  </button>
-                ) : (
-                  event.topic_tag && (
-                    <span className={topicBadgeClass(event.topic_tag)}>{event.topic_tag}</span>
-                  )
-                )}
+                <TopicCell event={event} onOpenTranscript={setTranscriptEvent} />
               </td>
               <td>
                 {event.quality_score !== null ? (
@@ -302,45 +358,7 @@ function CallEventsTable({
         </tbody>
       </table>
 
-      <AdminModal
-        open={transcriptEvent !== null}
-        title={
-          transcriptEvent
-            ? `Расшифровка · ${formatClient(transcriptEvent.client)} · ${formatEventTime(transcriptEvent.time)}`
-            : "Расшифровка"
-        }
-        onClose={() => setTranscriptEvent(null)}
-        closeOnBackdropClick
-        wide
-      >
-        {transcriptEvent?.topic_tag && (
-          <p className="settings-description">
-            Тема:{" "}
-            <span className={topicBadgeClass(transcriptEvent.topic_tag)}>
-              {transcriptEvent.topic_tag}
-            </span>
-          </p>
-        )}
-        {transcriptEvent?.quality_score !== null && transcriptEvent?.quality_score !== undefined && (
-          <div className="settings-description">
-            <p>
-              Оценка:{" "}
-              <span className={scoreBadgeClass(transcriptEvent.quality_score)}>
-                {transcriptEvent.quality_score}/10
-              </span>
-            </p>
-            {transcriptEvent.quality_review && <p>{transcriptEvent.quality_review}</p>}
-          </div>
-        )}
-        <p className="telephony-transcript-text">{transcriptEvent?.transcript_text}</p>
-        {transcriptEvent?.transcript_text_raw &&
-          transcriptEvent.transcript_text_raw !== transcriptEvent.transcript_text && (
-            <details className="telephony-transcript-raw">
-              <summary>Исходная расшифровка (до обработки YandexGPT)</summary>
-              <p className="telephony-transcript-text">{transcriptEvent.transcript_text_raw}</p>
-            </details>
-          )}
-      </AdminModal>
+      <TranscriptModal event={transcriptEvent} onClose={() => setTranscriptEvent(null)} />
     </>
   );
 }

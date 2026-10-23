@@ -22,6 +22,8 @@ from app.schemas.telephony import (
     CallRecordingExportRequest,
     CallRecordingExportResponse,
     ClientCallHistoryResponse,
+    ConversionGroupOut,
+    ConversionResponse,
     LineCallEventOut,
     LineCallsResponse,
     OpenMissedCallOut,
@@ -43,6 +45,7 @@ from app.services import (
     admin_service,
     call_recording_service,
     call_workshop_service,
+    conversion_service,
     telephony_settings_service,
     telephony_stats_service,
     zeon_client,
@@ -403,6 +406,59 @@ def line_calls(
     )
 
 
+def _event_out(
+    event: telephony_stats_service.LineCallEvent,
+    workshop_labels: dict[uuid.UUID, str],
+) -> LineCallEventOut:
+    """LineCallEvent (dataclass) -> API model; fields the dataclass doesn't
+    carry (e.g. source_name/outcome for the plain source drill-down) are None."""
+    values = {
+        name: getattr(event, name, None)
+        for name in LineCallEventOut.model_fields
+        if name != "workshop_label"
+    }
+    values["workshop_label"] = workshop_labels.get(event.workshop_id) if event.workshop_id else None
+    return LineCallEventOut.model_validate(values)
+
+
+@router.get("/conversion", response_model=ConversionResponse)
+def conversion(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    db: Session = Depends(get_db),
+) -> ConversionResponse:
+    """Телефония -> "Конверсия" (product ask, 2026-10-23): inbound calls of
+    the period (default: the current month so far), each with the work
+    order it led to and an "already a client" flag - see
+    conversion_service."""
+    today = date.today()
+    range_start = start_date or today.replace(day=1)
+    range_end = end_date or today
+    if range_end < range_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="end_date must not be before start_date",
+        )
+
+    groups = conversion_service.list_conversion(db, range_start, range_end)
+    workshop_labels = _workshop_label_map(db)
+    return ConversionResponse(
+        start_date=range_start,
+        end_date=range_end,
+        groups=[
+            ConversionGroupOut(
+                client=group.client,
+                work_order_id=group.work_order_id,
+                work_order_number=group.work_order_number,
+                work_order_created_date=group.work_order_created_date,
+                is_existing=group.is_existing,
+                calls=[_event_out(call, workshop_labels) for call in group.calls],
+            )
+            for group in groups
+        ],
+    )
+
+
 @router.get("/calls/history", response_model=ClientCallHistoryResponse)
 def client_call_history(phone: str, db: Session = Depends(get_db)) -> ClientCallHistoryResponse:
     """ "Показать историю звонков" on the Телефония page (product ask,
@@ -421,21 +477,7 @@ def client_call_history(phone: str, db: Session = Depends(get_db)) -> ClientCall
     phone_sources = telephony_settings_service.list_phone_sources(db)
     events, truncated = telephony_stats_service.list_client_calls(db, digits, phone_sources)
     workshop_labels = _workshop_label_map(db)
-    out = []
-    for event in events:
-        item = LineCallEventOut.model_validate(
-            {
-                **{
-                    name: getattr(event, name)
-                    for name in LineCallEventOut.model_fields
-                    if name != "workshop_label"
-                },
-                "workshop_label": (
-                    workshop_labels.get(event.workshop_id) if event.workshop_id else None
-                ),
-            }
-        )
-        out.append(item)
+    out = [_event_out(event, workshop_labels) for event in events]
     return ClientCallHistoryResponse(query=digits, truncated=truncated, events=out)
 
 

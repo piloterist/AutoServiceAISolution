@@ -264,6 +264,18 @@ type PersistedFilters = {
   onlyIndividualCustomer: boolean;
 };
 
+/** Last 10 digits of a phone in any format ("+7 (999) 000-00-01" ->
+ * "9990000001"), "" when there aren't 10 - same normalization as the
+ * backend's telephony_calls.client. */
+function phoneLast10(value: string | null | undefined): string {
+  const digits = (value ?? "").replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : "";
+}
+
+function formatPhoneForChip(last10: string): string {
+  return `+7 ${last10.slice(0, 3)} ${last10.slice(3, 6)}-${last10.slice(6, 8)}-${last10.slice(8, 10)}`;
+}
+
 const FILTERS_STORAGE_KEY = "work-orders-filters:v1";
 
 // Remembers which row was last opened, so returning to the list (product
@@ -380,6 +392,7 @@ export function WorkOrdersTable({
   workshopId,
   initialOnlyIndividualCustomer,
   initialUnpaid,
+  initialPhone,
 }: {
   /** Pre-applied filters, e.g. arriving from a click on the dashboard's
    * status chips (/work-orders?status=...&date_from=...&date_to=...) or the
@@ -414,6 +427,11 @@ export function WorkOrdersTable({
   /** From the same lamp - seeds "Оплата" to its two non-full-payment
    * buckets ("нет полной оплаты"). */
   initialUnpaid?: boolean;
+  /** From Телефония -> "Конверсия"'s "Открыть ЗН" (product ask,
+   * 2026-10-23) - only work orders on this phone number (compared by last
+   * 10 digits, any format). Deliberately not persisted: it's a one-off
+   * deep link, not one of the user's own remembered filters. */
+  initialPhone?: string;
 }) {
   const router = useRouter();
 
@@ -486,7 +504,8 @@ export function WorkOrdersTable({
       initialClosedFrom ||
       initialClosedTo ||
       initialOnlyIndividualCustomer ||
-      initialUnpaid,
+      initialUnpaid ||
+      initialPhone,
   );
   const persisted = hasUrlFilters ? null : readPersistedFilters();
 
@@ -539,6 +558,8 @@ export function WorkOrdersTable({
   const [onlyIndividualCustomer, setOnlyIndividualCustomer] = useState(
     () => initialOnlyIndividualCustomer ?? persisted?.onlyIndividualCustomer ?? false,
   );
+  // Last 10 digits of the phone to restrict to ("" = no restriction).
+  const [phoneFilter, setPhoneFilter] = useState(() => phoneLast10(initialPhone));
 
   useEffect(() => {
     writePersistedFilters({
@@ -597,6 +618,7 @@ export function WorkOrdersTable({
     setInternalFilter("all");
     setScheduledFilter("all");
     setOnlyIndividualCustomer(false);
+    setPhoneFilter("");
     clearPersistedFilters();
   };
 
@@ -703,6 +725,7 @@ export function WorkOrdersTable({
       if (!matchesIndividualCustomerFilter(row.item.is_individual_customer, onlyIndividualCustomer)) {
         return false;
       }
+      if (phoneFilter && phoneLast10(row.item.phone) !== phoneFilter) return false;
 
       return true;
     });
@@ -720,6 +743,7 @@ export function WorkOrdersTable({
     internalFilter,
     scheduledFilter,
     onlyIndividualCustomer,
+    phoneFilter,
   ]);
 
   // Recomputes with filteredRows - the whole point is that it tracks
@@ -868,6 +892,20 @@ export function WorkOrdersTable({
             <DateInput value={closedTo} onChange={setClosedTo} ariaLabel="Дата закрытия по" />
           </label>
         </div>
+
+        {phoneFilter && (
+          <span className="phone-filter-chip">
+            Телефон: {formatPhoneForChip(phoneFilter)}
+            <button
+              type="button"
+              className="phone-filter-chip-clear"
+              onClick={() => setPhoneFilter("")}
+              aria-label="Снять фильтр по телефону"
+            >
+              ×
+            </button>
+          </span>
+        )}
 
         <label className="individual-customer-filter">
           <input

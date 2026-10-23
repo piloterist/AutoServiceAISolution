@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -222,7 +222,6 @@ class LineCallEventOut(BaseModel):
     # see telephony_stats_service.list_client_calls.
     source_name: str | None = None
     outcome: str | None = None
-
     model_config = {"from_attributes": True}
 
 
@@ -231,6 +230,28 @@ class ClientCallHistoryResponse(BaseModel):
     # True if more calls matched than the cap and the oldest were cut off.
     truncated: bool
     events: list[LineCallEventOut]
+
+
+class ConversionGroupOut(BaseModel):
+    """Телефония -> "Конверсия" row: every call of one phone number that
+    led to the same work order (or, when work_order_id is null, the calls
+    with no work order created after them) - see conversion_service."""
+
+    client: str
+    work_order_id: uuid.UUID | None
+    work_order_number: str | None
+    # The work order's real creation date (ДатаСоздания), not our import time.
+    work_order_created_date: datetime | None
+    # The phone had a work order (any status) before this group's first call.
+    is_existing: bool
+    # Oldest first.
+    calls: list[LineCallEventOut]
+
+
+class ConversionResponse(BaseModel):
+    start_date: date
+    end_date: date
+    groups: list[ConversionGroupOut]
 
 
 class LineCallsResponse(BaseModel):

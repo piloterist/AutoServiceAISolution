@@ -7,6 +7,7 @@
 import type {
   CallRecordingExportResult,
   ClientCallHistoryResponse,
+  ConversionResponse,
   LineCallsResponse,
   PhoneSource,
   PhoneSourceWrite,
@@ -99,6 +100,14 @@ export function getSourceSummaryClient(params: { startDate: string; endDate: str
     bust(`/api/telephony/source-summary?start_date=${params.startDate}&end_date=${params.endDate}`),
     noStoreFresh,
   );
+}
+
+export function getConversionClient(params: {
+  startDate: string;
+  endDate: string;
+}): Promise<ConversionResponse> {
+  const query = new URLSearchParams({ start_date: params.startDate, end_date: params.endDate });
+  return proxyFetch<ConversionResponse>(bust(`/api/telephony/conversion?${query}`), noStoreFresh);
 }
 
 export function getClientCallHistoryClient(phone: string): Promise<ClientCallHistoryResponse> {
