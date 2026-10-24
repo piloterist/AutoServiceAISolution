@@ -78,6 +78,18 @@ class Settings(BaseSettings):
     # not something the core should hardcode - see ARCHITECTURE.md.
     revenue_statuses: str = ""
 
+    # Work-order statuses that mean "this visit is over" for the telephony
+    # conversion of EXISTING clients (Аналитика): a repeat client counts only
+    # if every earlier work order is in one of these - a client with an order
+    # still in progress is most likely calling about that repair, not
+    # booking a new one. Comma-separated; client-specific data like
+    # revenue_statuses above, hence config rather than code.
+    conversion_finished_statuses: str = "Закрыт,Отказ"
+    # ... and the one of them that, when reached on the very day of a call,
+    # still means "the car is being handed over right now" (the call is about
+    # that repair, not a new booking). A refusal on that day does not.
+    conversion_closed_status: str = "Закрыт"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
@@ -85,6 +97,14 @@ class Settings(BaseSettings):
     @property
     def revenue_statuses_list(self) -> list[str]:
         return [status.strip() for status in self.revenue_statuses.split(",") if status.strip()]
+
+    @property
+    def conversion_finished_statuses_list(self) -> list[str]:
+        return [
+            status.strip()
+            for status in self.conversion_finished_statuses.split(",")
+            if status.strip()
+        ]
 
     @property
     def is_development(self) -> bool:

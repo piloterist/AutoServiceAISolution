@@ -23,10 +23,12 @@ const MONTH_LABELS = [
   "дек",
 ];
 
-function monthLabel(month: string): string {
+function monthLabel(month: string, compact = false): string {
   const [year, m] = month.split("-");
   const index = Number(m) - 1;
-  return `${MONTH_LABELS[index] ?? m} ${year}`;
+  // Compact (narrow card): just the month - the year is the same for every
+  // bar (the chart is year-to-date) and would not fit under each one.
+  return compact ? (MONTH_LABELS[index] ?? m) : `${MONTH_LABELS[index] ?? m} ${year}`;
 }
 
 function formatCompact(value: number): string {
@@ -66,9 +68,16 @@ export type MonthlyBarChartProps = {
    * second -> "series-2", etc.), never re-cycling the same hue for a
    * different measure shown at the same time. */
   colorSlot?: "series" | "series-2";
+  /** Narrow-card mode: x labels are just the month ("окт"), no year. */
+  compact?: boolean;
 };
 
-export function MonthlyBarChart({ data, metric, colorSlot = "series" }: MonthlyBarChartProps) {
+export function MonthlyBarChart({
+  data,
+  metric,
+  colorSlot = "series",
+  compact = false,
+}: MonthlyBarChartProps) {
   const [hovered, setHovered] = useState<number | null>(null);
 
   if (data.length === 0) {
@@ -140,7 +149,7 @@ export function MonthlyBarChart({ data, metric, colorSlot = "series" }: MonthlyB
       <div className="chart-x-axis">
         {data.map((point) => (
           <div key={point.month} className="chart-x-label" style={{ width: `${slotWidth}%` }}>
-            {monthLabel(point.month)}
+            {monthLabel(point.month, compact)}
           </div>
         ))}
       </div>

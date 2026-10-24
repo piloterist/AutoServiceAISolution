@@ -246,6 +246,51 @@ class ConversionGroupOut(BaseModel):
     is_existing: bool
     # Oldest first.
     calls: list[LineCallEventOut]
+    # How the Аналитика conversion treats this phone: "new" /
+    # "existing_counted" / "existing_excluded" / "none" (no real conversation
+    # with a defined topic in the period) - see conversion_service.
+    # classify_phones - and whether it got a work order (counted conversion).
+    segment: str
+    phone_converted: bool
+    # "new" / "existing_counted" / "existing_excluded" for every phone, with
+    # or without a topic conversation (see conversion_service.classify_phones).
+    client_class: str
+    # Missed and not reached by the end of the period ("остались без ответа").
+    phone_unanswered: bool
+    # The phone's first group that led to a counted work order - one row per
+    # converted number ("Дошли до заказ-наряда").
+    conversion_row: bool
+
+
+class ConversionSummaryResponse(BaseModel):
+    """Конверсия новых клиентов в заказ-наряды за период (страница Аналитика)
+    - see conversion_service.get_conversion_summary for the exact rules."""
+
+    start_date: date
+    end_date: date
+    calls_total: int
+    talk_phones: int
+    topic_phones: int
+    new_clients: int
+    converted_new_clients: int
+    work_orders_new_clients: int
+    work_orders_total: int
+    conversion_pct: float | None
+    existing_topic_phones: int
+    existing_excluded: int
+    existing_clients: int
+    converted_existing_clients: int
+    work_orders_existing_clients: int
+    existing_conversion_pct: float | None
+    target_phones: int
+    unanswered_new: int
+    unanswered_existing: int
+
+
+class ConversionWorkOrdersResponse(BaseModel):
+    """The work orders behind a donut's "Заказ-нарядов" figure."""
+
+    work_order_ids: list[uuid.UUID]
 
 
 class ConversionResponse(BaseModel):

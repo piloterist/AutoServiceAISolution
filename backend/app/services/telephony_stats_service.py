@@ -792,20 +792,55 @@ def list_client_calls(
     return events, truncated
 
 
+def has_earlier_miss(rec: _Rec, by_client: Mapping[str, list[_Rec]]) -> bool:
+    """An unanswered inbound call from the same number within
+    CALLBACK_WINDOW before `rec` - what makes an outbound call a "перезвон"
+    and an answered inbound one a client's own recall."""
+    return any(
+        x.type == "IN" and not x.answered and rec.time - CALLBACK_WINDOW <= x.time < rec.time
+        for x in by_client.get(rec.client, [])
+    )
+
+
+def fetch_conversion_window(
+    db: Session, start_day: date, end_day: date
+) -> tuple[list[_Rec], list[_Rec], list[_Rec]]:
+    """(head, period, tail) calls around [start_day, end_day], employee
+    phones excluded: `head` is the CALLBACK_WINDOW before the period (so a
+    callback on the first day still sees the miss it answered), `tail` the
+    same window after it (so a miss on the last day still gets its
+    outcome)."""
+    period_start_utc = _msk_naive_to_utc(datetime.combine(start_day, time.min))
+    head = _fetch_recs(
+        db, period_start_utc - CALLBACK_WINDOW, period_start_utc, _excluded_phones(db)
+    )
+    period_recs, later_recs = _period_and_tail_recs(db, start_day, end_day)
+    return head, period_recs, later_recs
+
+
 def list_conversion_calls(
     db: Session, start_day: date, end_day: date, phone_sources: Iterable[PhoneSource]
 ) -> list[LineCallEvent]:
-    """Every inbound call within [start_day, end_day] (Moscow days), newest
-    first - feeds Телефония -> "Конверсия". Employee phones are excluded,
-    same as every other stats table. Missed ones also get their `outcome`
-    (see build_history_events), looked up in the 24h tail past the period."""
-    period_recs, later_recs = _period_and_tail_recs(db, start_day, end_day)
+    """Every inbound call within [start_day, end_day] (Moscow days) plus our
+    own callbacks to missed ones (an outbound call within CALLBACK_WINDOW
+    after an unanswered inbound from the same number), newest first - feeds
+    Телефония -> "Конверсия". Employee phones are excluded, same as every
+    other stats table. Missed ones also get their `outcome` (see
+    build_history_events)."""
+    head, period_recs, later_recs = fetch_conversion_window(db, start_day, end_day)
     by_client: dict[str, list[_Rec]] = defaultdict(list)
-    for r in period_recs + later_recs:
+    for r in head + period_recs + later_recs:
         if r.client:
             by_client[r.client].append(r)
-    inbound = sorted((r for r in period_recs if r.type == "IN"), key=lambda r: r.time)
-    events = build_history_events(db, inbound, by_client, phone_sources)
+    rows = sorted(
+        (
+            r
+            for r in period_recs
+            if r.type == "IN" or (r.type == "OUT" and has_earlier_miss(r, by_client))
+        ),
+        key=lambda r: r.time,
+    )
+    events = build_history_events(db, rows, by_client, phone_sources)
     events.sort(key=lambda e: e.time, reverse=True)
     return events
 
@@ -829,10 +864,7 @@ def build_history_events(
     for r in recs:
         role = "incoming" if r.type == "IN" else "outgoing"
         outcome: str | None = None
-        earlier_miss = any(
-            x.type == "IN" and not x.answered and r.time - CALLBACK_WINDOW <= x.time < r.time
-            for x in by_client[r.client]
-        )
+        earlier_miss = has_earlier_miss(r, by_client)
         if r.type == "OUT" and earlier_miss:
             role = "callback"
         elif r.type == "IN" and r.answered and earlier_miss:

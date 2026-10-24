@@ -1656,22 +1656,22 @@ table.admin-data-table td.audit-changes-cell {
     align-items: stretch;
   }
 
-  .dashboard-grid > .card:nth-child(1) {
+  .dashboard-grid > :nth-child(1) {
     grid-column: 1;
     grid-row: 1;
   }
 
-  .dashboard-grid > .card:nth-child(2) {
+  .dashboard-grid > :nth-child(2) {
     grid-column: 1;
     grid-row: 2;
   }
 
-  .dashboard-grid > .card:nth-child(3) {
+  .dashboard-grid > :nth-child(3) {
     grid-column: 2;
     grid-row: 1;
   }
 
-  .dashboard-grid > .card:nth-child(4) {
+  .dashboard-grid > :nth-child(4) {
     grid-column: 2;
     grid-row: 2;
   }
@@ -1680,6 +1680,161 @@ table.admin-data-table td.audit-changes-cell {
 /* The full-width status chip card sits directly before the grid, not after
    another .card, so the generic ".card + .card" adjacent-margin rule
    doesn't give it space below - add it explicitly instead. */
+/* "Заказ-нарядов по месяцам" (narrow) + the telephony conversion donut,
+   side by side inside one dashboard-grid cell; stacked on narrow screens. */
+.dashboard-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.dashboard-split > .card {
+  margin-top: 0;
+}
+
+/* Same height for the subtitle of every card in the split (two lines), so
+   the two donuts and their figures line up with each other. */
+.dashboard-split .chart-subtitle {
+  min-height: 2.6em;
+}
+
+/* Medium screens: the bar chart on its own row, the two donuts side by side
+   below it. Wide screens (the cell is wide enough): all three in one row. */
+@media (min-width: 640px) {
+  .dashboard-split {
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+  }
+
+  .dashboard-split > .card:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1500px) {
+  .dashboard-split {
+    grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.15fr) minmax(0, 1.15fr);
+  }
+
+  .dashboard-split > .card:first-child {
+    grid-column: auto;
+  }
+}
+
+.conversion-donut {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem 2rem;
+}
+
+.conversion-donut-chart {
+  position: relative;
+  flex: 0 0 auto;
+  width: 184px;
+  height: 184px;
+}
+
+.conversion-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.conversion-donut-pct {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.conversion-donut-caption {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.conversion-donut-numbers {
+  flex: 1 1 240px;
+  max-width: 340px;
+  margin: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.conversion-donut-numbers > .conversion-donut-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--chart-gridline);
+  padding-bottom: 0.4rem;
+}
+
+.conversion-donut-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.conversion-donut-link:hover {
+  transform: scale(1.03);
+}
+
+.conversion-donut-numbers > .conversion-donut-row {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.conversion-donut-numbers > .conversion-donut-row:hover {
+  background: var(--bg);
+}
+
+.conversion-donut-numbers > .conversion-donut-row:hover dd {
+  text-decoration: underline;
+}
+
+.telephony-cohort-select {
+  max-width: 24rem;
+  font-size: 0.95rem;
+}
+
+.conversion-donut-numbers dt {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.conversion-donut-numbers dd {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.conversion-donut-note {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.conversion-donut-footnote {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 .card + .dashboard-grid {
   margin-top: 1rem;
 }

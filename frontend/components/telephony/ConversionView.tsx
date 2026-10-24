@@ -18,12 +18,16 @@ import {
   formatEventTime,
 } from "@/components/telephony/TelephonyStatsView";
 import type { ConversionGroup, LineCallEvent } from "@/lib/backend-api";
+import { COHORTS, groupInCohort, parseCohort, type Cohort } from "@/lib/conversion-cohorts";
 import { getConversionClient } from "@/lib/telephony-client";
 
 // "Конверсия" can list a few thousand rows for a long period - render it in
 // pages instead of putting hundreds of recording players on the page at once.
 const PAGE_SIZE = 200;
 const COLUMN_COUNT = 16;
+// A call counts as a real conversation from this many seconds of talk time
+// (same threshold as the backend's MIN_REAL_TALK_SEC).
+const REAL_TALK_SEC = 5;
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -163,8 +167,8 @@ function callMatches(event: LineCallEvent, f: Filters): boolean {
 type Row = {
   key: string;
   group: ConversionGroup;
-  // The group's first call that passes the per-call filters (with no
-  // per-call filter active, simply its first call) - what the row shows.
+  // The call the row shows: the group's first call WITH A CONVERSATION that
+  // passes the per-call filters, else its first call that passes them.
   call: LineCallEvent;
 };
 
@@ -183,10 +187,35 @@ type SortKey = "time" | "client";
  * phone number and work order they led to (several calls of one number
  * collapse into one row - click it to see them all); a number with several
  * work orders in the period gets one row per work order. */
-export function ConversionView() {
-  const initial = useMemo(currentMonthRange, []);
+export function ConversionView({
+  initialStart,
+  initialEnd,
+  initialCohort,
+  initialDepartments,
+}: {
+  // From the Аналитика donuts' links (/telephony?tab=conversion&from=&to=&cohort=):
+  // that page's period, and which numbers to show. Default: the current
+  // month, everyone.
+  initialStart?: string;
+  initialEnd?: string;
+  initialCohort?: string;
+  // Comma-separated raw 1C department names - the dashboard's department
+  // filter, so the tab shows the same workshop(s) as the donuts.
+  initialDepartments?: string;
+}) {
+  const initial = useMemo(() => {
+    const month = currentMonthRange();
+    return { start: initialStart || month.start, end: initialEnd || month.end };
+  }, [initialStart, initialEnd]);
   const [startDate, setStartDate] = useState(initial.start);
   const [endDate, setEndDate] = useState(initial.end);
+  const [cohort, setCohort] = useState<Cohort>(() => parseCohort(initialCohort));
+  const [departments, setDepartments] = useState<string[]>(() =>
+    (initialDepartments ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
   const [groups, setGroups] = useState<ConversionGroup[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,11 +226,11 @@ export function ConversionView() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [transcriptEvent, setTranscriptEvent] = useState<LineCallEvent | null>(null);
 
-  const load = useCallback(async (from: string, to: string) => {
+  const load = useCallback(async (from: string, to: string, depts: string[]) => {
     setLoading(true);
     setError(null);
     try {
-      const result = await getConversionClient({ startDate: from, endDate: to });
+      const result = await getConversionClient({ startDate: from, endDate: to, departments: depts });
       setGroups(result.groups);
       setExpanded(new Set());
       setVisibleCount(PAGE_SIZE);
@@ -214,7 +243,9 @@ export function ConversionView() {
   }, []);
 
   useEffect(() => {
-    void load(initial.start, initial.end);
+    void load(initial.start, initial.end, departments);
+    // Loads once on mount; later changes go through the buttons below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, initial]);
 
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
@@ -226,15 +257,20 @@ export function ConversionView() {
     if (!groups) return [];
     const result: Row[] = [];
     for (const group of groups) {
+      if (!groupInCohort(group, cohort)) continue;
       if (!matchesYesNo(group.is_existing, filters.existing)) continue;
       if (!matchesYesNo(Boolean(group.work_order_id), filters.hasWorkOrder)) continue;
       if (!matchesNumeric(group.calls.length, String(group.calls.length), filters.callsCount)) continue;
-      const call = group.calls.find((c) => callMatches(c, filters));
-      if (!call) continue;
+      const matching = group.calls.filter((c) => callMatches(c, filters));
+      if (matching.length === 0) continue;
+      // The row shows the first call that had a real conversation (a missed
+      // call followed by our answered callback shows the callback), else
+      // simply the first call.
+      const call = matching.find((c) => c.answered && c.talk_sec >= REAL_TALK_SEC) ?? matching[0];
       result.push({ key: groupKey(group), group, call });
     }
     return result;
-  }, [groups, filters]);
+  }, [groups, filters, cohort]);
 
   const sortedRows = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
@@ -363,19 +399,54 @@ export function ConversionView() {
         <button
           type="button"
           className="admin-btn admin-btn-primary telephony-filter-btn"
-          onClick={() => void load(startDate, endDate)}
+          onClick={() => void load(startDate, endDate, departments)}
           disabled={loading || !startDate || !endDate}
         >
           {loading ? "Загрузка…" : "Показать"}
         </button>
+        {departments.length > 0 && (
+          <span className="phone-filter-chip">
+            Цех: {departments.join(", ")}
+            <button
+              type="button"
+              className="phone-filter-chip-clear"
+              onClick={() => {
+                setDepartments([]);
+                void load(startDate, endDate, []);
+              }}
+              aria-label="Снять фильтр по цеху"
+            >
+              ×
+            </button>
+          </span>
+        )}
+        <label className="telephony-filter-label">
+          Выборка
+          <select
+            className="telephony-date-input telephony-cohort-select"
+            value={cohort}
+            onChange={(event) => {
+              setCohort(event.target.value as Cohort);
+              setVisibleCount(PAGE_SIZE);
+            }}
+            aria-label="Выборка номеров"
+          >
+            {COHORTS.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <button
           type="button"
           className="admin-btn telephony-filter-btn telephony-filters-reset"
           onClick={() => {
             setFilters(EMPTY_FILTERS);
+            setCohort("all");
             setVisibleCount(PAGE_SIZE);
           }}
-          disabled={!filtersActive}
+          disabled={!filtersActive && cohort === "all"}
         >
           Сбросить фильтры
         </button>
@@ -566,8 +637,8 @@ export function ConversionView() {
         Одна строка — один номер и один заказ-наряд, к которому привели его звонки: все звонки номера до создания
         заказ-наряда (по дате создания в 1С) собраны в одну строку, нажмите на неё, чтобы увидеть каждый звонок с
         расшифровкой и записью. Если у номера за период было несколько заказ-нарядов, будет несколько строк;
-        звонки после последнего заказ-наряда — отдельная строка без заказ-наряда. В строке показан первый звонок
-        группы. «Существующий: Да» — на номер уже был хотя бы один заказ-наряд (любой статус) до первого звонка
+        звонки после последнего заказ-наряда — отдельная строка без заказ-наряда. В группу входят и наши перезвоны на
+        пропущенные; в строке показан первый звонок, по которому состоялся разговор (иначе — первый звонок). «Существующий: Да» — на номер уже был хотя бы один заказ-наряд (любой статус) до первого звонка
         строки. Статистика считает уникальные номера. Звонки сотрудников не учитываются. В полях «Звонков»,
         «Ожидание» и «Разговор» можно вводить условия со знаками &gt; &lt; &gt;= &lt;= = (например «&gt;30» или
         диапазон «&gt;30 &lt;60»), число без знака — точное значение. Тема «Нет» — тема пустая или «Тема не

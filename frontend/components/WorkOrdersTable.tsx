@@ -393,6 +393,7 @@ export function WorkOrdersTable({
   initialOnlyIndividualCustomer,
   initialUnpaid,
   initialPhone,
+  conversionFilter,
 }: {
   /** Pre-applied filters, e.g. arriving from a click on the dashboard's
    * status chips (/work-orders?status=...&date_from=...&date_to=...) or the
@@ -432,6 +433,15 @@ export function WorkOrdersTable({
    * 10 digits, any format). Deliberately not persisted: it's a one-off
    * deep link, not one of the user's own remembered filters. */
   initialPhone?: string;
+  /** From a conversion donut's "Заказ-нарядов" on Аналитика: restrict to the
+   * work orders counted in that figure (resolved by the backend, see
+   * /api/telephony/conversion/work-orders). Not persisted - a one-off link. */
+  conversionFilter?: {
+    kind: "new" | "existing";
+    from: string;
+    to: string;
+    departments: string;
+  };
 }) {
   const router = useRouter();
 
@@ -505,7 +515,8 @@ export function WorkOrdersTable({
       initialClosedTo ||
       initialOnlyIndividualCustomer ||
       initialUnpaid ||
-      initialPhone,
+      initialPhone ||
+      conversionFilter,
   );
   const persisted = hasUrlFilters ? null : readPersistedFilters();
 
@@ -560,6 +571,35 @@ export function WorkOrdersTable({
   );
   // Last 10 digits of the phone to restrict to ("" = no restriction).
   const [phoneFilter, setPhoneFilter] = useState(() => phoneLast10(initialPhone));
+
+  // The work orders of a conversion donut, fetched once: null while loading.
+  const [conversionActive, setConversionActive] = useState(Boolean(conversionFilter));
+  const [conversionIds, setConversionIds] = useState<Set<string> | null>(null);
+  const conversionKind = conversionFilter?.kind;
+  const conversionFrom = conversionFilter?.from;
+  const conversionTo = conversionFilter?.to;
+  const conversionDepartments = conversionFilter?.departments;
+  useEffect(() => {
+    if (!conversionKind || !conversionFrom || !conversionTo) return;
+    let cancelled = false;
+    const query = new URLSearchParams({
+      kind: conversionKind,
+      start_date: conversionFrom,
+      end_date: conversionTo,
+    });
+    if (conversionDepartments) query.set("departments", conversionDepartments);
+    fetch(`/api/telephony/conversion/work-orders?${query.toString()}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
+      .then((data: { work_order_ids: string[] }) => {
+        if (!cancelled) setConversionIds(new Set(data.work_order_ids));
+      })
+      .catch(() => {
+        if (!cancelled) setConversionIds(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversionKind, conversionFrom, conversionTo, conversionDepartments]);
 
   useEffect(() => {
     writePersistedFilters({
@@ -619,6 +659,7 @@ export function WorkOrdersTable({
     setScheduledFilter("all");
     setOnlyIndividualCustomer(false);
     setPhoneFilter("");
+    setConversionActive(false);
     clearPersistedFilters();
   };
 
@@ -726,6 +767,9 @@ export function WorkOrdersTable({
         return false;
       }
       if (phoneFilter && phoneLast10(row.item.phone) !== phoneFilter) return false;
+      if (conversionActive && (conversionIds === null || !conversionIds.has(row.item.id))) {
+        return false;
+      }
 
       return true;
     });
@@ -744,12 +788,20 @@ export function WorkOrdersTable({
     scheduledFilter,
     onlyIndividualCustomer,
     phoneFilter,
+    conversionActive,
+    conversionIds,
   ]);
 
   // Recomputes with filteredRows - the whole point is that it tracks
   // whatever's currently visible, not the unfiltered total.
   const filteredAmount = useMemo(
     () => filteredRows.reduce((sum, row) => sum + Number(row.item.amount), 0),
+    [filteredRows],
+  );
+  // The sum of the "Оплачено" column over the same visible rows (an order
+  // with no payment data counts as 0).
+  const filteredPaid = useMemo(
+    () => filteredRows.reduce((sum, row) => sum + Number(row.item.paid_amount ?? 0), 0),
     [filteredRows],
   );
 
@@ -893,6 +945,21 @@ export function WorkOrdersTable({
           </label>
         </div>
 
+        {conversionActive && conversionFilter && (
+          <span className="phone-filter-chip">
+            Конверсия {conversionFilter.kind === "new" ? "новых" : "существующих"} клиентов:{" "}
+            {conversionIds === null ? "загрузка…" : `${conversionIds.size} заказ-нарядов`}
+            <button
+              type="button"
+              className="phone-filter-chip-clear"
+              onClick={() => setConversionActive(false)}
+              aria-label="Снять фильтр конверсии"
+            >
+              ×
+            </button>
+          </span>
+        )}
+
         {phoneFilter && (
           <span className="phone-filter-chip">
             Телефон: {formatPhoneForChip(phoneFilter)}
@@ -936,6 +1003,7 @@ export function WorkOrdersTable({
           {total !== null && items.length < total ? ` (загружаем ещё, всего ${total})…` : ""}
         </span>
         <span className="table-meta-total">Сумма: {formatAmount(filteredAmount)}</span>
+        <span className="table-meta-total">Оплачено: {formatAmount(filteredPaid)}</span>
         <button type="button" className="copy-button" onClick={handleCopy}>
           {copyState === "copied" ? "Скопировано ✓" : copyState === "error" ? "Не удалось скопировать" : "Скопировать"}
         </button>

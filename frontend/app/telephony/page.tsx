@@ -5,7 +5,22 @@ import { getSourceSummary } from "@/lib/backend-api";
 // this always needs a fresh backend read.
 export const dynamic = "force-dynamic";
 
-export default async function TelephonyPage() {
+type SearchParams = {
+  tab?: string;
+  from?: string;
+  to?: string;
+  cohort?: string;
+  departments?: string;
+};
+
+export default async function TelephonyPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  // Arriving from the conversion donuts on Аналитика: open the "Конверсия"
+  // tab for that period, narrowed to the clicked figure's numbers.
+  const params = await searchParams;
   let initialSummary;
   let error: string | null = null;
 
@@ -25,7 +40,16 @@ export default async function TelephonyPage() {
         </div>
       )}
 
-      {initialSummary && <TelephonyTabs initialSummary={initialSummary} />}
+      {initialSummary && (
+        <TelephonyTabs
+          initialSummary={initialSummary}
+          initialTab={params.tab === "conversion" ? "conversion" : "calls"}
+          conversionFrom={params.from}
+          conversionTo={params.to}
+          conversionCohort={params.cohort}
+          conversionDepartments={params.departments}
+        />
+      )}
     </div>
   );
 }

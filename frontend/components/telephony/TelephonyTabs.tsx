@@ -16,10 +16,25 @@ const TABS: { key: TabKey; label: string }[] = [
 /** Телефония page tabs. Both views stay mounted (the inactive one is just
  * hidden) so switching back doesn't throw away a loaded period, an expanded
  * source or a phone-number search. */
-export function TelephonyTabs({ initialSummary }: { initialSummary: SourceSummaryResponse }) {
-  const [tab, setTab] = useState<TabKey>("calls");
+export function TelephonyTabs({
+  initialSummary,
+  initialTab = "calls",
+  conversionFrom,
+  conversionTo,
+  conversionCohort,
+  conversionDepartments,
+}: {
+  initialSummary: SourceSummaryResponse;
+  initialTab?: TabKey;
+  // Deep link from the Аналитика donuts (see ConversionView's props).
+  conversionFrom?: string;
+  conversionTo?: string;
+  conversionCohort?: string;
+  conversionDepartments?: string;
+}) {
+  const [tab, setTab] = useState<TabKey>(initialTab);
   // "Конверсия" loads its (heavier) data only once it's first opened.
-  const [conversionOpened, setConversionOpened] = useState(false);
+  const [conversionOpened, setConversionOpened] = useState(initialTab === "conversion");
 
   const selectTab = (key: TabKey) => {
     setTab(key);
@@ -46,7 +61,12 @@ export function TelephonyTabs({ initialSummary }: { initialSummary: SourceSummar
       </div>
       {conversionOpened && (
         <div hidden={tab !== "conversion"}>
-          <ConversionView />
+          <ConversionView
+            initialStart={conversionFrom}
+            initialEnd={conversionTo}
+            initialCohort={conversionCohort}
+            initialDepartments={conversionDepartments}
+          />
         </div>
       )}
     </div>

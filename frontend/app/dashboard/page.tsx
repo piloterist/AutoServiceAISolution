@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { DashboardPeriodSync } from "@/components/DashboardPeriodSync";
+import { ConversionDonut } from "@/components/ConversionDonut";
 import { MonthlyBarChart } from "@/components/MonthlyRevenueChart";
 import { RankedList, type RankedItem } from "@/components/RankedList";
 import { RevenueTrendChart } from "@/components/RevenueTrendChart";
@@ -10,7 +11,9 @@ import { StatTile } from "@/components/StatTile";
 import { StatusChipGrid, type StatusChipItem } from "@/components/StatusChipGrid";
 import { WorkOrdersPrefetcher } from "@/components/WorkOrdersPrefetcher";
 import {
+  type ConversionSummary,
   type DepartmentSummaryItem,
+  getConversionSummary,
   getDepartmentSummary,
   getMonthlySummary,
   getPaymentDepartmentSummary,
@@ -243,6 +246,17 @@ export default async function DashboardPage({
     error = err instanceof Error ? err.message : "Unknown error";
   }
 
+  // The telephony conversion donut must never take the rest of the page down
+  // with it (telephony is an optional module): no data -> an empty card.
+  let conversionSummary: ConversionSummary | null = null;
+  if (!error) {
+    try {
+      conversionSummary = await getConversionSummary({ dateFrom, dateTo, departments: selectedDepartments });
+    } catch {
+      conversionSummary = null;
+    }
+  }
+
   const trendCurrentItems = trendCurrent?.items ?? [];
   const trendPreviousItems = trendPrevious?.items ?? [];
   const paymentTrendCurrentItems = paymentTrendCurrent?.items ?? [];
@@ -449,13 +463,43 @@ export default async function DashboardPage({
               />
             </div>
 
-            <div className="card">
-              <h2 className="chart-title">Заказ-нарядов по месяцам</h2>
-              <p className="chart-subtitle">
-                по дате закрытия заказ-наряда — с начала года по текущий месяц, независимо от периода
-                выше
-              </p>
-              <MonthlyBarChart data={monthlySummary?.items ?? []} metric="count" colorSlot="series-2" />
+            {/* One grid cell holding three cards: a narrow bar chart and, beside
+                it, the two telephony conversion donuts (new / existing clients). */}
+            <div className="dashboard-split">
+              <div className="card">
+                <h2 className="chart-title">Заказ-нарядов по месяцам</h2>
+                <p className="chart-subtitle">по дате закрытия — с начала года, независимо от периода</p>
+                <MonthlyBarChart
+                  data={monthlySummary?.items ?? []}
+                  metric="count"
+                  colorSlot="series-2"
+                  compact
+                />
+              </div>
+
+              <div className="card">
+                <h2 className="chart-title">Конверсия новых клиентов</h2>
+                <p className="chart-subtitle">
+                  входящие и перезвоны с разговором по теме → заказ-наряды, за выбранный период
+                </p>
+                <ConversionDonut
+                  summary={conversionSummary}
+                  variant="new"
+                  departments={selectedDepartments}
+                />
+              </div>
+
+              <div className="card">
+                <h2 className="chart-title">Конверсия существующих клиентов</h2>
+                <p className="chart-subtitle">
+                  то же для клиентов, у которых к моменту звонка все прежние заказ-наряды закрыты или отказаны
+                </p>
+                <ConversionDonut
+                  summary={conversionSummary}
+                  variant="existing"
+                  departments={selectedDepartments}
+                />
+              </div>
             </div>
 
             <div className="card">

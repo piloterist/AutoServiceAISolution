@@ -105,8 +105,12 @@ export function getSourceSummaryClient(params: { startDate: string; endDate: str
 export function getConversionClient(params: {
   startDate: string;
   endDate: string;
+  departments?: string[];
 }): Promise<ConversionResponse> {
   const query = new URLSearchParams({ start_date: params.startDate, end_date: params.endDate });
+  if (params.departments && params.departments.length > 0) {
+    query.set("departments", params.departments.join(","));
+  }
   return proxyFetch<ConversionResponse>(bust(`/api/telephony/conversion?${query}`), noStoreFresh);
 }
 

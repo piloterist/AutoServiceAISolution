@@ -7,6 +7,7 @@ these, the browser never holds the token).
 """
 
 import asyncio
+import dataclasses
 import math
 import uuid
 from datetime import date, datetime, time, timedelta
@@ -24,6 +25,8 @@ from app.schemas.telephony import (
     ClientCallHistoryResponse,
     ConversionGroupOut,
     ConversionResponse,
+    ConversionSummaryResponse,
+    ConversionWorkOrdersResponse,
     LineCallEventOut,
     LineCallsResponse,
     OpenMissedCallOut,
@@ -406,6 +409,15 @@ def line_calls(
     )
 
 
+def _split_departments(departments: str | None) -> list[str] | None:
+    """Comma-separated raw 1C department names (the dashboard's department
+    filter) -> list; None/blank = no filter."""
+    if not departments:
+        return None
+    names = [name.strip() for name in departments.split(",") if name.strip()]
+    return names or None
+
+
 def _event_out(
     event: telephony_stats_service.LineCallEvent,
     workshop_labels: dict[uuid.UUID, str],
@@ -421,10 +433,69 @@ def _event_out(
     return LineCallEventOut.model_validate(values)
 
 
+@router.get("/conversion/work-orders", response_model=ConversionWorkOrdersResponse)
+def conversion_work_orders(
+    kind: str,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    departments: str | None = None,
+    db: Session = Depends(get_db),
+) -> ConversionWorkOrdersResponse:
+    """Ids of the work orders counted in a donut's "Заказ-нарядов" figure
+    (kind = "new" | "existing") - the work-order list filters down to them."""
+    if kind not in ("new", "existing"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="kind must be 'new' or 'existing'",
+        )
+    today = date.today()
+    range_start = start_date or today.replace(day=1)
+    range_end = end_date or today
+    if range_end < range_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="end_date must not be before start_date",
+        )
+    return ConversionWorkOrdersResponse(
+        work_order_ids=conversion_service.conversion_work_order_ids(
+            db, range_start, range_end, kind, _split_departments(departments)
+        )
+    )
+
+
+@router.get("/conversion/summary", response_model=ConversionSummaryResponse)
+def conversion_summary(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    departments: str | None = None,
+    db: Session = Depends(get_db),
+) -> ConversionSummaryResponse:
+    """Конверсия новых клиентов в заказ-наряды за период (product ask,
+    2026-10-24) - the donut on Аналитика. Default period: the current month
+    so far. See conversion_service.get_conversion_summary."""
+    today = date.today()
+    range_start = start_date or today.replace(day=1)
+    range_end = end_date or today
+    if range_end < range_start:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="end_date must not be before start_date",
+        )
+    summary = conversion_service.get_conversion_summary(
+        db, range_start, range_end, _split_departments(departments)
+    )
+    return ConversionSummaryResponse(
+        start_date=range_start,
+        end_date=range_end,
+        **dataclasses.asdict(summary),
+    )
+
+
 @router.get("/conversion", response_model=ConversionResponse)
 def conversion(
     start_date: date | None = None,
     end_date: date | None = None,
+    departments: str | None = None,
     db: Session = Depends(get_db),
 ) -> ConversionResponse:
     """Телефония -> "Конверсия" (product ask, 2026-10-23): inbound calls of
@@ -440,7 +511,9 @@ def conversion(
             detail="end_date must not be before start_date",
         )
 
-    groups = conversion_service.list_conversion(db, range_start, range_end)
+    groups = conversion_service.list_conversion(
+        db, range_start, range_end, _split_departments(departments)
+    )
     workshop_labels = _workshop_label_map(db)
     return ConversionResponse(
         start_date=range_start,
@@ -452,6 +525,11 @@ def conversion(
                 work_order_number=group.work_order_number,
                 work_order_created_date=group.work_order_created_date,
                 is_existing=group.is_existing,
+                segment=group.segment,
+                phone_converted=group.phone_converted,
+                client_class=group.client_class,
+                phone_unanswered=group.phone_unanswered,
+                conversion_row=group.conversion_row,
                 calls=[_event_out(call, workshop_labels) for call in group.calls],
             )
             for group in groups

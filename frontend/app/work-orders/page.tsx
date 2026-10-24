@@ -36,6 +36,13 @@ type SearchParams = {
   // Arriving from Телефония -> "Конверсия"'s "Открыть ЗН" - restricts the
   // (client-side) list to work orders on this phone number.
   phone?: string;
+  // Arriving from a conversion donut's "Заказ-нарядов" (Аналитика) - only the
+  // work orders counted in that figure: new/existing clients, the dashboard's
+  // period and department filter (resolved by the backend).
+  conv?: string;
+  conv_from?: string;
+  conv_to?: string;
+  conv_departments?: string;
 };
 
 export default async function WorkOrdersPage({
@@ -65,6 +72,16 @@ export default async function WorkOrdersPage({
         initialOnlyIndividualCustomer={params.individual === "1"}
         initialUnpaid={params.unpaid === "1"}
         initialPhone={params.phone}
+        conversionFilter={
+          (params.conv === "new" || params.conv === "existing") && params.conv_from && params.conv_to
+            ? {
+                kind: params.conv,
+                from: params.conv_from,
+                to: params.conv_to,
+                departments: params.conv_departments ?? "",
+              }
+            : undefined
+        }
       />
     </div>
   );

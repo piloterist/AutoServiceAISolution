@@ -459,6 +459,63 @@ export function getWorkOrders(
   });
 }
 
+// Конверсия новых клиентов в заказ-наряды за период (страница Аналитика) -
+// see backend conversion_service.get_conversion_summary for the rules.
+export type ConversionSummary = {
+  start_date: string;
+  end_date: string;
+  calls_total: number;
+  talk_phones: number;
+  topic_phones: number;
+  new_clients: number;
+  converted_new_clients: number;
+  work_orders_new_clients: number;
+  work_orders_total: number;
+  conversion_pct: number | null;
+  // The same funnel for existing clients (all earlier work orders finished).
+  existing_topic_phones: number;
+  existing_excluded: number;
+  existing_clients: number;
+  converted_existing_clients: number;
+  work_orders_existing_clients: number;
+  existing_conversion_pct: number | null;
+  // Figures beside the donuts, all in unique phone numbers: the target ones
+  // (= new_clients + existing_clients) and those missed and never reached
+  // within the period.
+  target_phones: number;
+  unanswered_new: number;
+  unanswered_existing: number;
+};
+
+// The work orders counted in a donut's "Заказ-нарядов" figure.
+export function getConversionWorkOrderIds(params: {
+  kind: "new" | "existing";
+  startDate: string;
+  endDate: string;
+  departments?: string[];
+}): Promise<{ work_order_ids: string[] }> {
+  return backendGet<{ work_order_ids: string[] }>("/api/v1/telephony/conversion/work-orders", {
+    kind: params.kind,
+    start_date: params.startDate,
+    end_date: params.endDate,
+    departments: departmentsParam(params.departments),
+  });
+}
+
+export function getConversionSummary(params: {
+  dateFrom: string;
+  dateTo: string;
+  // The dashboard's department filter (raw 1C names): the figures are then
+  // for the workshop(s) mapped to them in Settings.
+  departments?: string[];
+}): Promise<ConversionSummary> {
+  return backendGet<ConversionSummary>("/api/v1/telephony/conversion/summary", {
+    start_date: params.dateFrom,
+    end_date: params.dateTo,
+    departments: departmentsParam(params.departments),
+  });
+}
+
 export function getMonthlySummary(
   params?: PeriodAndDepartmentParams,
 ): Promise<MonthlySummaryResponse> {
@@ -1385,6 +1442,18 @@ export type ConversionGroup = {
   // first call.
   is_existing: boolean;
   calls: LineCallEvent[]; // oldest first
+  // How the Аналитика conversion treats this phone ("none" = no real
+  // conversation with a defined topic in the period) and whether it got a
+  // work order - see lib/conversion-cohorts.ts.
+  segment: "new" | "existing_counted" | "existing_excluded" | "none";
+  phone_converted: boolean;
+  // The phone's class whether or not it had a topic conversation.
+  client_class: "new" | "existing_counted" | "existing_excluded";
+  // Missed and not reached by the end of the period.
+  phone_unanswered: boolean;
+  // The phone's first group that led to a counted work order - one row per
+  // converted number ("Дошли до заказ-наряда").
+  conversion_row: boolean;
 };
 
 export type ConversionResponse = {
@@ -1396,10 +1465,12 @@ export type ConversionResponse = {
 export function getConversion(params: {
   startDate?: string;
   endDate?: string;
+  departments?: string[];
 }): Promise<ConversionResponse> {
   return backendGet<ConversionResponse>("/api/v1/telephony/conversion", {
     start_date: params.startDate ?? "",
     end_date: params.endDate ?? "",
+    departments: departmentsParam(params.departments),
   });
 }
 
