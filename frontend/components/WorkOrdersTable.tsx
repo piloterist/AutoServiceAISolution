@@ -85,6 +85,8 @@ function matchesIndividualCustomerFilter(isIndividual: boolean, onlyIndividual: 
 function isUnpaidClosedIndividual(item: WorkOrderListItem): boolean {
   if (item.status !== "Закрыт") return false;
   if (!item.is_individual_customer) return false;
+  // A zero-sum order has nothing to pay - never "closed without payment".
+  if (Number(item.amount) === 0) return false;
   const paid = item.paid_amount ? Number(item.paid_amount) : 0;
   return paid === 0;
 }
@@ -98,16 +100,26 @@ function isUnpaidClosedIndividual(item: WorkOrderListItem): boolean {
  * selection means "show everything", not "show nothing". */
 const PAYMENT_BUCKETS = ["Полная оплата", "Частичная оплата", "Без оплаты"] as const;
 
-function paymentBucketLabel(percent: string | null): (typeof PAYMENT_BUCKETS)[number] {
+function paymentBucketLabel(
+  percent: string | null,
+  amount: string | number,
+): (typeof PAYMENT_BUCKETS)[number] {
+  // A zero-sum order has nothing to pay, so it counts as fully paid (product
+  // ask, 2026-10-25) - otherwise it lands in "Без оплаты".
+  if (Number(amount) === 0) return "Полная оплата";
   const value = percent === null ? 0 : Number(percent);
   if (value <= 0) return "Без оплаты";
   if (value < 100) return "Частичная оплата";
   return "Полная оплата";
 }
 
-function matchesPaymentFilter(percent: string | null, selected: string[]): boolean {
+function matchesPaymentFilter(
+  percent: string | null,
+  amount: string | number,
+  selected: string[],
+): boolean {
   if (selected.length === 0) return true;
-  return selected.includes(paymentBucketLabel(percent));
+  return selected.includes(paymentBucketLabel(percent, amount));
 }
 
 // A bare "YYYY-MM-DD" from a plain <input type="date"> picker means a
@@ -390,6 +402,7 @@ export function WorkOrdersTable({
   paidFrom,
   paidTo,
   onlyReceivables,
+  onlyRevenue,
   workshopId,
   initialOnlyIndividualCustomer,
   initialUnpaid,
@@ -421,6 +434,9 @@ export function WorkOrdersTable({
    * client-side re-filter of `rows`. `workshopId` scopes it like Cockpit's
    * own цех filter; omitted means company-wide. */
   onlyReceivables?: boolean;
+  /** From the dashboard's Выручка tile: only the orders that make up that
+   * figure (server-side, like onlyReceivables). */
+  onlyRevenue?: boolean;
   workshopId?: string;
   /** From Cockpit's "₽" lamp (product ask, 2026-10-17) - seeds the
    * "Физ.лицо" checkbox. Client-side filter, like initialStatus above, not
@@ -465,7 +481,7 @@ export function WorkOrdersTable({
       setTotal(partialTotal);
     };
 
-    const hasServerFilter = Boolean(paidFrom || paidTo || onlyReceivables);
+    const hasServerFilter = Boolean(paidFrom || paidTo || onlyReceivables || onlyRevenue);
 
     if (!hasServerFilter) {
       const cached = getCachedWorkOrders();
@@ -481,7 +497,7 @@ export function WorkOrdersTable({
     }
 
     const task = hasServerFilter
-      ? loadWorkOrdersFiltered({ paidFrom, paidTo, onlyReceivables, workshopId }, onProgress)
+      ? loadWorkOrdersFiltered({ paidFrom, paidTo, onlyReceivables, onlyRevenue, workshopId }, onProgress)
       : loadWorkOrdersCached(onProgress);
 
     task
@@ -500,7 +516,7 @@ export function WorkOrdersTable({
     return () => {
       cancelled = true;
     };
-  }, [paidFrom, paidTo, onlyReceivables, workshopId]);
+  }, [paidFrom, paidTo, onlyReceivables, onlyRevenue, workshopId]);
 
   // A link with real filter params (e.g. a dashboard status chip or the
   // revenue tile) always wins for this visit; otherwise restore whatever
@@ -761,7 +777,7 @@ export function WorkOrdersTable({
 
       if (!isWithinDateRange(row.item.document_date, dateFrom, dateTo)) return false;
       if (!isWithinDateRange(row.item.closed_date, closedFrom, closedTo)) return false;
-      if (!matchesPaymentFilter(row.item.payment_percent, selectedPayments)) return false;
+      if (!matchesPaymentFilter(row.item.payment_percent, row.item.amount, selectedPayments)) return false;
       if (!matchesInternalFilter(row.item.is_internal, internalFilter)) return false;
       if (!matchesScheduledFilter(row.item.is_scheduled, scheduledFilter)) return false;
       if (!matchesIndividualCustomerFilter(row.item.is_individual_customer, onlyIndividualCustomer)) {
@@ -885,6 +901,11 @@ export function WorkOrdersTable({
       {(paidFrom || paidTo) && (
         <p className="chart-subtitle">
           Показаны заказ-наряды с оплатами за период {paidFrom || "…"} – {paidTo || "…"}
+        </p>
+      )}
+      {onlyRevenue && (
+        <p className="chart-subtitle">
+          Показаны заказ-наряды, формирующие выручку за период (без гарантийных и виртуальных)
         </p>
       )}
       {onlyReceivables && (

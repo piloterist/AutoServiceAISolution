@@ -59,6 +59,10 @@ class AppSettings(Base):
     # orders list's only_receivables filter) per that product ask's own
     # scope. None/empty = nothing configured as warranty yet.
     warranty_repair_types: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
+    # "Виртуальные" (product ask, 2026-10-25): repair types picked from the same
+    # list as warranty_repair_types. Like warranty, they never count as revenue
+    # on any tab (see settings_service.revenue_excluded_repair_types).
+    virtual_repair_types: Mapped[list[str] | None] = mapped_column(ARRAY(String), nullable=True)
 
     # Runtime on/off switch for the Planner's "Получить ЗН" live 5Systems
     # plate lookup (see services/fivesystems_client.py) - distinct from

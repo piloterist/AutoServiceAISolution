@@ -21,7 +21,7 @@ from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.work_order_payment_history import WorkOrderPaymentHistory
 from app.models.work_order_status_history import WorkOrderStatusHistory
-from app.services.settings_service import get_app_settings
+from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
 # Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
 # convention already used throughout this codebase (see
@@ -93,6 +93,7 @@ def list_work_orders(
     paid_from: datetime | None = None,
     paid_to: datetime | None = None,
     only_receivables: bool = False,
+    only_revenue: bool = False,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[WorkOrder], int]:
@@ -154,6 +155,22 @@ def list_work_orders(
                 )
             )
 
+    if only_revenue:
+        # Exactly the orders behind the dashboard's Выручка figure (closed,
+        # a revenue status, not internal when that is configured, not a
+        # Гарантийный/Виртуальный repair type); the period and department
+        # come from the link's own closed_from/closed_to and departments.
+        settings = get_settings()
+        app_settings = get_app_settings(db)
+        filters.append(WorkOrder.closed_date.is_not(None))
+        if settings.revenue_statuses_list:
+            filters.append(WorkOrder.status.in_(settings.revenue_statuses_list))
+        if app_settings.exclude_internal_orders:
+            filters.append(WorkOrder.is_internal.is_(False))
+        excluded = revenue_excluded_repair_types(app_settings)
+        if excluded:
+            filters.append(_not_excluded_repair_type(excluded))
+
     base_query = select(WorkOrder).where(*filters)
 
     total = db.execute(select(func.count()).select_from(base_query.subquery())).scalar_one()
@@ -167,6 +184,16 @@ def list_work_orders(
     return list(items), total
 
 
+def _not_excluded_repair_type(excluded_repair_types: list[str] | None):
+    """Гарантийные and Виртуальные (product ask, 2026-10-25): those repair
+    types (Settings -> Общие) are not revenue. NULL repair_type must stay in - a
+    plain NOT IN would drop it (NULL NOT IN (...) is NULL, not true)."""
+    return or_(
+        WorkOrder.repair_type.is_(None),
+        WorkOrder.repair_type.not_in(excluded_repair_types or []),
+    )
+
+
 def monthly_summary(
     db: Session,
     *,
@@ -175,6 +202,7 @@ def monthly_summary(
     departments: list[str] | None = None,
     revenue_statuses: list[str] | None = None,
     exclude_internal: bool = False,
+    excluded_repair_types: list[str] | None = None,
 ) -> list[dict]:
     """Total amount and count of work orders per calendar month, oldest first.
 
@@ -202,6 +230,8 @@ def monthly_summary(
         filters.append(WorkOrder.status.in_(revenue_statuses))
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
+    if excluded_repair_types:
+        filters.append(_not_excluded_repair_type(excluded_repair_types))
 
     month = _msk_date_trunc("month", WorkOrder.closed_date).label("month")
 
@@ -234,6 +264,7 @@ def revenue_paid_amount(
     departments: list[str] | None = None,
     revenue_statuses: list[str] | None = None,
     exclude_internal: bool = False,
+    excluded_repair_types: list[str] | None = None,
 ) -> Decimal:
     """Of the work orders that make up the revenue figure for this period
     (same closed_date/department/revenue_statuses filter as
@@ -251,6 +282,8 @@ def revenue_paid_amount(
         filters.append(WorkOrder.status.in_(revenue_statuses))
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
+    if excluded_repair_types:
+        filters.append(_not_excluded_repair_type(excluded_repair_types))
 
     return db.execute(
         select(func.coalesce(func.sum(WorkOrder.paid_amount), 0)).where(*filters)
@@ -320,6 +353,7 @@ def trend_summary(
     departments: list[str] | None = None,
     revenue_statuses: list[str] | None = None,
     exclude_internal: bool = False,
+    excluded_repair_types: list[str] | None = None,
     granularity: str | None = None,
 ) -> tuple[list[dict], str]:
     """Revenue/count trend bucketed by day, week, or month, oldest first.
@@ -341,6 +375,8 @@ def trend_summary(
         filters.append(WorkOrder.status.in_(revenue_statuses))
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
+    if excluded_repair_types:
+        filters.append(_not_excluded_repair_type(excluded_repair_types))
 
     period = _msk_date_trunc(granularity, WorkOrder.closed_date).label("period")
 
@@ -442,6 +478,7 @@ def department_summary(
     departments: list[str] | None = None,
     revenue_statuses: list[str] | None = None,
     exclude_internal: bool = False,
+    excluded_repair_types: list[str] | None = None,
 ) -> list[dict]:
     """Total amount and count of work orders per department, for a period.
 
@@ -461,6 +498,8 @@ def department_summary(
         filters.append(WorkOrder.status.in_(revenue_statuses))
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
+    if excluded_repair_types:
+        filters.append(_not_excluded_repair_type(excluded_repair_types))
 
     rows = db.execute(
         select(

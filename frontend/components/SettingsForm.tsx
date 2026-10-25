@@ -45,6 +45,15 @@ export function SettingsForm({
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type],
     );
   };
+  // "Виртуальные": same list, same kind of choice - never revenue either.
+  const [virtualRepairTypes, setVirtualRepairTypes] = useState<string[]>(
+    initialSettings.virtual_repair_types ?? [],
+  );
+  const toggleVirtualRepairType = (type: string) => {
+    setVirtualRepairTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type],
+    );
+  };
   // Planner's "Получить ЗН" live 5Systems plate lookup - a runtime switch
   // staff can flip here without a deploy. Still requires the backend's own
   // ENABLE_FIVESYSTEMS_LOOKUP env var (credentials configured) - this
@@ -93,6 +102,7 @@ export function SettingsForm({
           exclude_internal_orders: excludeInternalOrders,
           hide_internal_orders: hideInternalOrders,
           warranty_repair_types: warrantyRepairTypes,
+          virtual_repair_types: virtualRepairTypes,
           fivesystems_api_enabled: fivesystemsApiEnabled,
           daily_logout_time: dailyLogoutTime,
           planner_auto_match_enabled: plannerAutoMatchEnabled,
@@ -200,9 +210,24 @@ export function SettingsForm({
             emptyMessage="Нет данных по видам ремонта"
           />
           <p className="settings-description">
-            Используется только фильтром «Текущие/Страховые» на вкладке Финансы →
-            Дебиторская задолженность — на остальные показатели (дашборд, ДЗ на ESP, список
-            заказ-нарядов) не влияет.
+            Не учитываются в выручке на всех вкладках (Аналитика, ESP, Финансы) и в дебиторской
+            задолженности; фильтр «Текущие/Страховые» на Финансы → Дебиторская задолженность тоже
+            их учитывает.
+          </p>
+        </div>
+
+        <div className="settings-field">
+          <span>Виртуальные (виды ремонта)</span>
+          <MultiSelectDropdown
+            label="Виды ремонта"
+            options={repairTypes}
+            selected={virtualRepairTypes}
+            onToggle={toggleVirtualRepairType}
+            onClear={() => setVirtualRepairTypes([])}
+            emptyMessage="Нет данных по видам ремонта"
+          />
+          <p className="settings-description">
+            Не попадают в выручку ни на одной вкладке (Аналитика, ESP, Финансы).
           </p>
         </div>
 

@@ -31,7 +31,7 @@ from app.services.cockpit_service import (
     _payments,
     period_bounds,
 )
-from app.services.settings_service import get_app_settings
+from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
 BUDGET_FIELDS = ("plan_revenue", "expenses")
 
@@ -87,6 +87,7 @@ def get_budget_year(
                 period_end=period_end,
                 revenue_statuses=revenue_statuses,
                 exclude_internal=exclude_internal,
+                excluded_repair_types=revenue_excluded_repair_types(app_settings),
             )
             payments = _payments(
                 db,

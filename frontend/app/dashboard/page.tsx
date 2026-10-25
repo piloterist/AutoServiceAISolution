@@ -346,6 +346,9 @@ export default async function DashboardPage({
     const params = new URLSearchParams();
     params.set("closed_from", dateFrom);
     params.set("closed_to", dateTo);
+    // Only what makes up the figure: revenue statuses, no internal/Гарантийные/
+    // Виртуальные - decided by the backend (only_revenue).
+    params.set("only_revenue", "1");
     if (selectedDepartments[0]) params.set("departments", selectedDepartments[0]);
     return `/work-orders?${params.toString()}`;
   })();

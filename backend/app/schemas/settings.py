@@ -28,6 +28,7 @@ class AppSettingsResponse(BaseModel):
     exclude_internal_orders: bool
     hide_internal_orders: bool
     warranty_repair_types: list[str]
+    virtual_repair_types: list[str]
     fivesystems_api_enabled: bool
     daily_logout_time: str
     planner_auto_match_enabled: bool
@@ -41,6 +42,9 @@ class AppSettingsResponse(BaseModel):
     _normalize_warranty_repair_types = field_validator("warranty_repair_types", mode="before")(
         _none_to_empty_list
     )
+    _normalize_virtual_repair_types = field_validator("virtual_repair_types", mode="before")(
+        _none_to_empty_list
+    )
 
 
 class AppSettingsUpdate(BaseModel):
@@ -49,6 +53,7 @@ class AppSettingsUpdate(BaseModel):
     exclude_internal_orders: bool = False
     hide_internal_orders: bool = False
     warranty_repair_types: list[str] = Field(default_factory=list)
+    virtual_repair_types: list[str] = Field(default_factory=list)
     fivesystems_api_enabled: bool = False
     daily_logout_time: str = "23:30"
     planner_auto_match_enabled: bool = False

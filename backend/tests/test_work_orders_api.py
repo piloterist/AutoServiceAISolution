@@ -1595,3 +1595,84 @@ def test_trend_summary_excludes_internal_when_setting_is_on(
     assert response.status_code == 200
     total = sum(Decimal(item["total_amount"]) for item in response.json()["items"])
     assert total == Decimal("100.00")
+
+
+def test_revenue_summaries_exclude_warranty_repair_types(client, db_session, auth_headers) -> None:
+    """Гарантийные виды ремонта (Settings -> Общие) are not revenue: the
+    monthly tile, the paid share, the by-department chart and the trend all
+    skip them; an order with no repair type stays in."""
+    client.put(
+        SETTINGS_URL,
+        headers=auth_headers,
+        json={"warranty_repair_types": ["Гарантийный"]},
+    )
+    for number, repair_type, amount in (
+        ("WO-CURRENT", "Текущий", "100.00"),
+        ("WO-NONE", None, "10.00"),
+        ("WO-WARRANTY", "Гарантийный", "5000.00"),
+    ):
+        db_session.add(
+            _make_work_order(
+                external_number=number,
+                department="Кузовной цех",
+                repair_type=repair_type,
+                amount=Decimal(amount),
+                paid_amount=Decimal(amount),
+                status="Закрыт",
+                closed_date=datetime(2026, 6, 5, 12),
+            )
+        )
+    db_session.commit()
+    period = {"date_from": "2026-06-01", "date_to": "2026-07-01"}
+
+    monthly = client.get(SUMMARY_URL, headers=auth_headers, params=period).json()["items"]
+    by_dept = client.get(
+        "/api/v1/work-orders/summary/by-department", headers=auth_headers, params=period
+    ).json()["items"]
+    paid = client.get(
+        "/api/v1/work-orders/summary/revenue-paid", headers=auth_headers, params=period
+    ).json()
+    trend = client.get(
+        "/api/v1/work-orders/summary/trend", headers=auth_headers, params=period
+    ).json()["items"]
+
+    assert monthly[0]["total_amount"] == "110.00"
+    assert monthly[0]["work_order_count"] == 2
+    assert by_dept[0]["total_amount"] == "110.00"
+    assert Decimal(paid["total_amount"]) == Decimal("110.00")
+    assert sum(Decimal(item["total_amount"]) for item in trend) == Decimal("110.00")
+
+
+def test_only_revenue_list_matches_the_revenue_figure(client, db_session, auth_headers) -> None:
+    """The dashboard tile's link (only_revenue) lists exactly the orders that
+    make up the figure: closed, not Гарантийный/Виртуальный."""
+    client.put(
+        SETTINGS_URL,
+        headers=auth_headers,
+        json={"warranty_repair_types": ["Гарантийный"], "virtual_repair_types": ["Виртуальный"]},
+    )
+    for number, repair_type, closed in (
+        ("WO-CURRENT", "Текущий", datetime(2026, 6, 5, 12)),
+        ("WO-NONE", None, datetime(2026, 6, 5, 12)),
+        ("WO-WARRANTY", "Гарантийный", datetime(2026, 6, 5, 12)),
+        ("WO-VIRTUAL", "Виртуальный", datetime(2026, 6, 5, 12)),
+        ("WO-OPEN", "Текущий", None),
+    ):
+        db_session.add(
+            _make_work_order(
+                external_number=number,
+                repair_type=repair_type,
+                status="Закрыт" if closed else "В работе",
+                closed_date=closed,
+            )
+        )
+    db_session.commit()
+
+    everything = client.get(LIST_URL, headers=auth_headers).json()["total"]
+    revenue = client.get(LIST_URL, headers=auth_headers, params={"only_revenue": "true"}).json()
+
+    assert everything == 5
+    assert sorted(item["external_number"] for item in revenue["items"]) == [
+        "WO-CURRENT",
+        "WO-NONE",
+    ]

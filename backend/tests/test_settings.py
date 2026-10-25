@@ -138,3 +138,18 @@ def test_put_settings_pm_fields_are_independent_of_the_insurance_fields(
     assert body["exclude_internal_insurance"] is True
     assert body["exclude_internal_orders"] is True
     assert body["hide_internal_orders"] is True
+
+
+def test_put_settings_persists_virtual_repair_types(client, auth_headers) -> None:
+    response = client.put(
+        SETTINGS_URL,
+        headers=auth_headers,
+        json={"virtual_repair_types": ["Виртуальный", "Тест"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["virtual_repair_types"] == ["Виртуальный", "Тест"]
+    assert client.get(SETTINGS_URL, headers=auth_headers).json()["virtual_repair_types"] == [
+        "Виртуальный",
+        "Тест",
+    ]

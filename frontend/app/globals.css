@@ -4340,6 +4340,10 @@ table.bt {
   text-decoration: underline;
 }
 
+.telephony-group-row {
+  cursor: pointer;
+}
+
 .telephony-group-row--open {
   background: var(--bg);
 }

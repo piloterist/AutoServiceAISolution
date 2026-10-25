@@ -918,6 +918,28 @@ def test_does_not_flag_fully_paid_individual_order(db_session: Session, monkeypa
     assert snapshot.has_unpaid_individual_closed_orders is False
 
 
+def test_does_not_flag_zero_sum_individual_order(db_session: Session, monkeypatch) -> None:
+    """A closed order for 0 ₽ (with no payments) has nothing to pay - not
+    "closed without payment"."""
+    _patch_settings(monkeypatch)
+    db_session.add(
+        _make_work_order(
+            status="Закрыт",
+            closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+            customer_name="Иванов Иван Иванович",
+            amount=Decimal("0"),
+            payment_percent=None,
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.has_unpaid_individual_closed_orders is False
+
+
 def test_does_not_flag_unpaid_legal_entity_order(db_session: Session, monkeypatch) -> None:
     _patch_settings(monkeypatch)
     db_session.add(
@@ -1012,3 +1034,30 @@ def test_receivables_excludes_warranty_repair_types(db_session: Session, monkeyp
     )
 
     assert snapshot.receivables_rub == Decimal("230.00")
+
+
+def test_revenue_skips_warranty_and_virtual_repair_types(db_session: Session, monkeypatch) -> None:
+    """Гарантийные and Виртуальные (Settings -> Общие) are not revenue; an
+    order with no repair type stays in."""
+    from app.services.settings_service import get_app_settings
+
+    _patch_settings(monkeypatch)
+    app_settings = get_app_settings(db_session)
+    app_settings.warranty_repair_types = ["Гарантийный"]
+    app_settings.virtual_repair_types = ["Виртуальный"]
+    closed = datetime(2026, 9, 15, tzinfo=UTC)
+    db_session.add_all(
+        [
+            _make_work_order(closed_date=closed, amount=Decimal("100"), repair_type="Текущий"),
+            _make_work_order(closed_date=closed, amount=Decimal("10"), repair_type=None),
+            _make_work_order(closed_date=closed, amount=Decimal("5000"), repair_type="Гарантийный"),
+            _make_work_order(closed_date=closed, amount=Decimal("7000"), repair_type="Виртуальный"),
+        ]
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.revenue_rub == Decimal("110")

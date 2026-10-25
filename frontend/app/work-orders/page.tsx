@@ -24,6 +24,9 @@ type SearchParams = {
   // InstrumentCluster.tsx) - same server-side-filter treatment as
   // paid_from/paid_to above.
   only_receivables?: string;
+  // Arriving from the dashboard's Выручка tile - only the orders that make up
+  // that figure (server-side).
+  only_revenue?: string;
   workshop_id?: string;
   // Arriving from Cockpit's new "₽" lamp (see components/cockpit/
   // InstrumentCluster.tsx's openUnpaidIndividual) - seeds the "Физ.лицо"
@@ -68,6 +71,7 @@ export default async function WorkOrdersPage({
         paidFrom={params.paid_from}
         paidTo={params.paid_to}
         onlyReceivables={params.only_receivables === "1"}
+        onlyRevenue={params.only_revenue === "1"}
         workshopId={params.workshop_id}
         initialOnlyIndividualCustomer={params.individual === "1"}
         initialUnpaid={params.unpaid === "1"}

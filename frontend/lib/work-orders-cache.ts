@@ -84,7 +84,13 @@ export function getCachedWorkOrders(): CacheEntry | null {
  * did (see the 2026-09-17 5000-row truncation fix). Calls onProgress after
  * every page. */
 async function fetchAllWorkOrders(
-  params: { paidFrom?: string; paidTo?: string; onlyReceivables?: boolean; workshopId?: string },
+  params: {
+    paidFrom?: string;
+    paidTo?: string;
+    onlyReceivables?: boolean;
+    onlyRevenue?: boolean;
+    workshopId?: string;
+  },
   onProgress?: (items: WorkOrderListItem[], total: number) => void,
 ): Promise<{ items: WorkOrderListItem[]; total: number }> {
   let items: WorkOrderListItem[] = [];
@@ -96,6 +102,7 @@ async function fetchAllWorkOrders(
     if (params.paidFrom) query.set("paid_from", params.paidFrom);
     if (params.paidTo) query.set("paid_to", params.paidTo);
     if (params.onlyReceivables) query.set("only_receivables", "true");
+    if (params.onlyRevenue) query.set("only_revenue", "true");
     if (params.workshopId) query.set("workshop_id", params.workshopId);
 
     const res = await fetch(`/api/work-orders?${query.toString()}`);
@@ -169,7 +176,13 @@ export function invalidateWorkOrdersCache(): void {
  * a paid_from/paid_to (or only_receivables) view doesn't go through the
  * cache. */
 export function loadWorkOrdersFiltered(
-  params: { paidFrom?: string; paidTo?: string; onlyReceivables?: boolean; workshopId?: string },
+  params: {
+    paidFrom?: string;
+    paidTo?: string;
+    onlyReceivables?: boolean;
+    onlyRevenue?: boolean;
+    workshopId?: string;
+  },
   onProgress?: (items: WorkOrderListItem[], total: number) => void,
 ): Promise<{ items: WorkOrderListItem[]; total: number }> {
   return fetchAllWorkOrders(params, onProgress);

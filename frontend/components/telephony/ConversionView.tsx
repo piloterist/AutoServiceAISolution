@@ -24,7 +24,7 @@ import { getConversionClient } from "@/lib/telephony-client";
 // "Конверсия" can list a few thousand rows for a long period - render it in
 // pages instead of putting hundreds of recording players on the page at once.
 const PAGE_SIZE = 200;
-const COLUMN_COUNT = 16;
+const COLUMN_COUNT = 15;
 // A call counts as a real conversation from this many seconds of talk time
 // (same threshold as the backend's MIN_REAL_TALK_SEC).
 const REAL_TALK_SEC = 5;
@@ -469,7 +469,6 @@ export function ConversionView({
           <table className="data-table telephony-events-table telephony-conversion-table">
             <thead>
               <tr>
-                <th />
                 <th>Источник</th>
                 <th>
                   <button type="button" className="telephony-sort-btn" onClick={() => toggleSort("time")}>
@@ -495,7 +494,6 @@ export function ConversionView({
                 <th />
               </tr>
               <tr className="telephony-filter-row">
-                <th />
                 <th>{selectInput("source", "Источник", options.source)}</th>
                 <th>{textInput("time", "Время")}</th>
                 <th>{selectInput("event", "Событие", options.event)}</th>
@@ -536,31 +534,20 @@ export function ConversionView({
                           ? `${eventRowClass(call)} telephony-group-row telephony-group-row--open`
                           : `${eventRowClass(call)} telephony-group-row`
                       }
+                      aria-expanded={isOpen}
+                      onClick={(event) => {
+                        // A click on the row opens/closes its calls; clicks on
+                        // the controls inside it (links, player, topic) do not.
+                        if ((event.target as HTMLElement).closest("a, button, audio, select, input")) return;
+                        toggleExpanded(key);
+                      }}
                     >
-                      <td>
-                        <button
-                          type="button"
-                          className="telephony-expand-btn"
-                          onClick={() => toggleExpanded(key)}
-                          aria-expanded={isOpen}
-                          aria-label={isOpen ? "Скрыть звонки" : "Показать все звонки"}
-                        >
-                          {isOpen ? "▾" : "▸"}
-                        </button>
-                      </td>
                       <td>{call.source_name ?? "—"}</td>
                       <td>{formatEventTime(call.time)}</td>
                       <td>{eventLabel(call)}</td>
                       <td>{formatClient(call.client)}</td>
                       <td className="telephony-num">
-                        <button
-                          type="button"
-                          className="telephony-calls-count-btn"
-                          onClick={() => toggleExpanded(key)}
-                          title="Показать все звонки"
-                        >
-                          {total}
-                        </button>
+                        {total}
                       </td>
                       <td>{calledLineCell(call)}</td>
                       <td>{answeredByCell(call)}</td>

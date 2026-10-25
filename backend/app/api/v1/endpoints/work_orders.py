@@ -45,7 +45,7 @@ from app.schemas.work_order import (
 from app.services import planner_service
 from app.services.cockpit_service import _mapped_source_departments
 from app.services.internal_order_rules import is_physical_person
-from app.services.settings_service import get_app_settings
+from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 from app.services.work_order_query_service import (
     delete_work_order,
     department_summary,
@@ -93,6 +93,10 @@ def get_work_orders(
         default=False,
         description="Restrict to exactly the work orders behind Cockpit's ДЗ figure",
     ),
+    only_revenue: bool = Query(
+        default=False,
+        description="Restrict to the work orders that make up the dashboard's Выручка figure",
+    ),
     workshop_id: UUID | None = Query(
         default=None,
         description="Scopes only_receivables to one workshop, like Cockpit's own filter",
@@ -124,6 +128,7 @@ def get_work_orders(
         paid_from=paid_from,
         paid_to=paid_to,
         only_receivables=only_receivables,
+        only_revenue=only_revenue,
         limit=limit,
         offset=offset,
     )
@@ -173,6 +178,7 @@ def get_monthly_summary(
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
         exclude_internal=get_app_settings(db).exclude_internal_orders,
+        excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
     )
     return MonthlySummaryResponse(items=[MonthlySummaryItem(**row) for row in rows])
 
@@ -194,6 +200,7 @@ def get_revenue_paid_summary(
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
         exclude_internal=get_app_settings(db).exclude_internal_orders,
+        excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
     )
     return RevenuePaidSummaryResponse(total_amount=total)
 
@@ -215,6 +222,7 @@ def get_department_summary(
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
         exclude_internal=get_app_settings(db).exclude_internal_orders,
+        excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
 
@@ -286,6 +294,7 @@ def get_trend_summary(
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
         exclude_internal=get_app_settings(db).exclude_internal_orders,
+        excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
         granularity=granularity,
     )
     return TrendSummaryResponse(

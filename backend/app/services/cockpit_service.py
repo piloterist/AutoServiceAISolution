@@ -56,7 +56,7 @@ from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
 from app.services.internal_order_rules import is_physical_person
-from app.services.settings_service import get_app_settings
+from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
 # Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
 # convention already used throughout this codebase (see
@@ -192,6 +192,7 @@ def _closed_revenue(
     period_end: datetime,
     revenue_statuses: list[str],
     exclude_internal: bool,
+    excluded_repair_types: list[str] | None = None,
 ) -> Decimal:
     filters = [
         WorkOrder.closed_date.is_not(None),
@@ -204,6 +205,14 @@ def _closed_revenue(
         filters.append(WorkOrder.status.in_(revenue_statuses))
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
+    if excluded_repair_types:
+        # Гарантийные/Виртуальные are not revenue; NULL repair_type stays in.
+        filters.append(
+            or_(
+                WorkOrder.repair_type.is_(None),
+                WorkOrder.repair_type.not_in(excluded_repair_types),
+            )
+        )
     total = db.execute(select(func.sum(WorkOrder.amount)).where(*filters)).scalar_one()
     return total or Decimal("0")
 
@@ -257,6 +266,8 @@ def _has_unpaid_individual_closed_orders(db: Session, *, now: datetime) -> bool:
         db.execute(
             select(WorkOrder.customer_name).where(
                 WorkOrder.status == "Закрыт",
+                # A zero-sum order has nothing to pay (product ask, 2026-10-25).
+                WorkOrder.amount > 0,
                 WorkOrder.closed_date >= window_start,
                 WorkOrder.closed_date <= now,
                 or_(WorkOrder.payment_percent.is_(None), WorkOrder.payment_percent < 100),
@@ -504,6 +515,7 @@ def get_snapshot(
         period_end=period_end,
         revenue_statuses=revenue_statuses,
         exclude_internal=exclude_internal,
+        excluded_repair_types=revenue_excluded_repair_types(app_settings),
     )
     payments = _payments(
         db,

@@ -134,6 +134,9 @@ export type AppSettings = {
   // own Все/Страховые/Текущие filter only (see ReceivablesAgingView.tsx) -
   // not cockpit's own ДЗ figure, not the work orders list.
   warranty_repair_types: string[];
+  // "Виртуальные" (2026-10-25): picked from the same list; like the warranty
+  // ones they never count as revenue on any tab.
+  virtual_repair_types: string[];
   // Runtime on/off switch for the Planner's "Получить ЗН" live 5Systems
   // plate lookup - see backend/app/models/app_settings.py for how this
   // differs from ENABLE_FIVESYSTEMS_LOOKUP (the env var).
@@ -449,6 +452,11 @@ export function getWorkOrders(
      * the ДЗ bar on Cockpit links to. `workshopId` scopes it the same way
      * Cockpit's own цех filter does; omitted means company-wide. */
     onlyReceivables?: boolean;
+    /** Restricts to exactly the work orders behind the dashboard's Выручка
+     * figure (closed, revenue status, not Гарантийный/Виртуальный) - what the
+     * Выручка tile links to; the period/department come from the link's own
+     * closed_from/closed_to/departments. */
+    onlyRevenue?: boolean;
     workshopId?: string;
     limit?: number;
     offset?: number;
@@ -461,6 +469,7 @@ export function getWorkOrders(
     paid_from: params?.paidFrom ?? "",
     paid_to: dateToParam(params?.paidTo),
     only_receivables: params?.onlyReceivables ? "true" : "",
+    only_revenue: params?.onlyRevenue ? "true" : "",
     workshop_id: params?.workshopId ?? "",
     limit: params?.limit ? String(params.limit) : "",
     offset: params?.offset ? String(params.offset) : "",

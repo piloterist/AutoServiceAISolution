@@ -38,6 +38,7 @@ def update_app_settings(
     planner_auto_match_enabled: bool,
     planner_auto_match_interval_minutes: int,
     planner_search_exclude_closed_orders: bool,
+    virtual_repair_types: list[str] | None = None,
     cash_lock_from: date | None = None,
     cash_lock_to: date | None = None,
 ) -> AppSettings:
@@ -47,6 +48,7 @@ def update_app_settings(
     settings.exclude_internal_orders = exclude_internal_orders
     settings.hide_internal_orders = hide_internal_orders
     settings.warranty_repair_types = warranty_repair_types or None
+    settings.virtual_repair_types = virtual_repair_types or None
     settings.fivesystems_api_enabled = fivesystems_api_enabled
     settings.daily_logout_time = daily_logout_time
     settings.planner_auto_match_enabled = planner_auto_match_enabled
@@ -57,3 +59,13 @@ def update_app_settings(
     db.commit()
     db.refresh(settings)
     return settings
+
+
+def revenue_excluded_repair_types(settings: AppSettings) -> list[str]:
+    """Repair types that never count as revenue, on any tab: Гарантийные and
+    Виртуальные (Settings -> Общие), without duplicates."""
+    return list(
+        dict.fromkeys(
+            [*(settings.warranty_repair_types or []), *(settings.virtual_repair_types or [])]
+        )
+    )

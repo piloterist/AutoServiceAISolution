@@ -32,6 +32,7 @@ def write_settings(
         exclude_internal_orders=payload.exclude_internal_orders,
         hide_internal_orders=payload.hide_internal_orders,
         warranty_repair_types=payload.warranty_repair_types,
+        virtual_repair_types=payload.virtual_repair_types,
         fivesystems_api_enabled=payload.fivesystems_api_enabled,
         daily_logout_time=payload.daily_logout_time,
         planner_auto_match_enabled=payload.planner_auto_match_enabled,
