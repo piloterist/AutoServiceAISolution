@@ -5,7 +5,12 @@ import { getBudgetYear, getReceivablesAging } from "@/lib/backend-api";
 // this always needs a fresh backend read.
 export const dynamic = "force-dynamic";
 
-export default async function FinancePage() {
+export default async function FinancePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const { tab } = await searchParams;
   const year = new Date().getFullYear();
   let budget;
   let receivables;
@@ -28,7 +33,11 @@ export default async function FinancePage() {
       )}
 
       {budget && receivables && (
-        <FinanceView initialBudget={budget} initialReceivables={receivables} />
+        <FinanceView
+          initialBudget={budget}
+          initialReceivables={receivables}
+          initialTab={tab === "receivables" ? "receivables" : "budgets"}
+        />
       )}
     </div>
   );

@@ -1258,23 +1258,15 @@ function RevenueStack({
  * обратно, примерно их середина под серединой циферблата с оплатами"),
  * ~50% bigger than before - see .cockpit-payments-stack. Previously grouped
  * with the revenue strip into one right-side stack; split back out here.
- * ДЗ is clickable - opens the Work Orders list filtered to exactly the
- * orders behind that figure (see backend
- * work_order_query_service.list_work_orders's only_receivables); КЗ has no
- * real data source yet, so it stays decorative. */
-function PaymentsDebtStack({
-  receivables,
-  workshopId,
-}: {
-  receivables: number;
-  workshopId: string;
-}) {
+ * ДЗ is clickable - opens Финансы -> Дебиторская задолженность (product
+ * ask, 2026-10-25; it used to open the Work Orders list filtered by
+ * only_receivables); КЗ has no real data source yet, so it stays
+ * decorative. */
+function PaymentsDebtStack({ receivables }: { receivables: number }) {
   const router = useRouter();
 
   const openReceivables = () => {
-    const params = new URLSearchParams({ only_receivables: "1" });
-    if (workshopId) params.set("workshop_id", workshopId);
-    router.push(`/work-orders?${params.toString()}`);
+    router.push("/budget?tab=receivables");
   };
 
   return (
@@ -1536,7 +1528,7 @@ export function InstrumentCluster({
           nzpActive={nzpActive}
           effectiveRevenue={effectiveRevenue}
         />
-        <PaymentsDebtStack receivables={receivables} workshopId={workshopId} />
+        <PaymentsDebtStack receivables={receivables} />
       </div>
     </>
   );

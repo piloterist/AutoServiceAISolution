@@ -17,11 +17,13 @@ const TABS: { key: TabKey; label: string }[] = [
 export function FinanceView({
   initialBudget,
   initialReceivables,
+  initialTab = "budgets",
 }: {
   initialBudget: BudgetYear;
   initialReceivables: ReceivablesAging;
+  initialTab?: TabKey;
 }) {
-  const [tab, setTab] = useState<TabKey>("budgets");
+  const [tab, setTab] = useState<TabKey>(initialTab);
 
   return (
     <div>

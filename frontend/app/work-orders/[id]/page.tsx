@@ -43,11 +43,18 @@ export default async function WorkOrderDetailPage({
    * drill-down's ?only_receivables=1&workshop_id=..., a dashboard status
    * chip's ?status=...) instead of resetting to a bare /work-orders
    * (product ask, 2026-10-06). */
-  searchParams: Promise<{ from?: string }>;
+  searchParams: Promise<{ from?: string; back?: string }>;
 }) {
   const { id } = await params;
-  const { from } = await searchParams;
-  const backHref = from ? `/work-orders${from}` : "/work-orders";
+  const { from, back } = await searchParams;
+  // `back` is a full in-app path (e.g. Финансы -> Дебиторская задолженность);
+  // only same-site paths are accepted. `from` is the work-orders list's own
+  // query string.
+  const safeBack = back && back.startsWith("/") && !back.startsWith("//") ? back : null;
+  const backHref = safeBack ?? (from ? `/work-orders${from}` : "/work-orders");
+  const backLabel = safeBack?.startsWith("/budget")
+    ? "← К дебиторской задолженности"
+    : "← К списку заказ-нарядов";
   const user = await getCurrentUser();
   const isAdmin = user?.role === ROLE_ADMIN;
 
@@ -73,7 +80,7 @@ export default async function WorkOrderDetailPage({
   return (
     <div>
       <p className="detail-back">
-        <Link href={backHref}>← К списку заказ-нарядов</Link>
+        <Link href={backHref}>{backLabel}</Link>
       </p>
 
       {error && (

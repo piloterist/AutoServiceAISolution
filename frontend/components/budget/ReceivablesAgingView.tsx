@@ -27,6 +27,9 @@ const BUCKETS: { key: ReceivablesAgingBucket; label: string }[] = [
 // carries invoice_date/reference_date for whenever that changes.
 const LEADING_COLUMN_COUNT = 5;
 
+// Where the work-order card's back link returns to (product ask, 2026-10-25).
+const RECEIVABLES_PATH = "/budget?tab=receivables";
+
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("ru-RU", {
@@ -255,7 +258,11 @@ export function ReceivablesAgingView({ data }: { data: ReceivablesAging }) {
               <tr
                 key={row.work_order_id}
                 className="receivables-row"
-                onClick={() => router.push(`/work-orders/${row.work_order_id}`)}
+                onClick={() =>
+                  router.push(
+                    `/work-orders/${row.work_order_id}?back=${encodeURIComponent(RECEIVABLES_PATH)}`,
+                  )
+                }
               >
                 <td className="receivables-td-number">{row.work_order_number}</td>
                 <td className="receivables-td-date">{formatDateOrDash(row.closed_date)}</td>
