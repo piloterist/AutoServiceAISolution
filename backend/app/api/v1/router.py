@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     admin,
     auth,
     budget,
+    cash,
     cockpit,
     import_work_orders,
     leads,
@@ -28,3 +29,4 @@ api_router.include_router(cockpit.router)
 api_router.include_router(leads.router)
 api_router.include_router(budget.router)
 api_router.include_router(receivables.router)
+api_router.include_router(cash.router)

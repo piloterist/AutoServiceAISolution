@@ -197,6 +197,8 @@ class RoleTabVisibilityOut(BaseModel):
     id: uuid.UUID
     role: str
     visible_tabs: list[str]
+    all_departments: bool
+    cash_correction: bool
 
     model_config = {"from_attributes": True}
 
@@ -204,6 +206,10 @@ class RoleTabVisibilityOut(BaseModel):
 class RoleTabVisibilityWrite(BaseModel):
     role: str
     visible_tabs: list[str] = Field(min_length=1)
+    # "Все подразделения": this role sees every cash desk on the Касса page.
+    all_departments: bool = False
+    # "Корректировка кассы": may edit the cash book for any day, not only today.
+    cash_correction: bool = False
 
     def validate_choices(self) -> None:
         if self.role not in ROLES:

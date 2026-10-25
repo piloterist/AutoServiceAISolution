@@ -390,7 +390,11 @@ def create_role_tab_visibility(
         ) from exc
     try:
         row = admin_service.create_role_tab_visibility(
-            db, role=payload.role, visible_tabs=payload.visible_tabs
+            db,
+            role=payload.role,
+            visible_tabs=payload.visible_tabs,
+            all_departments=payload.all_departments,
+            cash_correction=payload.cash_correction,
         )
     except Exception as exc:  # unique role violation
         db.rollback()
@@ -412,7 +416,12 @@ def update_role_tab_visibility(
         ) from exc
     try:
         row = admin_service.update_role_tab_visibility(
-            db, row_id, role=payload.role, visible_tabs=payload.visible_tabs
+            db,
+            row_id,
+            role=payload.role,
+            visible_tabs=payload.visible_tabs,
+            all_departments=payload.all_departments,
+            cash_correction=payload.cash_correction,
         )
     except Exception as exc:
         db.rollback()
@@ -550,8 +559,12 @@ def _humanize_changes(changes: dict, *, employees: dict, statuses: dict, work_or
 
 
 @router.get("/audit-log", response_model=list[AuditLogEntryOut])
-def list_audit_log(db: Session = Depends(get_db)) -> list[AuditLogEntryOut]:
-    entries = admin_service.list_audit_log(db)
+def list_audit_log(
+    entity_type: str | None = None,
+    entity_id: uuid.UUID | None = None,
+    db: Session = Depends(get_db),
+) -> list[AuditLogEntryOut]:
+    entries = admin_service.list_audit_log(db, entity_type=entity_type, entity_id=entity_id)
 
     referenced_ids = _collect_referenced_ids(entries)
     work_order_ids = referenced_ids["work_order_id"] | {

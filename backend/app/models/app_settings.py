@@ -8,9 +8,9 @@ add a column per setting as they're introduced, same as every other model
 in this codebase.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy import Boolean, Date, DateTime, Integer, String, func
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -112,6 +112,12 @@ class AppSettings(Base):
     planner_search_exclude_closed_orders: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+
+    # Касса: the locked period (product ask, 2026-10-24) - no cash entry can be
+    # created, changed or deleted on a day from cash_lock_from to cash_lock_to,
+    # both inclusive. Both set or both empty.
+    cash_lock_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cash_lock_to: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

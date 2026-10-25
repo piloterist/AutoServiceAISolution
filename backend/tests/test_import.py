@@ -809,10 +809,13 @@ def test_import_stores_the_four_document_dates(client, db_session, auth_headers)
     work_order = db_session.execute(
         select(WorkOrder).where(WorkOrder.external_number == "DATES-0001")
     ).scalar_one()
-    assert work_order.created_date == datetime(2026, 6, 15, 9, 0, 0, tzinfo=UTC)
-    assert work_order.start_date == datetime(2026, 6, 16, 8, 0, 0, tzinfo=UTC)
-    assert work_order.end_date == datetime(2026, 9, 9, 17, 0, 0, tzinfo=UTC)
-    assert work_order.closed_date == datetime(2026, 9, 10, 12, 0, 0, tzinfo=UTC)
+    # 1C sends Moscow wall-clock values; they are stored as real UTC instants
+    # (-3 h), like the status history and payments.
+    assert work_order.document_date == datetime(2026, 6, 15, 7, 0, 0, tzinfo=UTC)
+    assert work_order.created_date == datetime(2026, 6, 15, 6, 0, 0, tzinfo=UTC)
+    assert work_order.start_date == datetime(2026, 6, 16, 5, 0, 0, tzinfo=UTC)
+    assert work_order.end_date == datetime(2026, 9, 9, 14, 0, 0, tzinfo=UTC)
+    assert work_order.closed_date == datetime(2026, 9, 10, 9, 0, 0, tzinfo=UTC)
 
 
 def _version(

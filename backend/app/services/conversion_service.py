@@ -70,17 +70,11 @@ class ConversionGroup:
 
 
 def _real_moment(stored: datetime | None) -> datetime | None:
-    """WorkOrder.created_date / closed_date / end_date / document_date hold
-    1C's naive Moscow clock reading stored AS IF IT WERE UTC (the import does
-    not convert them, unlike status history, payments and calls, which are
-    converted - see import_service._upsert_work_order vs _naive_msk_to_utc),
-    so they read 3 hours late. Verified against the status history: a
-    work order's closed_date is exactly 3.00 h after its "Закрыт" history
-    entry. To compare them with call times, put them back on the real
-    instant."""
-    if stored is None:
-        return None
-    return stored.astimezone(UTC).replace(tzinfo=_MSK).astimezone(UTC)
+    """The work-order dates are real instants now (the import converts 1C's
+    Moscow clock to UTC, like it always did for status history, payments and
+    calls - fixed 2026-10-25, migration b7e1f4a9c256), so this is the value
+    itself. Kept as the single place the matching code reads them through."""
+    return stored
 
 
 class PhoneWorkOrder(NamedTuple):
@@ -599,12 +593,11 @@ def get_conversion_summary(
     new_converted = [x for x in new if x.work_orders]
     counted_converted = [x for x in counted if x.work_orders]
 
-    # created_date is stored on the "Moscow clock read as UTC" scale (see
-    # _real_moment), so the period's bounds are midnights on that same scale.
+    # The period's bounds are Moscow midnights (created_date is a real instant).
     total_filters = [
-        WorkOrder.created_date >= datetime.combine(start_day, datetime.min.time(), tzinfo=UTC),
+        WorkOrder.created_date >= datetime.combine(start_day, datetime.min.time(), tzinfo=_MSK),
         WorkOrder.created_date
-        < datetime.combine(end_day + timedelta(days=1), datetime.min.time(), tzinfo=UTC),
+        < datetime.combine(end_day + timedelta(days=1), datetime.min.time(), tzinfo=_MSK),
     ]
     if settings_service.get_app_settings(db).exclude_internal_orders:
         total_filters.append(WorkOrder.is_internal.is_(False))

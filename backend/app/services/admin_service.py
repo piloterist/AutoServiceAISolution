@@ -349,9 +349,19 @@ def list_role_tab_visibility(db: Session) -> list[RoleTabVisibility]:
 
 
 def create_role_tab_visibility(
-    db: Session, *, role: str, visible_tabs: list[str]
+    db: Session,
+    *,
+    role: str,
+    visible_tabs: list[str],
+    all_departments: bool = False,
+    cash_correction: bool = False,
 ) -> RoleTabVisibility:
-    row = RoleTabVisibility(role=role, visible_tabs=visible_tabs)
+    row = RoleTabVisibility(
+        role=role,
+        visible_tabs=visible_tabs,
+        all_departments=all_departments,
+        cash_correction=cash_correction,
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -359,13 +369,21 @@ def create_role_tab_visibility(
 
 
 def update_role_tab_visibility(
-    db: Session, row_id: uuid.UUID, *, role: str, visible_tabs: list[str]
+    db: Session,
+    row_id: uuid.UUID,
+    *,
+    role: str,
+    visible_tabs: list[str],
+    all_departments: bool = False,
+    cash_correction: bool = False,
 ) -> RoleTabVisibility | None:
     row = db.get(RoleTabVisibility, row_id)
     if row is None:
         return None
     row.role = role
     row.visible_tabs = visible_tabs
+    row.all_departments = all_departments
+    row.cash_correction = cash_correction
     db.commit()
     db.refresh(row)
     return row
@@ -430,6 +448,19 @@ def delete_slesarka_status(db: Session, status_id: uuid.UUID) -> bool:
 # ---- Аудит-лог (read-only) ---------------------------------------------
 
 
-def list_audit_log(db: Session, *, limit: int = 200) -> list[ScheduleAuditLog]:
-    stmt = select(ScheduleAuditLog).order_by(ScheduleAuditLog.created_at.desc()).limit(limit)
+def list_audit_log(
+    db: Session,
+    *,
+    limit: int = 200,
+    entity_type: str | None = None,
+    entity_id: uuid.UUID | None = None,
+) -> list[ScheduleAuditLog]:
+    """The change log, newest first; `entity_type`/`entity_id` narrow it to one
+    record's history (the cash entry dialog's "История изменений")."""
+    stmt = select(ScheduleAuditLog)
+    if entity_type is not None:
+        stmt = stmt.where(ScheduleAuditLog.entity_type == entity_type)
+    if entity_id is not None:
+        stmt = stmt.where(ScheduleAuditLog.entity_id == entity_id)
+    stmt = stmt.order_by(ScheduleAuditLog.created_at.desc()).limit(limit)
     return list(db.scalars(stmt))

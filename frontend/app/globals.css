@@ -5827,3 +5827,589 @@ main:has(.cockpit-page) {
   color: var(--text-muted);
   padding: 1.5rem 0.6rem;
 }
+
+
+/* --- Касса (cash book) -------------------------------------------------- */
+
+/* Left column: which book (desk, day, period); right: the book itself. */
+.cash-layout {
+  display: grid;
+  grid-template-columns: 20rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.cash-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 0;
+  position: sticky;
+  top: 1rem;
+  background: var(--bg);
+  border-width: 2px;
+}
+
+.cash-sidebar .planner-title {
+  margin: 0;
+}
+
+.cash-dept-switch {
+  flex-wrap: wrap;
+}
+
+.cash-main {
+  min-width: 0;
+}
+
+.cash-period {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+/* "С" / "По" on one grid so both date fields start and end at the same
+   x position, one strictly under the other. */
+.cash-period-row {
+  display: grid;
+  grid-template-columns: 2.4rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.cash-period-row .date-input,
+.cash-period-row .telephony-date-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.cash-period-apply {
+  width: 100%;
+  padding: 0.65rem 1rem;
+  font-size: 1rem;
+}
+
+.cash-period .chart-title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+@media (max-width: 1000px) {
+  .cash-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .cash-sidebar {
+    position: static;
+  }
+}
+
+.cash-lock-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Calendar */
+.cash-calendar {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cash-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.cash-calendar-nav {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cash-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  text-align: center;
+}
+
+.cash-calendar-weekday {
+  padding-bottom: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.cash-calendar-day {
+  aspect-ratio: 1;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.cash-calendar-day:hover {
+  border-color: var(--border);
+  background: var(--bg);
+}
+
+.cash-calendar-day--locked {
+  background: repeating-linear-gradient(45deg, transparent 0 4px, rgba(128, 128, 128, 0.14) 4px 8px);
+}
+
+.cash-calendar-day--selected {
+  background: rgba(42, 120, 214, 0.18);
+  border-color: rgba(42, 120, 214, 0.55);
+  font-weight: 600;
+}
+
+/* Today is marked with its own colour, so it still reads when a different
+   day is the selected one. */
+.cash-calendar-day--today {
+  background: #eb6834;
+  border-color: #eb6834;
+  color: #fff;
+  font-weight: 700;
+}
+
+.cash-calendar-day--today.cash-calendar-day--selected {
+  box-shadow: 0 0 0 2px rgba(42, 120, 214, 0.9);
+}
+
+.cash-calendar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.7rem;
+  gap: 0.5rem;
+}
+
+.cash-calendar-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.cash-calendar-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  margin-left: 0.4rem;
+}
+
+.cash-calendar-dot--today {
+  background: #eb6834;
+}
+
+.cash-calendar-dot--selected {
+  background: rgba(42, 120, 214, 0.45);
+}
+
+/* Book */
+.cash-book {
+  margin-top: 0;
+}
+
+.cash-book-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.cash-book-title .chart-title {
+  margin: 0;
+}
+
+.cash-book-period {
+  color: var(--text-muted);
+  font-size: 1.25rem;
+}
+
+.cash-book-loading {
+  color: var(--text-muted);
+  font-size: 1.15rem;
+}
+
+.cash-summary {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) minmax(0, 2.4fr) minmax(11rem, 1fr);
+  gap: 1rem;
+  align-items: stretch;
+  margin-bottom: 1.25rem;
+}
+
+.cash-balance {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.cash-balance-label {
+  font-size: 1.15rem;
+  color: var(--text-muted);
+}
+
+.cash-balance-value {
+  font-size: 2.8rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* Middle column: the work-order search above the three big buttons. */
+.cash-search {
+  flex: 1 1 28rem;
+  max-width: 44rem;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cash-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 1.15rem;
+}
+
+.cash-search-arrow {
+  width: 2.6rem;
+  padding: 0.4rem 0;
+  font-size: 1.3rem;
+}
+
+.cash-search-go,
+.cash-search-reset {
+  font-size: 1.15rem;
+}
+
+.cash-search-note {
+  min-width: 4.5rem;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.cash-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.cash-action {
+  min-height: 4.5rem;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.05s ease;
+}
+
+.cash-action:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.cash-action:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.cash-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cash-action--cash-in {
+  background: #2f9e5b;
+}
+
+.cash-action--card-in {
+  background: #2a78d6;
+}
+
+.cash-action--cash-out {
+  background: #d9534f;
+}
+
+.cash-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.cash-column {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.cash-column-head,
+.cash-column-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-column-head {
+  font-size: 1.3rem;
+}
+
+.cash-column-head h3 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.cash-column--cash_in .cash-column-head {
+  border-top: 4px solid #2f9e5b;
+}
+
+.cash-column--card_in .cash-column-head {
+  border-top: 4px solid #2a78d6;
+}
+
+.cash-column--cash_out .cash-column-head {
+  border-top: 4px solid #d9534f;
+}
+
+.cash-column-foot {
+  font-size: 1.3rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.cash-column-empty {
+  flex: 1 1 auto;
+  min-height: 14rem;
+  margin: 0;
+  padding: 1.2rem 0.9rem;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+
+.cash-entries {
+  flex: 1 1 auto;
+  min-height: 14rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cash-entry {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3.2rem;
+  padding: 0.35rem 0.9rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cash-entry:hover {
+  background: var(--bg);
+}
+
+.cash-entry--locked {
+  opacity: 0.75;
+}
+
+.cash-entry-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.cash-entry-head {
+  min-height: 1.4em;
+  display: flex;
+  gap: 0.6rem;
+  font-size: 1.15rem;
+}
+
+.cash-entry-date {
+  color: var(--text-muted);
+}
+
+.cash-entry-wo {
+  font-weight: 700;
+}
+
+.cash-entry-comment {
+  min-height: 1.3em;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 1.2rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cash-entry-amount {
+  flex: none;
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+@media (max-width: 1100px) {
+  .cash-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .cash-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Entry dialog: roomy and large - it is the one thing the cashier fills in
+   all day (product ask, 2026-10-24: about twice the first size). */
+.cash-dialog {
+  grid-template-columns: 1fr;
+  gap: 1.1rem;
+}
+
+.cash-dialog .cash-history-btn {
+  justify-self: start;
+  font-size: 1rem;
+  padding: 0.5rem 1rem;
+}
+
+/* The default dialog is ~345px; this one is about twice that. */
+.admin-modal:has(.cash-dialog) {
+  width: min(860px, 94vw);
+}
+
+.cash-dialog label {
+  font-size: 1rem;
+}
+
+.cash-dialog input,
+.cash-dialog textarea {
+  font-size: 1.1rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.cash-dialog textarea {
+  min-height: 9rem;
+}
+
+.cash-dialog .cash-amount-input {
+  font-size: 1.6rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cash-dialog-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.cash-history-btn {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+}
+
+.cash-history-table td {
+  vertical-align: top;
+}
+
+.cash-history-changes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cash-history-field {
+  color: var(--text-muted);
+}
+
+/* The ЗН field shares a grid row with the (taller) comment; without this it
+   stretches to the row height and the dropdown opens at its far bottom edge
+   instead of right under the input. */
+.cash-dialog .planner-autocomplete {
+  align-self: start;
+}
+
+/* Dialog frame in the colour of the section - the same colours as the big
+   buttons and the columns, so the cashier sees at a glance what is being
+   entered. */
+.admin-modal:has(.cash-dialog--cash_in) {
+  border: 8px solid #2f9e5b;
+}
+
+.admin-modal:has(.cash-dialog--card_in) {
+  border: 8px solid #2a78d6;
+}
+
+.admin-modal:has(.cash-dialog--cash_out) {
+  border: 8px solid #d9534f;
+}
+
+/* Amounts in the entry lists take the colour of their column. */
+.cash-column--cash_in .cash-entry-amount {
+  color: #2f9e5b;
+}
+
+.cash-column--card_in .cash-entry-amount {
+  color: #2a78d6;
+}
+
+.cash-column--cash_out .cash-entry-amount {
+  color: #d9534f;
+}
+
+/* The entry the search / arrows landed on. */
+.cash-entry--found {
+  background: rgba(235, 104, 52, 0.14);
+  box-shadow: inset 4px 0 0 #eb6834;
+}

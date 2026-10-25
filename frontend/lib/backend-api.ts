@@ -112,6 +112,10 @@ export type RepairTypeListResponse = {
 };
 
 export type AppSettings = {
+  // Касса: the locked period (both inclusive, "YYYY-MM-DD") - no cash entry
+  // can be created, changed or deleted on those days. Both set or both null.
+  cash_lock_from: string | null;
+  cash_lock_to: string | null;
   // ЗаказНаряд.ВидРемонта value that identifies an insurance-company
   // repair - one of the values from getRepairTypes(), or null if not
   // configured yet. Older, separate feature - not related to is_internal
@@ -274,7 +278,11 @@ function backendToken(): string {
   return token;
 }
 
-async function backendGet<T>(path: string, params?: Record<string, string>): Promise<T> {
+async function backendGet<T>(
+  path: string,
+  params?: Record<string, string>,
+  extraHeaders?: Record<string, string>,
+): Promise<T> {
   const url = new URL(path, API_URL);
   if (params) {
     for (const [key, value] of Object.entries(params)) {
@@ -283,7 +291,7 @@ async function backendGet<T>(path: string, params?: Record<string, string>): Pro
   }
 
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${backendToken()}` },
+    headers: { Authorization: `Bearer ${backendToken()}`, ...extraHeaders },
     cache: "no-store",
   });
 
@@ -891,8 +899,14 @@ export type AuditLogEntry = {
   car_description: string | null;
 };
 
-export function getAuditLog(): Promise<AuditLogEntry[]> {
-  return backendGet<AuditLogEntry[]>("/api/v1/settings/audit-log");
+export function getAuditLog(params?: {
+  entityType?: string;
+  entityId?: string;
+}): Promise<AuditLogEntry[]> {
+  return backendGet<AuditLogEntry[]>("/api/v1/settings/audit-log", {
+    entity_type: params?.entityType ?? "",
+    entity_id: params?.entityId ?? "",
+  });
 }
 
 export type Employee = {
@@ -936,11 +950,17 @@ export type RoleTabVisibility = {
   id: string;
   role: string;
   visible_tabs: string[];
+  // "Все подразделения": this role sees every cash desk on the Касса page.
+  all_departments: boolean;
+  // "Корректировка кассы": may edit the cash book for any day, not only today.
+  cash_correction: boolean;
 };
 
 export type RoleTabVisibilityWrite = {
   role: string;
   visible_tabs: string[];
+  all_departments: boolean;
+  cash_correction: boolean;
 };
 
 export function getRoleTabVisibility(): Promise<RoleTabVisibility[]> {
@@ -1803,4 +1823,147 @@ export async function updateBudgetValue(params: {
   if (!res.ok) {
     throw new Error(`Backend request failed: ${res.status} ${await res.text()}`);
   }
+}
+
+// ============================================================================
+// Касса (cash book) - see backend app/services/cash_service.py. The acting
+// user travels in X-Actor-* headers; the BACKEND decides which cash desks that
+// user may see, so a page can never read another desk's book.
+// ============================================================================
+
+export type CashKind = "cash_in" | "card_in" | "cash_out";
+
+export type CashWorkshop = {
+  id: string;
+  department_id: string;
+  department_name: string;
+  workshop_type: string;
+};
+
+export type CashContext = {
+  workshops: CashWorkshop[];
+  default_workshop_id: string | null;
+  all_departments: boolean;
+  can_correct: boolean;
+  // Today on the Moscow clock - the only editable day without can_correct.
+  today: string;
+  lock_from: string | null;
+  lock_to: string | null;
+};
+
+export type CashSearchHit = {
+  id: string;
+  entry_date: string;
+  kind: CashKind;
+  work_order_number: string | null;
+};
+
+export type CashEntry = {
+  id: string;
+  workshop_id: string;
+  entry_date: string; // "YYYY-MM-DD"
+  kind: CashKind;
+  amount: string;
+  comment: string | null;
+  work_order_id: string | null;
+  work_order_number: string | null;
+  created_by_name: string;
+  created_at: string;
+  updated_by_name: string | null;
+  updated_at: string | null;
+  // Inside the locked period: shown, but not editable.
+  locked: boolean;
+};
+
+export type CashBook = {
+  workshop_id: string;
+  date_from: string;
+  date_to: string;
+  opening: string;
+  closing: string;
+  totals: { cash_in: string; card_in: string; cash_out: string };
+  entries: CashEntry[];
+  lock_from: string | null;
+  lock_to: string | null;
+};
+
+export type CashEntryWrite = {
+  workshop_id: string;
+  entry_date: string;
+  kind: CashKind;
+  // On update, 0 deletes the entry.
+  amount: string;
+  comment: string | null;
+  work_order_id: string | null;
+  work_order_number: string | null;
+};
+
+export type CashWorkOrder = {
+  id: string;
+  external_number: string;
+  vehicle_description: string | null;
+  customer_name: string | null;
+  status: string | null;
+  document_date: string;
+};
+
+type CashActor = { id: string; fullName: string };
+
+export function getCashContext(actor: CashActor): Promise<CashContext> {
+  return backendGet<CashContext>("/api/v1/cash/context", undefined, actorHeaders(actor));
+}
+
+export function getCashBook(
+  params: { workshopId: string; dateFrom: string; dateTo: string },
+  actor: CashActor,
+): Promise<CashBook> {
+  return backendGet<CashBook>(
+    "/api/v1/cash/book",
+    { workshop_id: params.workshopId, date_from: params.dateFrom, date_to: params.dateTo },
+    actorHeaders(actor),
+  );
+}
+
+export function searchCashEntries(
+  workshopId: string,
+  q: string,
+  actor: CashActor,
+): Promise<CashSearchHit[]> {
+  return backendGet<CashSearchHit[]>(
+    "/api/v1/cash/search",
+    { workshop_id: workshopId, q },
+    actorHeaders(actor),
+  );
+}
+
+export function searchCashWorkOrders(
+  workshopId: string,
+  q: string,
+  actor: CashActor,
+): Promise<CashWorkOrder[]> {
+  return backendGet<CashWorkOrder[]>(
+    "/api/v1/cash/work-orders",
+    { workshop_id: workshopId, q },
+    actorHeaders(actor),
+  );
+}
+
+export function createCashEntry(payload: CashEntryWrite, actor: CashActor): Promise<CashEntry> {
+  return backendPost<CashEntry>("/api/v1/cash/entries", payload, actorHeaders(actor));
+}
+
+export function updateCashEntry(
+  id: string,
+  payload: CashEntryWrite,
+  actor: CashActor,
+): Promise<{ deleted: boolean; entry: CashEntry | null }> {
+  return backendPut<{ deleted: boolean; entry: CashEntry | null }>(
+    `/api/v1/cash/entries/${id}`,
+    payload,
+    actorHeaders(actor),
+  );
+}
+
+export function deleteCashEntry(id: string, actor: CashActor): Promise<void> {
+  return backendDelete(`/api/v1/cash/entries/${id}`, actorHeaders(actor));
 }

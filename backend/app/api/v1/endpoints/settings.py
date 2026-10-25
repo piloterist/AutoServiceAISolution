@@ -37,5 +37,7 @@ def write_settings(
         planner_auto_match_enabled=payload.planner_auto_match_enabled,
         planner_auto_match_interval_minutes=payload.planner_auto_match_interval_minutes,
         planner_search_exclude_closed_orders=payload.planner_search_exclude_closed_orders,
+        cash_lock_from=payload.cash_lock_from,
+        cash_lock_to=payload.cash_lock_to,
     )
     return AppSettingsResponse.model_validate(settings)

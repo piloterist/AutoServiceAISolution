@@ -694,6 +694,12 @@ const PHONE_PATH =
   "M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.9 21 3 13.1 3 3.6 3 3 3.4 2.6 4 2.6h3.4c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1L6.6 10.8Z";
 const ENVELOPE_PATH =
   "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm1 2.4V17h14V7.4l-6.4 4.8a1 1 0 0 1-1.2 0L5 7.4Zm.9-.4L12 11l6.1-4H5.9Z";
+// The ruble sign as a stroked path (product ask, 2026-10-24: the old text
+// glyph at fontSize 16 was far smaller than the phone/envelope lamps): a
+// stem, a bowl and the crossbar through the stem, spanning roughly the same
+// 18-unit height as the other lamps. Drawn thick so it carries the same
+// visual weight as their filled shapes.
+const RUBLE_PATH = "M7.5 21V3h6.2a4.75 4.75 0 0 1 0 9.5H7.5M4 16.5h10.5";
 const REFRESH_PATH =
   "M4 12a8 8 0 0 1 14-5.3L21 4v6h-6l2.6-2.6A6 6 0 0 0 6 12Z M20 12a8 8 0 0 1-14 5.3L3 20v-6h6l-2.6 2.6A6 6 0 0 0 18 12Z";
 
@@ -1048,8 +1054,9 @@ function WarningIcons({
     key: string;
     label: string;
     path?: string;
-    text?: string;
     filled?: boolean;
+    // Stroke width for an outline lamp (default 1.6).
+    strokeWidth?: number;
     active?: boolean;
     onClick?: () => void;
     spinning?: boolean;
@@ -1060,7 +1067,8 @@ function WarningIcons({
     {
       key: "unpaid",
       label: "Закрытые ЗН физлиц без полной оплаты за 3 месяца",
-      text: "₽",
+      path: RUBLE_PATH,
+      strokeWidth: 2.4,
       active: hasUnpaidIndividualClosedOrders,
       onClick: openUnpaidIndividual,
     },
@@ -1085,22 +1093,10 @@ function WarningIcons({
             aria-hidden="true"
             className={icon.spinning ? "cockpit-warning-icon-spin" : undefined}
           >
-            {icon.text ? (
-              <text
-                x={12}
-                y={12}
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize={16}
-                fontWeight={700}
-                fill="currentColor"
-              >
-                {icon.text}
-              </text>
-            ) : icon.filled ? (
+            {icon.filled ? (
               <path d={icon.path} fill="currentColor" />
             ) : (
-              <path d={icon.path} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={icon.path} fill="none" stroke="currentColor" strokeWidth={icon.strokeWidth ?? 1.6} strokeLinecap="round" strokeLinejoin="round" />
             )}
           </svg>
         </button>

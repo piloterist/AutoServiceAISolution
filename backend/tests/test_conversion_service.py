@@ -3,7 +3,7 @@ inbound call of a period matched to the first work order created after it
 on the same phone, plus the "Существующий" flag."""
 
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
@@ -52,9 +52,10 @@ def _call(
 
 
 def _stored(real_utc: datetime | None) -> datetime | None:
-    """How the importer stores a work-order date: 1C's Moscow clock reading,
-    as if it were UTC - i.e. 3 hours later than the real instant."""
-    return None if real_utc is None else real_utc + timedelta(hours=3)
+    """How the importer stores a work-order date: the real instant (it converts
+    1C's Moscow clock to UTC, since 2026-10-25 - before that the dates were
+    stored 3 hours late). Kept as a seam so the tests read the same."""
+    return real_utc
 
 
 def _wo(number: str, created: datetime, phone: str | None = "+7 (999) 000-00-01", **kw):
@@ -1106,10 +1107,8 @@ def test_converted_phone_has_one_conversion_row_and_its_work_orders_are_listed(
 
 
 def test_work_order_dates_are_compared_as_real_moments(db_session: Session) -> None:
-    """The importer stores a work order's 1C Moscow clock reading as if it
-    were UTC (3 h late). A work order created at 11:00 MSK, an hour BEFORE a
-    12:00 MSK call, is stored as 11:00Z - which, read naively as an instant,
-    would look 2 hours AFTER the call and be miscounted as its conversion."""
+    """A work order created at 11:00 MSK (08:00Z), an hour BEFORE a 12:00 MSK
+    call, is not that call's conversion; one created at 13:00 MSK is."""
     _call(
         db_session, external_id="a", hour_msk=12, client="9990000001", talk_sec=40, topic_tag=TOPIC
     )

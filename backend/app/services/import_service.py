@@ -62,6 +62,10 @@ def _naive_msk_to_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=_MSK).astimezone(UTC)
 
 
+def _opt_msk_to_utc(value: datetime | None) -> datetime | None:
+    return _naive_msk_to_utc(value) if value is not None else None
+
+
 def _upsert_work_order(
     db: Session, source: str, exported_at, record: ImportWorkOrderRecord
 ) -> tuple[uuid.UUID, bool]:
@@ -76,11 +80,15 @@ def _upsert_work_order(
         "external_number": record.number,
         "source_system": source,
         "source_key": record.source_key,
-        "document_date": record.date,
-        "created_date": record.created_date,
-        "start_date": record.start_date,
-        "end_date": record.end_date,
-        "closed_date": record.closed_date,
+        # Every 1C wall-clock value is MSK and must be converted (see
+        # _naive_msk_to_utc) - stored raw, the dates read 3 hours late and an
+        # order closed after 21:00 showed up on the next day (fixed
+        # 2026-10-25, together with the b7e1f4a9c256 data migration).
+        "document_date": _opt_msk_to_utc(record.date),
+        "created_date": _opt_msk_to_utc(record.created_date),
+        "start_date": _opt_msk_to_utc(record.start_date),
+        "end_date": _opt_msk_to_utc(record.end_date),
+        "closed_date": _opt_msk_to_utc(record.closed_date),
         "customer_name": record.customer,
         "phone": record.phone,
         "payer_name": record.payer,

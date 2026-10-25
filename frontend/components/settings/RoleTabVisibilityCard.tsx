@@ -9,15 +9,28 @@ import { NAV_TABS, type NavTabKey } from "@/lib/nav-tabs";
 
 import { AdminModal } from "./AdminModal";
 
-type FormState = { role: string; visibleTabs: NavTabKey[] };
+type FormState = {
+  role: string;
+  visibleTabs: NavTabKey[];
+  allDepartments: boolean;
+  cashCorrection: boolean;
+};
 
 function emptyForm(takenRoles: string[]): FormState {
   const firstFree = USER_ROLES.find((r) => !takenRoles.includes(r)) ?? USER_ROLES[0];
-  return { role: firstFree, visibleTabs: NAV_TABS.map((t) => t.key) };
+  return { role: firstFree, visibleTabs: NAV_TABS.map((t) => t.key),
+    allDepartments: false,
+    cashCorrection: false,
+  };
 }
 
 function toForm(row: RoleTabVisibility): FormState {
-  return { role: row.role, visibleTabs: row.visible_tabs as NavTabKey[] };
+  return {
+    role: row.role,
+    visibleTabs: row.visible_tabs as NavTabKey[],
+    allDepartments: row.all_departments,
+    cashCorrection: row.cash_correction,
+  };
 }
 
 function tabLabels(keys: string[]): string {
@@ -71,7 +84,12 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
   const save = async () => {
     if (form.visibleTabs.length === 0) return setError("Отметьте хотя бы одну закладку");
     try {
-      const payload = { role: form.role, visible_tabs: form.visibleTabs };
+      const payload = {
+        role: form.role,
+        visible_tabs: form.visibleTabs,
+        all_departments: form.allDepartments,
+        cash_correction: form.cashCorrection,
+      };
       if (editing === "new") {
         const created = await roleTabVisibilityApi.create(payload);
         setRows((prev) => [...prev, created].sort((a, b) => a.role.localeCompare(b.role)));
@@ -128,7 +146,9 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
         <thead>
           <tr>
             <th>Роль</th>
-            <th style={{ width: "70%" }}>Закладки</th>
+            <th style={{ width: "58%" }}>Закладки</th>
+            <th>Все подразделения</th>
+            <th>Корректировка кассы</th>
           </tr>
         </thead>
         <tbody>
@@ -140,11 +160,13 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
             >
               <td>{row.role}</td>
               <td>{tabLabels(row.visible_tabs) || "—"}</td>
+              <td>{row.all_departments ? "Да" : "Нет"}</td>
+              <td>{row.cash_correction ? "Да" : "Нет"}</td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={2} className="admin-empty-row">
+              <td colSpan={4} className="admin-empty-row">
                 Для всех ролей действует видимость по умолчанию (все закладки)
               </td>
             </tr>
@@ -197,6 +219,32 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
               </div>
             </details>
           </div>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.allDepartments}
+              onChange={(e) => setForm((prev) => ({ ...prev, allDepartments: e.target.checked }))}
+            />
+            Все подразделения
+          </label>
+          <p className="settings-description">
+            Пользователи этой роли видят на закладке «Касса» кассы всех подразделений и цехов. Без галки
+            пользователь видит только кассу своего цеха (выбранного в его карточке).
+          </p>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.cashCorrection}
+              onChange={(e) => setForm((prev) => ({ ...prev, cashCorrection: e.target.checked }))}
+            />
+            Корректировка кассы
+          </label>
+          <p className="settings-description">
+            Только пользователи этой роли могут вносить и менять записи кассы за любой день. Без галки — только
+            за сегодняшний.
+          </p>
         </div>
 
         {error && <p className="admin-form-error">{error}</p>}

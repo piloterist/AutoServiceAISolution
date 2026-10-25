@@ -41,7 +41,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -115,6 +115,15 @@ _LATIN_TO_CYRILLIC_PLATE = str.maketrans(
         "X": "Х",
     }
 )
+
+
+def _as_msk(value: datetime) -> datetime:
+    """5Systems dates are naive Moscow wall-clock values (same as 1C's) - make
+    them real instants, like the import does, so a stub row and the real
+    import of the same order agree."""
+    if value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone(timedelta(hours=3)))
 
 
 def _normalize_plate(plate: str) -> str:
@@ -325,7 +334,7 @@ def lookup_work_order_by_plate(plate: str) -> WorkOrderLookupResult | None:
 
     return WorkOrderLookupResult(
         external_number=number,
-        document_date=datetime.fromisoformat(date_str),
+        document_date=_as_msk(datetime.fromisoformat(date_str)),
         vehicle_description=(car or {}).get("name") or None,
         vin=(car or {}).get("vin") or None,
         plate=(car or {}).get("reg_num") or normalized_plate,

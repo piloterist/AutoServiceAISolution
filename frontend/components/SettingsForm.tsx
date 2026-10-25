@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import type { AppSettings, AutoMatchResult } from "@/lib/backend-api";
 
@@ -71,6 +72,9 @@ export function SettingsForm({
   const [plannerSearchExcludeClosedOrders, setPlannerSearchExcludeClosedOrders] = useState(
     initialSettings.planner_search_exclude_closed_orders,
   );
+  // Касса: the locked period (both inclusive) - empty = nothing locked.
+  const [cashLockFrom, setCashLockFrom] = useState(initialSettings.cash_lock_from ?? "");
+  const [cashLockTo, setCashLockTo] = useState(initialSettings.cash_lock_to ?? "");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [autoMatchState, setAutoMatchState] = useState<"idle" | "running" | "done" | "error">(
     "idle",
@@ -94,6 +98,8 @@ export function SettingsForm({
           planner_auto_match_enabled: plannerAutoMatchEnabled,
           planner_auto_match_interval_minutes: Number(plannerAutoMatchIntervalMinutes) || 180,
           planner_search_exclude_closed_orders: plannerSearchExcludeClosedOrders,
+          cash_lock_from: cashLockFrom || null,
+          cash_lock_to: cashLockTo || null,
         } satisfies AppSettings),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -292,6 +298,25 @@ export function SettingsForm({
           Не показывать в поиске заказ-наряда (по номеру, VIN и т.п.) при создании записи
           планировщика заказ-наряды в статусе «Закрыт» или «Выполнен» — привязывать новую запись к
           уже завершённому заказ-наряду незачем.
+        </p>
+      </div>
+
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Касса</h3>
+
+        <div className="settings-field">
+          <label htmlFor="cash-lock-from">Период блокировки: с</label>
+          <DateInput id="cash-lock-from" value={cashLockFrom} onChange={setCashLockFrom} ariaLabel="Блокировка кассы с" />
+        </div>
+        <div className="settings-field">
+          <label htmlFor="cash-lock-to">по</label>
+          <DateInput id="cash-lock-to" value={cashLockTo} onChange={setCashLockTo} ariaLabel="Блокировка кассы по" />
+        </div>
+
+        <p className="settings-description">
+          В указанный период (обе даты включительно) нельзя добавлять, изменять и удалять записи кассы —
+          у всех цехов сразу. Чтобы закрыть уже сверенные дни, укажите их здесь; по мере закрытия новых
+          дней двигайте «по» вперёд. Оставьте поля пустыми, чтобы ничего не блокировать.
         </p>
       </div>
 

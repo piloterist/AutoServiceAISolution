@@ -23,6 +23,7 @@ const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 12% 8% 7% 9% 6% 8% 8% 7% 7% 7%";
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleDateString("ru-RU", {
+    timeZone: "Europe/Moscow",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

@@ -14,6 +14,7 @@ const ENTITY_TYPE_LABELS: Record<string, string> = {
   workshop_job: "Запись слесарки",
   body_car: "Автомобиль в кузовном цехе",
   body_car_stage: "Этап работ",
+  cash_entry: "Запись кассы",
 };
 
 // Backend field names, not something a non-technical user should ever see
@@ -39,6 +40,13 @@ const FIELD_LABELS: Record<string, string> = {
   status: "Статус",
   on_site: "На территории",
   stages: "Этапы работ",
+  // Касса
+  workshop: "Касса",
+  kind: "Раздел",
+  entry_date: "Дата",
+  amount: "Сумма",
+  comment: "Комментарий",
+  work_order_number: "Заказ-наряд",
 };
 
 function formatDateTime(iso: string): string {

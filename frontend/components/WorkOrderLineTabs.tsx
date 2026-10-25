@@ -22,6 +22,7 @@ function formatQuantity(value: string | null): string {
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("ru-RU", {
+    timeZone: "Europe/Moscow",
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

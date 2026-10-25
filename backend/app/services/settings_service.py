@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy.orm import Session
 
 from app.models.app_settings import AppSettings
@@ -36,6 +38,8 @@ def update_app_settings(
     planner_auto_match_enabled: bool,
     planner_auto_match_interval_minutes: int,
     planner_search_exclude_closed_orders: bool,
+    cash_lock_from: date | None = None,
+    cash_lock_to: date | None = None,
 ) -> AppSettings:
     settings = get_app_settings(db)
     settings.insurance_repair_type = insurance_repair_type
@@ -48,6 +52,8 @@ def update_app_settings(
     settings.planner_auto_match_enabled = planner_auto_match_enabled
     settings.planner_auto_match_interval_minutes = planner_auto_match_interval_minutes
     settings.planner_search_exclude_closed_orders = planner_search_exclude_closed_orders
+    settings.cash_lock_from = cash_lock_from
+    settings.cash_lock_to = cash_lock_to
     db.commit()
     db.refresh(settings)
     return settings

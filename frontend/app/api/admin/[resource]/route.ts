@@ -53,7 +53,7 @@ function isResource(value: string): value is Resource {
   );
 }
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ resource: string }> }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ resource: string }> }) {
   const { resource } = await params;
   if (!isResource(resource)) return NextResponse.json({ error: "Unknown resource" }, { status: 404 });
 
@@ -70,7 +70,12 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       case "slesarka-statuses":
         return NextResponse.json(await getSlesarkaStatuses());
       case "audit-log":
-        return NextResponse.json(await getAuditLog());
+        return NextResponse.json(
+          await getAuditLog({
+            entityType: request.nextUrl.searchParams.get("entity_type") ?? undefined,
+            entityId: request.nextUrl.searchParams.get("entity_id") ?? undefined,
+          }),
+        );
       case "employees":
         return NextResponse.json(await getEmployees());
       case "role-tab-visibility":

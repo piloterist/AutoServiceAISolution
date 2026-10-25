@@ -7,6 +7,7 @@ from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
 from app.models.budget_entry import BudgetEntry
 from app.models.call_record import CallRecord
+from app.models.cash_entry import CashEntry
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.import_batch import ImportBatch
@@ -46,6 +47,7 @@ __all__ = [
     "SlesarkaStatus",
     "ScheduleAuditLog",
     "RoleTabVisibility",
+    "CashEntry",
     "WorkshopJob",
     "BodyCar",
     "BodyCarStage",
