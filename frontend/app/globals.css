@@ -6424,3 +6424,145 @@ main:has(.cockpit-page) {
   background: rgba(235, 104, 52, 0.14);
   box-shadow: inset 4px 0 0 #eb6834;
 }
+
+/* Финансы -> Расходы */
+.budget-cell-input:disabled {
+  background: transparent;
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.expenses-inactive {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.expenses-total-row td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}
+
+/* Расходы: cost items down, months across, the workshops side by side inside a
+   month; the item names stay put while the months scroll. */
+.expenses-table .expenses-th-item,
+.expenses-table .expenses-td-item {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 14rem;
+  max-width: 14rem;
+  text-align: left;
+  background: var(--surface);
+  white-space: normal;
+}
+
+.expenses-table thead .expenses-th-item {
+  z-index: 3;
+}
+
+.expenses-th-workshop {
+  min-width: 7.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: pre-line;
+  line-height: 1.2;
+}
+
+.expenses-table .expenses-month-start {
+  border-left: 2px solid var(--border);
+}
+
+.expenses-total-row .expenses-td-item {
+  border-top: 2px solid var(--border);
+}
+
+.cost-item-handle {
+  cursor: grab;
+  color: var(--text-muted);
+  user-select: none;
+  text-align: center;
+}
+
+.cost-item-row--dragging {
+  opacity: 0.45;
+}
+
+.cost-item-row--over td {
+  border-top: 3px solid #2a78d6;
+}
+
+/* Расходы: do NOT squeeze the 12 months into the page width - every cell keeps
+   a comfortable width (2-3 months fit on screen), the rest is scrolled. */
+.budget-table.expenses-table {
+  table-layout: auto;
+  width: max-content;
+  min-width: 0;
+  font-size: 0.95rem;
+}
+
+.expenses-table td.budget-td-month,
+.expenses-table th.expenses-th-workshop {
+  min-width: 9.5rem;
+  width: 9.5rem;
+}
+
+.expenses-table .budget-cell-input {
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  font-size: 1rem;
+}
+
+/* Months must not run together: a heavy rule between them, alternating tint,
+   and a solid month header. (The current month keeps its own highlight.) */
+.expenses-table .expenses-month-start {
+  border-left: 4px solid var(--text-muted);
+}
+
+.expenses-table .expenses-month-even {
+  background: var(--surface2);
+}
+
+.expenses-table th.expenses-th-month {
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--text-muted);
+}
+
+.expenses-table td.budget-td-month--current,
+.expenses-table th.budget-th-month--current {
+  background: var(--today);
+}
+
+/* Scrollbar above the table, mirrors the one below it. */
+.expenses-scroll-top {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: 0.25rem;
+}
+
+/* Расходы -> Импорт */
+.expenses-import-period {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.expenses-import-period select {
+  flex: 1 1 auto;
+}
+
+.expenses-import-period input {
+  width: 6.5rem;
+}
+
+.expenses-import-report {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+}
+
+.expenses-import-report ul {
+  margin: 0.4rem 0;
+  padding-left: 1.2rem;
+}

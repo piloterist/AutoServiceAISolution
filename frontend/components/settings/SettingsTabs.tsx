@@ -20,6 +20,7 @@ import type {
 } from "@/lib/backend-api";
 
 import { AuditLogTab } from "./AuditLogTab";
+import { CostItemsTab } from "./CostItemsTab";
 import { EmployeesTab } from "./EmployeesTab";
 import { LeadsTab } from "./LeadsTab";
 import { OrgStructureTab } from "./OrgStructureTab";
@@ -33,6 +34,7 @@ type TabKey =
   | "org-structure"
   | "employees"
   | "telephony"
+  | "finance"
   | "leads"
   | "log";
 
@@ -42,6 +44,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "org-structure", label: "Орг. структура" },
   { key: "employees", label: "Сотрудники" },
   { key: "telephony", label: "IP-телефония" },
+  { key: "finance", label: "Финансы" },
   { key: "leads", label: "Заявки" },
   { key: "log", label: "Логи" },
 ];
@@ -123,6 +126,7 @@ export function SettingsTabs({
           workshops={workshops}
         />
       )}
+      {tab === "finance" && <CostItemsTab />}
       {tab === "leads" && <LeadsTab initialSettings={leadsSettings} />}
       {tab === "log" && <AuditLogTab initialEntries={auditLog} />}
     </div>

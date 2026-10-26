@@ -5,12 +5,14 @@ import { useState } from "react";
 import type { BudgetYear, ReceivablesAging } from "@/lib/backend-api";
 
 import { BudgetView } from "./BudgetView";
+import { ExpensesView } from "./ExpensesView";
 import { ReceivablesAgingView } from "./ReceivablesAgingView";
 
-type TabKey = "budgets" | "receivables";
+type TabKey = "budgets" | "expenses" | "receivables";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "budgets", label: "Бюджеты" },
+  { key: "expenses", label: "Расходы" },
   { key: "receivables", label: "Дебиторская задолженность" },
 ];
 
@@ -41,6 +43,7 @@ export function FinanceView({
       </div>
 
       {tab === "budgets" && <BudgetView initialData={initialBudget} />}
+      {tab === "expenses" && <ExpensesView />}
       {tab === "receivables" && <ReceivablesAgingView data={initialReceivables} />}
     </div>
   );

@@ -25,6 +25,7 @@ from app.core.config import get_settings
 from app.models.budget_entry import BudgetEntry
 from app.models.department import Department
 from app.models.workshop import Workshop
+from app.services import finance_service
 from app.services.cockpit_service import (
     _closed_revenue,
     _mapped_source_departments,
@@ -33,13 +34,21 @@ from app.services.cockpit_service import (
 )
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
-BUDGET_FIELDS = ("plan_revenue", "expenses")
+# "Расходы" is no longer typed in here: it is the sum of the cost items entered on
+# Финансы -> Расходы (product ask, 2026-10-26), so only the plan stays editable.
+BUDGET_FIELDS = ("plan_revenue",)
+
+# Repair type behind "Выручка факт основные" (product ask, 2026-10-26). The
+# insurance one comes from AppSettings.insurance_repair_type.
+MAIN_REPAIR_TYPE = "Текущий"
 
 
 @dataclass
 class BudgetMonth:
     month: int
     plan_revenue: Decimal
+    fact_revenue_insurance: Decimal
+    fact_revenue_main: Decimal
     fact_revenue: Decimal
     expenses: Decimal
     profit: Decimal
@@ -69,6 +78,12 @@ def get_budget_year(
         .order_by(Department.name, Workshop.workshop_type)
     ).all()
 
+    expense_totals = finance_service.monthly_expense_totals(db, year)
+    insurance_types = (
+        [app_settings.insurance_repair_type] if app_settings.insurance_repair_type else []
+    )
+    excluded_types = revenue_excluded_repair_types(app_settings)
+
     entries = {
         (entry.workshop_id, entry.month): entry
         for entry in db.scalars(select(BudgetEntry).where(BudgetEntry.year == year))
@@ -80,15 +95,17 @@ def get_budget_year(
         months: list[BudgetMonth] = []
         for month in range(1, 13):
             period_start, period_end = period_bounds(now, year=year, month=month)
-            fact_revenue = _closed_revenue(
-                db,
+            common = dict(
                 source_departments=source_departments,
                 period_start=period_start,
                 period_end=period_end,
                 revenue_statuses=revenue_statuses,
                 exclude_internal=exclude_internal,
-                excluded_repair_types=revenue_excluded_repair_types(app_settings),
+                excluded_repair_types=excluded_types,
             )
+            fact_insurance = _closed_revenue(db, only_repair_types=insurance_types, **common)
+            fact_main = _closed_revenue(db, only_repair_types=[MAIN_REPAIR_TYPE], **common)
+            fact_revenue = fact_insurance + fact_main
             payments = _payments(
                 db,
                 source_departments=source_departments,
@@ -98,11 +115,13 @@ def get_budget_year(
             )
             entry = entries.get((workshop.id, month))
             plan_revenue = (entry.plan_revenue if entry else None) or Decimal("0")
-            expenses = (entry.expenses if entry else None) or Decimal("0")
+            expenses = expense_totals.get((workshop.id, month), Decimal("0"))
             months.append(
                 BudgetMonth(
                     month=month,
                     plan_revenue=plan_revenue,
+                    fact_revenue_insurance=fact_insurance,
+                    fact_revenue_main=fact_main,
                     fact_revenue=fact_revenue,
                     expenses=expenses,
                     profit=fact_revenue - expenses,
@@ -124,7 +143,12 @@ def set_budget_value(
     db: Session, *, workshop_id: uuid.UUID, year: int, month: int, field: str, value: Decimal
 ) -> BudgetEntry:
     if field not in BUDGET_FIELDS:
-        raise ValueError(f"Unknown budget field: {field}")
+        raise ValueError(
+            "Это поле нельзя менять вручную: расходы считаются по статьям затрат "
+            "(Финансы → Расходы)"
+            if field == "expenses"
+            else f"Unknown budget field: {field}"
+        )
     entry = db.scalar(
         select(BudgetEntry).where(
             BudgetEntry.workshop_id == workshop_id,

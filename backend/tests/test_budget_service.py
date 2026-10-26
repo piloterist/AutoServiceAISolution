@@ -13,6 +13,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.orm import Session
 
+from app.models.cost_expense import CostExpense
+from app.models.cost_item import CostItem
 from app.models.department import Department
 from app.models.work_order import WorkOrder
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
@@ -91,7 +93,11 @@ def test_fact_revenue_counts_closed_work_order_in_its_own_month(
     db_session: Session, workshop: Workshop
 ) -> None:
     db_session.add(
-        _work_order(closed_date=datetime(2026, 9, 15, 10, 0, 0, tzinfo=UTC), amount=Decimal("5000"))
+        _work_order(
+            closed_date=datetime(2026, 9, 15, 10, 0, 0, tzinfo=UTC),
+            amount=Decimal("5000"),
+            repair_type="Текущий",
+        )
     )
     db_session.commit()
 
@@ -148,27 +154,87 @@ def test_set_budget_value_upserts_plan_revenue(db_session: Session, workshop: Wo
     assert rows[0].months[8].plan_revenue == Decimal("200000")
 
 
-def test_set_budget_value_expenses_feed_profit_and_money(
+def test_expenses_are_the_sum_of_cost_items_and_feed_profit_and_money(
     db_session: Session, workshop: Workshop
 ) -> None:
     db_session.add(
-        _work_order(closed_date=datetime(2026, 9, 15, tzinfo=UTC), amount=Decimal("5000"))
+        _work_order(
+            closed_date=datetime(2026, 9, 15, tzinfo=UTC),
+            amount=Decimal("5000"),
+            repair_type="Текущий",
+        )
     )
+    rent = CostItem(name="Аренда", is_active=True)
+    wages = CostItem(name="Зарплата", is_active=False)  # inactive still counts
+    db_session.add_all([rent, wages])
+    db_session.flush()
+    for item, amount in ((rent, "1000"), (wages, "200")):
+        db_session.add(
+            CostExpense(
+                cost_item_id=item.id,
+                workshop_id=workshop.id,
+                year=2026,
+                month=9,
+                amount=Decimal(amount),
+            )
+        )
     db_session.commit()
-    budget_service.set_budget_value(
-        db_session,
-        workshop_id=workshop.id,
-        year=2026,
-        month=9,
-        field="expenses",
-        value=Decimal("1200"),
-    )
 
     rows = budget_service.get_budget_year(db_session, 2026, now=NOW)
     september = rows[0].months[8]
     assert september.expenses == Decimal("1200")
     assert september.profit == Decimal("3800")
     assert september.money == Decimal("-1200")  # no payments this month
+
+
+def test_manual_expenses_in_the_budget_are_refused(db_session: Session, workshop: Workshop) -> None:
+    with pytest.raises(ValueError, match="статьям затрат"):
+        budget_service.set_budget_value(
+            db_session,
+            workshop_id=workshop.id,
+            year=2026,
+            month=9,
+            field="expenses",
+            value=Decimal("1200"),
+        )
+
+
+def test_fact_revenue_is_two_rows_insurance_and_current_only(
+    db_session: Session, workshop: Workshop
+) -> None:
+    """Страховые by the configured insurance repair type, основные by
+    "Текущий"; every other type (Основной, Гарантийный, Виртуальный, none)
+    generates no revenue here; internal orders are skipped when the setting
+    says so."""
+    from app.services.settings_service import get_app_settings
+
+    app_settings = get_app_settings(db_session)
+    app_settings.insurance_repair_type = "Страховой"
+    app_settings.exclude_internal_orders = True
+    app_settings.warranty_repair_types = ["Гарантийный"]
+    app_settings.virtual_repair_types = ["Виртуальный"]
+    closed = datetime(2026, 9, 15, tzinfo=UTC)
+    db_session.add_all(
+        [
+            _work_order(closed_date=closed, amount=Decimal("100"), repair_type="Страховой"),
+            _work_order(closed_date=closed, amount=Decimal("1000"), repair_type="Текущий"),
+            _work_order(closed_date=closed, amount=Decimal("20"), repair_type="Текущий"),
+            _work_order(
+                closed_date=closed, amount=Decimal("7"), repair_type="Текущий", is_internal=True
+            ),
+            _work_order(closed_date=closed, amount=Decimal("5"), repair_type="Основной"),
+            _work_order(closed_date=closed, amount=Decimal("9000"), repair_type="Гарантийный"),
+            _work_order(closed_date=closed, amount=Decimal("8000"), repair_type="Виртуальный"),
+            _work_order(closed_date=closed, amount=Decimal("3"), repair_type=None),
+        ]
+    )
+    db_session.commit()
+
+    rows = budget_service.get_budget_year(db_session, 2026, now=NOW)
+    september = rows[0].months[8]
+    assert september.fact_revenue_insurance == Decimal("100")
+    assert september.fact_revenue_main == Decimal("1020")
+    assert september.fact_revenue == Decimal("1120")
 
 
 def test_set_budget_value_rejects_unknown_field(db_session: Session, workshop: Workshop) -> None:

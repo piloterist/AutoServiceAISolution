@@ -1739,8 +1739,12 @@ export function getWorkshopOptions(): Promise<WorkshopOption[]> {
 export type BudgetMonthValues = {
   month: number; // 1-12
   plan_revenue: string; // manually entered
-  fact_revenue: string; // closed work orders, by closed_date
-  expenses: string; // manually entered
+  // Fact revenue is two rows (2026-10-26): closed orders with the insurance
+  // repair type and with "Текущий"; fact_revenue is their sum.
+  fact_revenue_insurance: string;
+  fact_revenue_main: string;
+  fact_revenue: string;
+  expenses: string; // sum of the cost items entered on Финансы -> Расходы
   profit: string; // fact_revenue - expenses
   payments: string; // received payments, by paid_at
   money: string; // payments - expenses
@@ -1805,7 +1809,7 @@ export function getReceivablesAging(): Promise<ReceivablesAging> {
   return backendGet<ReceivablesAging>("/api/v1/receivables/aging");
 }
 
-export type BudgetField = "plan_revenue" | "expenses";
+export type BudgetField = "plan_revenue";
 
 /** Upserts one cell - the backend only ever stores the two manually-entered
  * fields (see models/budget_entry.py), so this is the only write this page
@@ -1975,4 +1979,90 @@ export function updateCashEntry(
 
 export function deleteCashEntry(id: string, actor: CashActor): Promise<void> {
   return backendDelete(`/api/v1/cash/entries/${id}`, actorHeaders(actor));
+}
+
+// ---- Финансы: статьи затрат (Настройки -> Финансы) и Расходы ----------------
+
+export type CostItem = { id: string; name: string; is_active: boolean };
+export type CostItemWrite = { name: string; is_active: boolean };
+
+export type ExpenseItemRow = { cost_item_id: string; months: string[] }; // 12, index 0 = January
+export type ExpenseWorkshop = {
+  workshop_id: string;
+  workshop_label: string;
+  rows: ExpenseItemRow[];
+  totals: string[]; // per month, across every item
+};
+export type ExpensesYear = { year: number; items: CostItem[]; workshops: ExpenseWorkshop[] };
+
+export function getCostItems(): Promise<CostItem[]> {
+  return backendGet<CostItem[]>("/api/v1/finance/cost-items");
+}
+
+export function createCostItem(payload: CostItemWrite): Promise<CostItem> {
+  return backendPost<CostItem>("/api/v1/finance/cost-items", payload);
+}
+
+export function updateCostItem(id: string, payload: CostItemWrite): Promise<CostItem> {
+  return backendPut<CostItem>(`/api/v1/finance/cost-items/${id}`, payload);
+}
+
+export function reorderCostItems(ids: string[]): Promise<CostItem[]> {
+  return backendPut<CostItem[]>("/api/v1/finance/cost-items/order", { ids });
+}
+
+export function deleteCostItem(id: string): Promise<void> {
+  return backendDelete(`/api/v1/finance/cost-items/${id}`);
+}
+
+export function getExpensesYear(year: number): Promise<ExpensesYear> {
+  return backendGet<ExpensesYear>("/api/v1/finance/expenses", { year: String(year) });
+}
+
+export function setExpense(payload: {
+  cost_item_id: string;
+  workshop_id: string;
+  year: number;
+  month: number;
+  amount: string;
+}): Promise<void> {
+  return backendPut<void>("/api/v1/finance/expenses", payload);
+}
+
+export type ExpensesImportReport = {
+  applied: boolean;
+  year: number;
+  month: number;
+  sheet: string;
+  workshops: { file_label: string; workshop: string | null }[];
+  rows: number;
+  cells: number;
+  total: string;
+  // Names in the file that are not in the cost-item directory: NOT loaded.
+  missing_items: string[];
+  skipped_inactive: string[];
+  warnings: string[];
+};
+
+/** Sends the P&L workbook (raw bytes) to the backend; `dryRun` only reports. */
+export async function importExpensesFile(params: {
+  year: number;
+  month: number;
+  dryRun: boolean;
+  content: ArrayBuffer;
+}): Promise<ExpensesImportReport> {
+  const url = new URL("/api/v1/finance/expenses/import", API_URL);
+  url.searchParams.set("year", String(params.year));
+  url.searchParams.set("month", String(params.month));
+  url.searchParams.set("dry_run", String(params.dryRun));
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${backendToken()}`, "Content-Type": "application/octet-stream" },
+    body: params.content,
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Backend request failed: ${res.status} ${await res.text()}`);
+  }
+  return res.json() as Promise<ExpensesImportReport>;
 }

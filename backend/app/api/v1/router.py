@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     budget,
     cash,
     cockpit,
+    finance,
     import_work_orders,
     leads,
     planner,
@@ -30,3 +31,4 @@ api_router.include_router(leads.router)
 api_router.include_router(budget.router)
 api_router.include_router(receivables.router)
 api_router.include_router(cash.router)
+api_router.include_router(finance.router)

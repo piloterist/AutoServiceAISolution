@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 class BudgetMonthOut(BaseModel):
     month: int
     plan_revenue: Decimal
+    # Fact revenue is two rows only (product ask, 2026-10-26): closed orders with
+    # the insurance repair type, and with "Текущий"; fact_revenue is their sum.
+    fact_revenue_insurance: Decimal
+    fact_revenue_main: Decimal
     fact_revenue: Decimal
     expenses: Decimal
     profit: Decimal

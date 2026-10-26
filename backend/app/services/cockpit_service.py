@@ -193,6 +193,7 @@ def _closed_revenue(
     revenue_statuses: list[str],
     exclude_internal: bool,
     excluded_repair_types: list[str] | None = None,
+    only_repair_types: list[str] | None = None,
 ) -> Decimal:
     filters = [
         WorkOrder.closed_date.is_not(None),
@@ -205,6 +206,9 @@ def _closed_revenue(
         filters.append(WorkOrder.status.in_(revenue_statuses))
     if exclude_internal:
         filters.append(WorkOrder.is_internal.is_(False))
+    if only_repair_types is not None:
+        # Budget's split rows: exactly these repair types (an empty list = none).
+        filters.append(WorkOrder.repair_type.in_(only_repair_types))
     if excluded_repair_types:
         # Гарантийные/Виртуальные are not revenue; NULL repair_type stays in.
         filters.append(

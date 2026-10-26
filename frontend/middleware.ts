@@ -15,6 +15,7 @@ function tabForPath(pathname: string): NavTabKey | null {
   }
   if (pathname === "/api/planner" || pathname.startsWith("/api/planner/")) return "/planner";
   if (pathname === "/api/cash" || pathname.startsWith("/api/cash/")) return "/cash";
+  if (pathname === "/api/expenses" || pathname.startsWith("/api/expenses/")) return "/budget";
   return null;
 }
 
