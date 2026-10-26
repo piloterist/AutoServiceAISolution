@@ -265,7 +265,7 @@ export function CashView({ context }: { context: CashContext }) {
             <input
               className="cash-search-input"
               value={searchText}
-              placeholder="Номер заказ-наряда"
+              placeholder="Номер ЗН или текст комментария"
               onChange={(event) => setSearchText(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") void runSearch();

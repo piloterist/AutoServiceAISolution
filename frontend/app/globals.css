@@ -6039,18 +6039,25 @@ main:has(.cockpit-page) {
 .cash-book-title {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 1rem;
+  align-items: baseline;
+  gap: 0.4rem 1.5rem;
   margin-bottom: 0.9rem;
 }
 
+/* The cash desk's name - 3x the usual title, so there is never any doubt
+   which cash the cashier is in (product ask, 2026-10-26). */
 .cash-book-title .chart-title {
   margin: 0;
+  font-size: 3rem;
+  line-height: 1.1;
 }
 
 .cash-book-period {
-  color: var(--text-muted);
-  font-size: 1.25rem;
+  /* same look as the desk name beside it, on the same line */
+  color: var(--text);
+  font-weight: 600;
+  line-height: 1.1;
+  font-size: 3rem;
 }
 
 .cash-book-loading {
@@ -6090,8 +6097,8 @@ main:has(.cockpit-page) {
 
 /* Middle column: the work-order search above the three big buttons. */
 .cash-search {
-  flex: 1 1 28rem;
-  max-width: 44rem;
+  flex: 1 1 40rem;
+  max-width: 64rem;
   margin-left: auto;
   display: flex;
   align-items: center;

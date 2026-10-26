@@ -287,9 +287,10 @@ _ENTRY_FIELDS = (
 def search_entries(
     db: Session, access: CashAccess, workshop_id: uuid.UUID, q: str
 ) -> list[CashEntry]:
-    """Entries of the desk whose work-order number contains the typed text,
-    EARLIEST first (by day, then by when they were entered) - the page jumps
-    to the first and the arrows walk through the rest."""
+    """Entries of the desk whose work-order number OR comment contains the
+    typed text (one field, product ask 2026-10-26), EARLIEST first (by day,
+    then by when they were entered) - the page jumps to the first and the
+    arrows walk through the rest."""
     _require(access, workshop_id)
     text = q.strip()
     if not text:
@@ -299,7 +300,10 @@ def search_entries(
             select(CashEntry)
             .where(
                 CashEntry.workshop_id == workshop_id,
-                CashEntry.work_order_number.ilike(f"%{text}%"),
+                or_(
+                    CashEntry.work_order_number.ilike(f"%{text}%"),
+                    CashEntry.comment.ilike(f"%{text}%"),
+                ),
             )
             .order_by(CashEntry.entry_date, CashEntry.created_at)
             .limit(200)

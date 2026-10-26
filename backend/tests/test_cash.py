@@ -797,6 +797,18 @@ def test_search_finds_entries_earliest_first_and_stays_in_the_desk(
     found = cash_service.search_entries(db_session, access, world["body"].id, "10503")
 
     assert [e.id for e in found] == [early.id, late.id]
+
+    # the same field also finds entries by comment text (any case)
+    commented = _add(
+        db_session,
+        world,
+        KIND_CASH_OUT,
+        "9",
+        DAY + timedelta(days=1),
+        comment="Уборщица за октябрь",
+    )
+    by_comment = cash_service.search_entries(db_session, access, world["body"].id, "убОРщ")
+    assert [e.id for e in by_comment] == [commented.id]
     assert cash_service.search_entries(db_session, access, world["body"].id, "  ") == []
     with pytest.raises(CashForbidden):
         cash_service.search_entries(db_session, access, world["other"].id, "10503")
