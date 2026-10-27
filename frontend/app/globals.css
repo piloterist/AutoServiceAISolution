@@ -1651,7 +1651,7 @@ table.admin-data-table td.audit-changes-cell {
 
 @media (min-width: 960px) {
   .dashboard-grid {
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 3.3fr 1fr;
     grid-template-rows: auto auto;
     align-items: stretch;
   }
@@ -1702,24 +1702,20 @@ table.admin-data-table td.audit-changes-cell {
    below it. Wide screens (the cell is wide enough): all three in one row. */
 @media (min-width: 640px) {
   .dashboard-split {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     align-items: stretch;
   }
-
-  .dashboard-split > .card:first-child {
-    grid-column: 1 / -1;
-  }
 }
 
-@media (min-width: 1500px) {
+/* Wide screens: the monthly bar chart and the conversion card on one line,
+   which is also the line of "Оплаты по подразделениям" beside them. */
+@media (min-width: 1400px) {
   .dashboard-split {
-    grid-template-columns: minmax(220px, 0.7fr) minmax(0, 1.15fr) minmax(0, 1.15fr);
-  }
-
-  .dashboard-split > .card:first-child {
-    grid-column: auto;
+    grid-template-columns: minmax(230px, 0.5fr) minmax(0, 2fr);
   }
 }
+
+
 
 .conversion-donut {
   display: flex;
@@ -6565,4 +6561,117 @@ main:has(.cockpit-page) {
 .expenses-import-report ul {
   margin: 0.4rem 0;
   padding-left: 1.2rem;
+}
+
+/* Конверсия: the "?" next to a card title and the plain-language help window */
+.info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-left: 0.4rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface2);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.info-btn:hover {
+  background: var(--accent, #2a78d6);
+  border-color: var(--accent, #2a78d6);
+  color: #fff;
+}
+
+.conversion-help {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+  line-height: 1.5;
+  font-size: 1rem;
+}
+
+.conversion-help h4 {
+  margin: 1.1rem 0 0.3rem;
+  font-size: 1.05rem;
+}
+
+.conversion-help ul {
+  margin: 0.3rem 0 0.6rem;
+  padding-left: 1.2rem;
+}
+
+.conversion-help li {
+  margin-bottom: 0.35rem;
+}
+
+/* One conversion card with three donuts (new / existing clients / order
+   sources): each donut with its figures to the RIGHT of it, labels and numbers
+   close together (product ask, 2026-10-27). */
+.dashboard-split .conversion-trio {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem 0.5rem;
+}
+
+@media (min-width: 1100px) {
+  .dashboard-split .conversion-trio {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.conversion-sub-title {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.conversion-trio .conversion-donut {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.conversion-trio .conversion-donut-chart {
+  flex: 0 0 auto;
+  width: clamp(8rem, 10.5vw, 12.5rem);
+  height: clamp(8rem, 10.5vw, 12.5rem);
+}
+
+.conversion-trio .conversion-donut-chart svg {
+  width: 100%;
+  height: 100%;
+}
+
+.conversion-trio .conversion-donut-pct {
+  font-size: clamp(1.3rem, 1.7vw, 2rem);
+}
+
+.conversion-trio .conversion-donut-numbers {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 15rem;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  padding-top: 0.3rem;
+}
+
+.conversion-trio .conversion-donut-numbers > .conversion-donut-row {
+  gap: 0.5rem;
+  padding-bottom: 0.2rem;
+}
+
+.conversion-donut-numbers > .conversion-donut-row--plain:hover {
+  background: none;
+}
+
+.conversion-donut-numbers > .conversion-donut-row--plain:hover dd {
+  text-decoration: none;
 }

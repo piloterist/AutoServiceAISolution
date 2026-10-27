@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import NamedTuple
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -226,6 +226,10 @@ class ConversionSummary:
     converted_new_clients: int  # new clients that got a work order afterwards
     work_orders_new_clients: int  # the work orders they got
     work_orders_total: int  # every work order created in the period
+    # ... of those: preceded by a target call of the same number (counted in the
+    # funnels above), and the rest - walk-ins, repeat clients, other channels.
+    work_orders_after_call: int
+    work_orders_without_call: int
     conversion_pct: float | None  # converted_new_clients / new_clients * 100
     # The same funnel for EXISTING clients - numbers that already had a work
     # order before their first call and whose earlier work orders are all
@@ -244,17 +248,33 @@ class ConversionSummary:
     unanswered_existing: int  # the same for counted-existing numbers
 
 
+# A conversation longer than this counts as a target call even when its topic is
+# not defined / not transcribed (product ask, 2026-10-27: the calls of the first
+# days of October have no transcript, and "тема не определена" is often a real
+# client).
+TARGET_TALK_SEC = 20
+
+
 def _has_defined_topic(topic_tag: str | None) -> bool:
     return bool(topic_tag) and topic_tag != TOPIC_UNDETERMINED
+
+
+def _is_target_conversation(talk_sec: int, topic_tag: str | None) -> bool:
+    """A real conversation (>= MIN_REAL_TALK_SEC) that is a target call: it has
+    a defined topic, or it lasted longer than TARGET_TALK_SEC."""
+    if talk_sec < telephony_stats_service.MIN_REAL_TALK_SEC:
+        return False
+    return _has_defined_topic(topic_tag) or talk_sec > TARGET_TALK_SEC
 
 
 def _next_conversation_after(
     db: Session, phones: set[str], after_utc: datetime
 ) -> dict[str, datetime]:
-    """For each phone, when its first real conversation with a defined topic
-    (either direction) happened at/after `after_utc` - the end of that
-    phone's work-order search window in get_conversion_summary. Phones with
-    no later conversation are absent (= no limit)."""
+    """For each phone, when its first target conversation (a defined topic, or
+    longer than TARGET_TALK_SEC; either direction) happened at/after
+    `after_utc` - the end of that phone's work-order search window in
+    get_conversion_summary. Phones with no later conversation are absent (= no
+    limit)."""
     if not phones:
         return {}
     rows = db.execute(
@@ -263,8 +283,13 @@ def _next_conversation_after(
             CallRecord.client.in_(phones),
             CallRecord.occurred_at >= after_utc,
             CallRecord.talk_sec >= telephony_stats_service.MIN_REAL_TALK_SEC,
-            CallRecord.topic_tag.is_not(None),
-            CallRecord.topic_tag != TOPIC_UNDETERMINED,
+            or_(
+                and_(
+                    CallRecord.topic_tag.is_not(None),
+                    CallRecord.topic_tag != TOPIC_UNDETERMINED,
+                ),
+                CallRecord.talk_sec > TARGET_TALK_SEC,
+            ),
         )
         .group_by(CallRecord.client)
     ).all()
@@ -326,38 +351,70 @@ def _status_timelines(
     return timelines
 
 
+# A call about the order that is already being done ("when will it be ready",
+# "what is the status") is not a new request (product ask, 2026-10-27: judge the
+# call by its MEANING, not by the status of the client's order alone). Phrases
+# looked for in the call's topic (lower case):
+STATUS_TOPIC_PHRASES = (
+    "готовност",
+    "статус",
+    "срок",
+    "завершени",
+    "ход работ",
+    "состояние машин",
+    "состояния машин",
+    "состояние автомобил",
+    "состояния автомобил",
+    "проверка после",
+    "проверка ремонта",
+    "проверка результат",
+    "забрать",
+    "забирать",
+    "выдач",
+)
+# ... and only when that order is in progress, or was finished a moment ago.
+STATUS_GRACE = timedelta(days=3)
+
+
+def is_status_topic(topic_tag: str | None) -> bool:
+    """The topic of a call speaks about an order already being done."""
+    text = (topic_tag or "").casefold().replace("ё", "е")
+    return any(phrase in text for phrase in STATUS_TOPIC_PHRASES)
+
+
 def _call_state(
     orders: list[PhoneWorkOrder],
     moment: datetime,
     resolver: _StatusResolver,
-    closed_status: str,
+    topic_tag: str | None = None,
 ) -> str:
     """How a call at `moment` counts, judged against the number's work orders
-    at that moment, to the minute (product ask, 2026-10-24):
+    at that moment, to the minute:
 
     - "new": no work order existed yet (any status);
-    - "excluded": some work order existing then was NOT finished (a status
-      other than Закрыт/Отказ - the client is asking about a repair in
-      progress), or was "Закрыт" and moved to that status on the same date
-      as the call (the car was being handed over right now);
-    - "existing": it had work orders, all finished earlier.
+    - "status": the call is about an order already being done - its topic reads
+      like "готовность / статус / сроки / забрать машину" (is_status_topic) AND
+      the client has an order in progress at that moment, or finished within
+      STATUS_GRACE. Not a new request, so not a target call: it is counted
+      separately ("по текущему заказу");
+    - "existing": otherwise, when it had work orders - finished or still open (an
+      open one does not exclude the call: the client may well be opening a new
+      order with extra work).
 
     `orders` must already leave out warranty work orders."""
-    call_date = moment.astimezone(_MSK).date()
     existing = False
+    in_progress = False
     for wo in orders:
         if wo.created >= moment:
             continue  # created after the call
         existing = True
         since, status = resolver.at(wo, moment)
         if status is None or status not in resolver.finished:
-            return "excluded"
-        if (
-            status == closed_status
-            and since is not None
-            and since.astimezone(_MSK).date() == call_date
-        ):
-            return "excluded"
+            in_progress = True
+        elif since is not None and moment - since <= STATUS_GRACE:
+            in_progress = True
+    if existing and in_progress and is_status_topic(topic_tag):
+        return "status"
     return "existing" if existing else "new"
 
 
@@ -412,16 +469,16 @@ def classify_phones(
     """Sort the period's phone numbers into client classes and work out the
     conversion (product ask, 2026-10-24) - one entry per unique number.
 
-    A CALL counts as "a conversation with a topic" if it was answered for
-    >= MIN_REAL_TALK_SEC AND has a defined topic (no topic = an advert/robot);
-    outbound calls count only as a callback to a missed inbound
-    (CALLBACK_WINDOW).
+    A CALL counts as a TARGET call if it was answered for >= MIN_REAL_TALK_SEC
+    AND has a defined topic, OR lasted longer than TARGET_TALK_SEC whatever its
+    topic (see _is_target_conversation); outbound calls count only as a
+    callback to a missed inbound (CALLBACK_WINDOW).
 
     Each such call is judged on its own, to the minute, against the number's
-    work orders at that moment (see _call_state): "new" (none yet),
-    "existing" (some, all finished earlier) or "excluded" (an unfinished
-    one, or one closed that very day - a call about a repair in progress).
-    Excluded calls stay out of the pool. A number is in the target calls and
+    work orders at that moment (see _call_state): "new" (none yet), "existing"
+    (some, open or finished) or "status" (the call is about an order already
+    being done - by its topic, see is_status_topic - so it is not a new request).
+    "Status" calls stay out of the pool. A number is in the target calls and
     the conversion once, through its first non-excluded call, as "new" or
     "existing_counted"; a number whose every such call was excluded is
     "existing_excluded". Warranty work orders (Settings -> Общие) are ignored
@@ -437,15 +494,16 @@ def classify_phones(
     `departments` (raw 1C department names, the dashboard's filter) narrows
     it to one workshop: only calls attributed to the workshops mapped to
     those departments are counted, and only work orders of those departments
-    count as conversions. Whether a number is new / existing / excluded is
-    always judged company-wide - a repair in progress in another workshop is
-    still a repair in progress."""
+    count as conversions. A number whose target call went to another workshop's
+    line still belongs to a department if that call led to an order of it. Whether
+    a number is new / existing / status is always judged company-wide."""
     workshop_ids = workshop_ids_for_departments(db, departments)
     head, period, _tail = telephony_stats_service.fetch_conversion_window(db, start_day, end_day)
     by_client: dict[str, list[telephony_stats_service._Rec]] = {}
     for rec in head + period:
         if rec.client:
             by_client.setdefault(rec.client, []).append(rec)
+    period_all = period
     if workshop_ids is not None:
         period = [r for r in period if r.workshop_id in workshop_ids]
 
@@ -475,8 +533,27 @@ def classify_phones(
         counts = rec.type == "IN" or telephony_stats_service.has_earlier_miss(rec, by_client)
         if is_conversation and counts:
             talk_phones.add(rec.client)
-            if _has_defined_topic(rec.topic_tag):
+            if _is_target_conversation(rec.talk, rec.topic_tag):
                 qualifying.setdefault(rec.client, []).append(rec)
+
+    # With a department filter, a number whose target call went to ANOTHER
+    # workshop's line can still belong here: when that call led to a work order
+    # of this department (product ask, 2026-10-27). Collect the target calls of
+    # every line for that.
+    qualifying_all: dict[str, list[telephony_stats_service._Rec]] = {}
+    calls_all: dict[str, int] = {}
+    if workshop_ids is not None:
+        for rec in sorted(period_all, key=lambda r: r.time):
+            if rec.type not in ("IN", "OUT") or not rec.client:
+                continue
+            calls_all[rec.client] = calls_all.get(rec.client, 0) + 1
+            counts = rec.type == "IN" or telephony_stats_service.has_earlier_miss(rec, by_client)
+            if (
+                rec.talk >= telephony_stats_service.MIN_REAL_TALK_SEC
+                and counts
+                and _is_target_conversation(rec.talk, rec.topic_tag)
+            ):
+                qualifying_all.setdefault(rec.client, []).append(rec)
 
     period_start_utc = to_utc(datetime.combine(start_day, datetime.min.time()))
     period_end_utc = to_utc(datetime.combine(end_day + timedelta(days=1), datetime.min.time()))
@@ -484,7 +561,7 @@ def classify_phones(
     settings = get_settings()
     finished_statuses = set(settings.conversion_finished_statuses_list)
     warranty = set(settings_service.get_app_settings(db).warranty_repair_types or [])
-    all_phones = set(first_call)
+    all_phones = set(first_call) | set(qualifying_all)
     work_orders = _work_orders_by_phone(db, all_phones, warranty)
     resolver = _StatusResolver(
         _status_timelines(
@@ -499,27 +576,57 @@ def classify_phones(
         finished_statuses,
     )
 
-    def state_at(phone: str, rec_time: datetime) -> str:
-        return _call_state(
-            work_orders.get(phone, []),
-            to_utc(rec_time),
-            resolver,
-            settings.conversion_closed_status,
-        )
+    def state_at(phone: str, rec_time: datetime, topic_tag: str | None = None) -> str:
+        return _call_state(work_orders.get(phone, []), to_utc(rec_time), resolver, topic_tag)
 
     # 1. each number's counted call = its first qualifying call that is not excluded
     counted_call: dict[str, tuple[datetime, str]] = {}
     for phone, recs in qualifying.items():
         for rec in recs:
-            state = state_at(phone, rec.time)
-            if state != "excluded":
+            state = state_at(phone, rec.time, rec.topic_tag)
+            if state != "status":
                 counted_call[phone] = (rec.time, state)
                 break
 
-    next_conversation = _next_conversation_after(db, set(counted_call), period_end_utc)
+    # Numbers whose target call went to another workshop's line: candidates.
+    candidates: dict[str, tuple[datetime, str]] = {}
+    for phone, recs in qualifying_all.items():
+        if phone in counted_call:
+            continue
+        for rec in recs:
+            state = state_at(phone, rec.time, rec.topic_tag)
+            if state != "status":
+                candidates[phone] = (rec.time, state)
+                break
+
+    next_conversation = _next_conversation_after(
+        db, set(counted_call) | set(candidates), period_end_utc
+    )
+
+    def led_to_for(phone: str, counted_time: datetime) -> list[uuid.UUID]:
+        counted_utc = to_utc(counted_time)
+        window_end = next_conversation.get(phone)
+        return [
+            wo.id
+            for wo in work_orders.get(phone, [])
+            if counted_utc < wo.created
+            and (window_end is None or wo.created < window_end)
+            and (departments is None or wo.department in departments)
+        ]
+
+    # A candidate is attributed to this department only if its call led to an
+    # order of this department; its calls on the other lines are counted too.
+    attributed: set[str] = set()
+    for phone, counted in candidates.items():
+        if led_to_for(phone, counted[0]):
+            attributed.add(phone)
+            counted_call[phone] = counted
+            calls_total += calls_all.get(phone, 0) - calls_by_phone.get(phone, 0)
 
     phones: dict[str, PhoneInfo] = {}
     for phone in all_phones:
+        if phone not in first_call and phone not in attributed:
+            continue  # a target call on another line that did not lead here
         unanswered = phone in last_miss and (
             phone not in last_contact or last_contact[phone] < last_miss[phone]
         )
@@ -531,32 +638,29 @@ def classify_phones(
             # if nobody got back to it, else its first call.
             if qualifying.get(phone):
                 ref = qualifying[phone][0].time
+                ref_topic = qualifying[phone][0].topic_tag
             else:
                 ref = last_miss[phone] if unanswered else first_call[phone]
-            state = state_at(phone, ref)
+                ref_topic = None
+            state = state_at(phone, ref, ref_topic)
         client_class = {
             "new": "new",
             "existing": "existing_counted",
-            "excluded": "existing_excluded",
+            "status": "existing_excluded",
         }[state]
 
         led_to: list[uuid.UUID] = []
         if phone in counted_call:
-            counted_utc = to_utc(counted_time)
-            window_end = next_conversation.get(phone)
-            led_to = [
-                wo.id
-                for wo in work_orders.get(phone, [])
-                if counted_utc < wo.created
-                and (window_end is None or wo.created < window_end)
-                and (departments is None or wo.department in departments)
-            ]
+            led_to = led_to_for(phone, counted_time)
         phones[phone] = PhoneInfo(
             client_class=client_class,
-            calls=calls_by_phone[phone],
-            topic_calls=len(qualifying.get(phone, [])),
+            calls=calls_by_phone.get(phone, 0)
+            + (
+                calls_all.get(phone, 0) - calls_by_phone.get(phone, 0) if phone in attributed else 0
+            ),
+            topic_calls=len(qualifying.get(phone) or qualifying_all.get(phone, [])),
             has_topic=phone in counted_call,
-            had_qualifying=phone in qualifying,
+            had_qualifying=phone in qualifying or phone in attributed,
             work_orders=len(led_to),
             work_order_ids=led_to,
             unanswered=unanswered,
@@ -608,7 +712,11 @@ def get_conversion_summary(
         )
     if departments:
         total_filters.append(WorkOrder.department.in_(departments))
-    work_orders_total = db.scalar(select(func.count()).select_from(WorkOrder).where(*total_filters))
+    period_ids = set(db.scalars(select(WorkOrder.id).where(*total_filters)))
+    work_orders_total = len(period_ids)
+    after_call_ids = {
+        work_order_id for info in infos if info.has_topic for work_order_id in info.work_order_ids
+    } & period_ids
 
     return ConversionSummary(
         calls_total=classification.calls_total,
@@ -617,7 +725,9 @@ def get_conversion_summary(
         new_clients=len(new),
         converted_new_clients=len(new_converted),
         work_orders_new_clients=sum(x.work_orders for x in new_converted),
-        work_orders_total=work_orders_total or 0,
+        work_orders_total=work_orders_total,
+        work_orders_after_call=len(after_call_ids),
+        work_orders_without_call=work_orders_total - len(after_call_ids),
         conversion_pct=round(len(new_converted) / len(new) * 100, 1) if new else None,
         existing_topic_phones=len(counted) + len(excluded_topic),
         existing_excluded=len(excluded_topic),

@@ -23,17 +23,18 @@ type Row = {
   label: string;
   hint: string;
   value: number;
-  cohort: Cohort;
+  cohort?: Cohort; // no cohort and no workOrders = a plain row, not a link
   workOrders?: "new" | "existing";
 };
 
 type Figures = {
-  // Which "Конверсия" selection the donut itself links to.
-  cohort: Cohort;
+  // Which "Конверсия" selection the donut itself links to (none = not a link).
+  cohort?: Cohort;
   pct: number | null;
   converted: number;
   base: number;
   baseLabel: string;
+  caption: string;
   rows: Row[];
 };
 
@@ -41,7 +42,37 @@ type Figures = {
  * numbers, a real conversation with a defined topic, a work order created
  * after the call and before the next conversation) live in the backend -
  * see conversion_service.get_conversion_summary. */
-function figuresFor(variant: "new" | "existing", s: ConversionSummary): Figures {
+function figuresFor(variant: "new" | "existing" | "sources", s: ConversionSummary): Figures {
+  if (variant === "sources") {
+    const total = s.work_orders_total;
+    const afterPct = total > 0 ? (s.work_orders_after_call / total) * 100 : null;
+    const withoutPct = total > 0 ? (s.work_orders_without_call / total) * 100 : 0;
+    return {
+      pct: afterPct,
+      converted: s.work_orders_after_call,
+      base: total,
+      baseLabel: "заказ-нарядов",
+      caption: "после звонка",
+      rows: [
+        {
+          label: "Всего заказ-нарядов",
+          hint: "Заказ-наряды, созданные за период (без гарантийных; внутренние — если в настройках включено их исключение)",
+          value: total,
+        },
+        {
+          label: "После звонка",
+          hint: "Заказ-наряд создан после целевого звонка клиента с этого же номера — того звонка, который учтён в конверсии",
+          value: s.work_orders_after_call,
+        },
+        {
+          label: "Без звонка",
+          hint: `Все остальные: клиент приехал сам, звонил до периода, звонок был не целевой или с другого номера (${withoutPct.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}% от всех)`,
+          value: s.work_orders_without_call,
+        },
+      ],
+    };
+  }
+
   const totalCalls: Row = {
     label: "Всего звонков",
     hint: "Все входящие и исходящие звонки периода, все клиенты (без сотрудников)",
@@ -50,7 +81,7 @@ function figuresFor(variant: "new" | "existing", s: ConversionSummary): Figures 
   };
   const targetCalls: Row = {
     label: "Целевые звонки",
-    hint: "Новые клиенты + существующие клиенты: уникальные номера с разговором по теме; не входят звонки, когда на момент звонка у клиента был заказ-наряд не в статусах «Закрыт»/«Отказ» или «Закрыт» в тот же день (гарантийные заказ-наряды не учитываются)",
+    hint: "Новые клиенты + существующие клиенты: уникальные номера с целевым разговором (тема определена или разговор дольше 20 секунд). Не входят звонки по уже идущему заказу («когда будет готова», «статус») и звонки сотрудников. Подробности — по значку «?» у заголовка",
     value: s.target_phones,
     cohort: "target",
   };
@@ -62,6 +93,7 @@ function figuresFor(variant: "new" | "existing", s: ConversionSummary): Figures 
       converted: s.converted_new_clients,
       base: s.new_clients,
       baseLabel: "новых клиентов",
+      caption: "конверсия",
       rows: [
         totalCalls,
         targetCalls,
@@ -99,12 +131,13 @@ function figuresFor(variant: "new" | "existing", s: ConversionSummary): Figures 
     converted: s.converted_existing_clients,
     base: s.existing_clients,
     baseLabel: "существующих клиентов",
+    caption: "конверсия",
     rows: [
       totalCalls,
       targetCalls,
       {
         label: "Существующие клиенты",
-        hint: `Целевые номера (разговор по теме) клиентов, у которых к моменту звонка все прежние заказ-наряды закрыты или отказаны (исключено номеров: ${formatInt(s.existing_excluded)})`,
+        hint: `Целевые номера клиентов, у которых к моменту звонка уже был заказ-наряд (в любом статусе, в том числе незакрытый)`,
         value: s.existing_clients,
         cohort: "existing_counted",
       },
@@ -131,6 +164,21 @@ function figuresFor(variant: "new" | "existing", s: ConversionSummary): Figures 
   };
 }
 
+/** The donut itself: a link into Телефония -> Конверсия, or a plain block when
+ * the figure has no call list behind it (the order sources). */
+function DonutWrap({ href, children }: { href: string | null; children: React.ReactNode }) {
+  if (href === null) return <div className="conversion-donut-chart">{children}</div>;
+  return (
+    <Link
+      className="conversion-donut-chart conversion-donut-link"
+      href={href}
+      title="Открыть звонки в Телефония → Конверсия"
+    >
+      {children}
+    </Link>
+  );
+}
+
 /** Телефония -> конверсия в заказ-наряды за период (product ask,
  * 2026-10-24): a donut whose centre is the conversion % and, beside it, the
  * numbers it is built from. "new" = clients with no earlier work order,
@@ -142,7 +190,7 @@ export function ConversionDonut({
   departments = [],
 }: {
   summary: ConversionSummary | null;
-  variant: "new" | "existing";
+  variant: "new" | "existing" | "sources";
   // The dashboard's department filter, carried into the links so the tab
   // shows the same workshop.
   departments?: string[];
@@ -158,14 +206,20 @@ export function ConversionDonut({
   const label =
     pct === null
       ? `Нет ${figures.baseLabel} за период`
-      : `Конверсия ${formatPct(pct)}: ${figures.converted} из ${figures.base} ${figures.baseLabel}`;
+      : variant === "sources"
+        ? `После звонка ${formatPct(pct)}: ${figures.converted} из ${figures.base} ${figures.baseLabel}`
+        : `Конверсия ${formatPct(pct)}: ${figures.converted} из ${figures.base} ${figures.baseLabel}`;
+  const stroke =
+    variant === "new" ? "var(--chart-series)" : variant === "existing" ? "var(--chart-series-2)" : "#2f9e5b";
 
   return (
     <div className="conversion-donut">
-      <Link
-        className="conversion-donut-chart conversion-donut-link"
-        href={conversionHref(summary.start_date, summary.end_date, figures.cohort, departments)}
-        title="Открыть звонки в Телефония → Конверсия"
+      <DonutWrap
+        href={
+          figures.cohort
+            ? conversionHref(summary.start_date, summary.end_date, figures.cohort, departments)
+            : null
+        }
       >
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label={label}>
           <title>{label}</title>
@@ -184,7 +238,7 @@ export function ConversionDonut({
               cy={SIZE / 2}
               r={RADIUS}
               fill="none"
-              stroke={variant === "new" ? "var(--chart-series)" : "var(--chart-series-2)"}
+              stroke={stroke}
               strokeWidth={STROKE}
               strokeLinecap="round"
               strokeDasharray={`${dash} ${CIRCUMFERENCE - dash}`}
@@ -194,26 +248,33 @@ export function ConversionDonut({
         </svg>
         <div className="conversion-donut-center">
           <span className="conversion-donut-pct">{pct === null ? "—" : formatPct(pct)}</span>
-          <span className="conversion-donut-caption">конверсия</span>
+          <span className="conversion-donut-caption">{figures.caption}</span>
         </div>
-      </Link>
+      </DonutWrap>
 
       <dl className="conversion-donut-numbers">
-        {figures.rows.map((row) => (
-          <Link
-            key={row.label}
-            className="conversion-donut-row"
-            href={
-              row.workOrders
-                ? conversionWorkOrdersHref(row.workOrders, summary.start_date, summary.end_date, departments)
-                : conversionHref(summary.start_date, summary.end_date, row.cohort, departments)
-            }
-            title={row.hint}
-          >
-            <dt>{row.label}</dt>
-            <dd>{formatInt(row.value)}</dd>
-          </Link>
-        ))}
+        {figures.rows.map((row) =>
+          row.workOrders || row.cohort ? (
+            <Link
+              key={row.label}
+              className="conversion-donut-row"
+              href={
+                row.workOrders
+                  ? conversionWorkOrdersHref(row.workOrders, summary.start_date, summary.end_date, departments)
+                  : conversionHref(summary.start_date, summary.end_date, row.cohort as Cohort, departments)
+              }
+              title={row.hint}
+            >
+              <dt>{row.label}</dt>
+              <dd>{formatInt(row.value)}</dd>
+            </Link>
+          ) : (
+            <div key={row.label} className="conversion-donut-row conversion-donut-row--plain" title={row.hint}>
+              <dt>{row.label}</dt>
+              <dd>{formatInt(row.value)}</dd>
+            </div>
+          ),
+        )}
       </dl>
 
     </div>

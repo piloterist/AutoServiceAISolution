@@ -261,9 +261,9 @@ def test_summary_counts_unique_new_numbers_with_a_talk_and_a_topic(db_session: S
     )
     # B: talked with a topic, but already had a work order before -> existing.
     _call(db_session, external_id="b", client="9990000002", talk_sec=40, topic_tag=TOPIC)
-    # C: talked, topic "not defined" (advert / robot) -> dropped.
+    # C: a short talk (<= 20 s), topic "not defined" (advert / robot) -> dropped.
     _call(
-        db_session, external_id="c", client="9990000003", talk_sec=40, topic_tag=TOPIC_UNDETERMINED
+        db_session, external_id="c", client="9990000003", talk_sec=15, topic_tag=TOPIC_UNDETERMINED
     )
     # D: only missed calls -> dropped.
     _call(db_session, external_id="d", client="9990000004")
@@ -469,7 +469,7 @@ def test_existing_clients_with_only_finished_orders_are_counted(db_session: Sess
     assert summary.existing_conversion_pct == 50.0
 
 
-def test_existing_client_with_an_order_in_progress_is_excluded(db_session: Session) -> None:
+def test_existing_client_with_an_order_in_progress_is_counted(db_session: Session) -> None:
     """They are most likely calling about the repair in progress, not to
     book a new one - their calls stay out of the conversion entirely."""
     _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
@@ -496,12 +496,16 @@ def test_existing_client_with_an_order_in_progress_is_excluded(db_session: Sessi
 
     summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
 
+    # An order still in progress no longer excludes the call (product ask,
+    # 2026-10-27): the client may be opening a new one - it is an existing
+    # client, and the order created after the call is its conversion.
     assert summary.existing_topic_phones == 1
-    assert summary.existing_excluded == 1
-    assert summary.existing_clients == 0
-    assert summary.converted_existing_clients == 0
-    assert summary.existing_conversion_pct is None
-    # ... and it is not a new client either.
+    assert summary.existing_excluded == 0
+    assert summary.existing_clients == 1
+    assert summary.converted_existing_clients == 1
+    assert summary.work_orders_existing_clients == 1
+    assert summary.existing_conversion_pct == 100.0
+    # ... and it is not a new client.
     assert summary.new_clients == 0
 
 
@@ -563,10 +567,15 @@ def test_order_closed_on_an_earlier_day_does_not_exclude_the_client(db_session: 
     assert summary.existing_excluded == 0
 
 
-def test_order_closed_on_the_day_of_the_call_still_excludes_the_client(db_session: Session) -> None:
-    """Workshop orders go from "Заявка" to "Закрыт" within a single day, so
-    a call on the closing day is most likely about that very repair."""
-    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
+STATUS_TOPIC = "Уточнение готовности машины"
+
+
+def test_a_status_call_right_after_the_order_was_closed_is_not_a_target_call(
+    db_session: Session,
+) -> None:
+    """A call about the order being done ("готовность машины") while it is in
+    progress or has just been closed is not a new request."""
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=STATUS_TOPIC)
     wo = _wo(
         "SAME-DAY",
         datetime(2026, 10, 1, 9, 0, tzinfo=UTC),
@@ -584,7 +593,7 @@ def test_order_closed_on_the_day_of_the_call_still_excludes_the_client(db_sessio
     assert summary.existing_clients == 0
 
 
-def test_order_closed_after_the_call_day_excludes_the_client(db_session: Session) -> None:
+def test_order_closed_after_the_call_day_still_counts_the_client(db_session: Session) -> None:
     _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
     wo = _wo(
         "LATER", datetime(2026, 10, 1, 9, 0, tzinfo=UTC), phone="+7 999 000 00 01", status="Закрыт"
@@ -595,19 +604,21 @@ def test_order_closed_after_the_call_day_excludes_the_client(db_session: Session
 
     summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
 
-    assert summary.existing_excluded == 1
+    assert summary.existing_excluded == 0
+    assert summary.existing_clients == 1
 
 
 def test_finish_day_falls_back_to_closed_date_then_document_date(db_session: Session) -> None:
-    # No history: closed_date decides (closed on the call day -> excluded)...
-    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
+    # No history: closed_date decides (closed a moment ago + a status call -> not a
+    # target call)...
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=STATUS_TOPIC)
     db_session.add(
         _wo(
             "CLOSED-TODAY",
             datetime(2026, 10, 1, 9, 0, tzinfo=UTC),
             phone="+7 999 000 00 01",
             status="Закрыт",
-            closed_date=datetime(2026, 10, 10, 15, 0, tzinfo=UTC),
+            closed_date=datetime(2026, 10, 10, 6, 0, tzinfo=UTC),  # 09:00 MSK, before the call
         )
     )
     # ... and a refusal, which never has closed_date, falls back to its
@@ -670,7 +681,7 @@ def test_summary_figures_beside_the_donuts_are_unique_numbers(db_session: Sessio
             status="Закрыт",
         )
     )
-    # EXISTING but an order is in progress -> not counted anywhere.
+    # EXISTING with an order in progress -> counted as an existing client too.
     _call(db_session, external_id="x", client="9990000004", talk_sec=40, topic_tag=TOPIC)
     db_session.add(
         _wo(
@@ -685,12 +696,12 @@ def test_summary_figures_beside_the_donuts_are_unique_numbers(db_session: Sessio
     summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
 
     assert summary.calls_total == 5 + 1 + 2 + 1
-    # Target = new + existing numbers WITH a topic conversation (the
-    # only-missed number and the in-progress existing one are not).
+    # Target = new + existing numbers WITH a target conversation (the
+    # only-missed number is not).
     assert summary.new_clients == 1
-    assert summary.existing_clients == 1
-    assert summary.target_phones == summary.new_clients + summary.existing_clients == 2
-    assert summary.existing_excluded == 1
+    assert summary.existing_clients == 2
+    assert summary.target_phones == summary.new_clients + summary.existing_clients == 3
+    assert summary.existing_excluded == 0
 
 
 def test_unanswered_numbers_are_missed_and_never_reached_in_the_period(
@@ -781,9 +792,9 @@ def _history(db_session: Session, wo: WorkOrder, *entries: tuple[datetime, str])
 
 
 def test_each_call_is_judged_by_the_order_status_at_that_minute(db_session: Session) -> None:
-    """09:00 call while the order is in progress -> excluded; 15:00 call,
-    after it was closed the day before... (here: closed on an earlier day) ->
-    counted. The number counts once, through the call that was not excluded."""
+    """09:00 call while the order is in progress -> counted (existing); 15:00
+    call, after it was closed THAT day -> excluded. The number counts once,
+    through the call that was not excluded."""
     # Two topic conversations on the 10th (MSK): 09:00 and 15:00.
     _call(
         db_session,
@@ -817,9 +828,10 @@ def test_each_call_is_judged_by_the_order_status_at_that_minute(db_session: Sess
 
     summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
 
-    # 09:00 -> open order; 15:00 -> closed the same date -> both excluded.
-    assert summary.target_phones == 0
-    assert summary.existing_excluded == 1
+    # 09:00 -> open order -> counted; 15:00 -> closed the same date -> excluded.
+    assert summary.target_phones == 1
+    assert summary.existing_clients == 1
+    assert summary.existing_excluded == 0
 
 
 def test_a_later_call_after_the_closing_day_is_counted(db_session: Session) -> None:
@@ -906,8 +918,8 @@ def test_an_order_closed_later_the_same_day_was_open_at_call_time(db_session: Se
 
     summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
 
-    assert summary.existing_excluded == 1
-    assert summary.existing_clients == 0
+    assert summary.existing_excluded == 0
+    assert summary.existing_clients == 1
 
 
 def test_warranty_orders_are_ignored_everywhere(db_session: Session) -> None:
@@ -1132,3 +1144,243 @@ def test_work_order_dates_are_compared_as_real_moments(db_session: Session) -> N
     assert group.work_order_number == "AFTER"
     assert group.is_existing is True  # BEFORE already existed at 12:00
     assert summary.work_orders_total == 2  # both created on the 10th
+
+
+# ---- Целевой звонок: тема определена ИЛИ разговор дольше 20 секунд ---------------
+
+
+def test_a_talk_over_20_seconds_is_a_target_call_even_without_a_topic(db_session: Session) -> None:
+    from app.models.call_record import TOPIC_UNDETERMINED
+
+    # No transcript at all (topic None) / topic not defined, but a long talk: target.
+    _call(db_session, external_id="long-none", client="9990000001", talk_sec=21, topic_tag=None)
+    _call(
+        db_session,
+        external_id="long-undet",
+        client="9990000002",
+        talk_sec=90,
+        topic_tag=TOPIC_UNDETERMINED,
+    )
+    # Exactly 20 s or shorter without a topic: still not a target call.
+    _call(db_session, external_id="edge", client="9990000003", talk_sec=20, topic_tag=None)
+    _call(db_session, external_id="short", client="9990000004", talk_sec=8, topic_tag=None)
+    # A defined topic keeps counting however short the (real) talk is.
+    _call(db_session, external_id="topic", client="9990000005", talk_sec=6, topic_tag=TOPIC)
+    db_session.commit()
+
+    summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
+
+    assert summary.talk_phones == 5
+    assert summary.topic_phones == 3  # long-none, long-undet, topic
+    assert summary.new_clients == 3
+    assert summary.target_phones == 3
+
+
+def test_the_work_order_window_ends_at_the_next_target_conversation(db_session: Session) -> None:
+    """A later long talk without a topic closes the window too: the work order
+    created after it belongs to that conversation, not to the earlier call."""
+    _call(
+        db_session,
+        external_id="first",
+        day=10,
+        hour_msk=9,
+        client="9990000001",
+        talk_sec=40,
+        topic_tag=TOPIC,
+    )
+    _call(
+        db_session,
+        external_id="second",
+        day=11,
+        hour_msk=9,
+        client="9990000001",
+        talk_sec=60,
+        topic_tag=None,
+    )
+    db_session.add(
+        _wo("AFTER-SECOND", datetime(2026, 10, 11, 10, 0, tzinfo=UTC), phone="+7 999 000 00 01")
+    )
+    db_session.commit()
+
+    summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
+
+    assert summary.new_clients == 1
+    assert summary.converted_new_clients == 0
+
+
+# ---- Звонок по смыслу: по текущему заказу ----------------------------------------
+
+
+def test_a_status_topic_counts_only_while_the_order_is_in_progress_or_just_done(
+    db_session: Session,
+) -> None:
+    # In progress + "готовность" -> about the current order.
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=STATUS_TOPIC)
+    db_session.add(
+        _wo(
+            "IN-WORK",
+            datetime(2026, 10, 5, 9, 0, tzinfo=UTC),
+            phone="+7 999 000 00 01",
+            status="В работе",
+        )
+    )
+    # The same words, but the only order was finished long ago -> a real request.
+    _call(db_session, external_id="b", client="9990000002", talk_sec=40, topic_tag=STATUS_TOPIC)
+    db_session.add(
+        _wo(
+            "OLD",
+            datetime(2026, 8, 1, 9, 0, tzinfo=UTC),
+            phone="+7 999 000 00 02",
+            status="Закрыт",
+            closed_date=datetime(2026, 8, 3, 9, 0, tzinfo=UTC),
+        )
+    )
+    # A status-like topic from a number with no order at all -> a new client.
+    _call(db_session, external_id="c", client="9990000003", talk_sec=40, topic_tag=STATUS_TOPIC)
+    # An order in progress but a NEW request (price, extra work) -> existing, counted.
+    _call(db_session, external_id="d", client="9990000004", talk_sec=40, topic_tag=TOPIC)
+    db_session.add(
+        _wo(
+            "IN-WORK-2",
+            datetime(2026, 10, 5, 9, 0, tzinfo=UTC),
+            phone="+7 999 000 00 04",
+            status="В работе",
+        )
+    )
+    db_session.commit()
+
+    summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
+
+    assert summary.existing_excluded == 1  # only the first number: "по текущему заказу"
+    assert summary.existing_clients == 2  # 9990000002 and 9990000004
+    assert summary.new_clients == 1  # 9990000003
+    assert summary.target_phones == 3
+
+
+def test_status_topic_phrases() -> None:
+    for topic in (
+        "Запрос о готовности машины БВФ 30",
+        "Уточнение статуса кузовного ремонта Volkswagen",
+        "Изменение срока выполнения работ BMW",
+        "Проверка после кузовного ремонта Фольксваген Тигуан",
+        "Ожидание завершения работ по Range Rover",
+        "Хочет забрать автомобиль",
+        "Уточнение состояния машины в техцентре",
+    ):
+        assert conversion_service.is_status_topic(topic), topic
+    for topic in (
+        "Запись на ремонт тормозов",
+        "Замена масла и диагностика на Volkswagen Tiguan",
+        "Проверка двигателя, Audi",
+        "Стоимость замены ремня, натяжителя и шкива",
+        None,
+        "",
+    ):
+        assert not conversion_service.is_status_topic(topic), topic
+
+
+# ---- Звонок на линию другого цеха, заказ в этом цехе --------------------------------
+
+
+def _two_workshops(db_session: Session):
+    from app.models.department import Department
+    from app.models.workshop import Workshop
+    from app.models.workshop_source_department import WorkshopSourceDepartment
+
+    dept = Department(name="Каховка")
+    db_session.add(dept)
+    db_session.flush()
+    workshops = []
+    for kind, source in (("Кузовной", "Кузовной цех"), ("Слесарный", "Слесарный цех")):
+        workshop = Workshop(
+            department_id=dept.id,
+            workshop_type=kind,
+            posts_count=1,
+            start_time="08:00:00",
+            end_time="20:00:00",
+            working_days=[0],
+        )
+        db_session.add(workshop)
+        db_session.flush()
+        db_session.add(WorkshopSourceDepartment(workshop_id=workshop.id, source_department=source))
+        workshops.append(workshop)
+    return workshops
+
+
+def test_a_call_to_another_workshops_line_belongs_to_the_workshop_that_got_the_order(
+    db_session: Session,
+) -> None:
+    body, mech = _two_workshops(db_session)
+    # Target call on the BODY line (plus a missed one on the MECH line), but the
+    # order was created in the mechanical workshop.
+    _call(db_session, external_id="x0", hour_msk=9, client="9990000001", workshop_id=mech.id)
+    _call(
+        db_session,
+        external_id="x1",
+        hour_msk=10,
+        client="9990000001",
+        talk_sec=40,
+        topic_tag=TOPIC,
+        workshop_id=body.id,
+    )
+    db_session.add(
+        _wo(
+            "MECH-WO",
+            datetime(2026, 10, 10, 15, 0, tzinfo=UTC),
+            phone="+7 999 000 00 01",
+            department="Слесарный цех",
+        )
+    )
+    # A target call on the body line that led to NO mechanical order: not here.
+    _call(
+        db_session,
+        external_id="y",
+        client="9990000002",
+        talk_sec=40,
+        topic_tag=TOPIC,
+        workshop_id=body.id,
+    )
+    db_session.commit()
+
+    mech_summary = conversion_service.get_conversion_summary(
+        db_session, DAY, DAY, ["Слесарный цех"]
+    )
+    body_summary = conversion_service.get_conversion_summary(db_session, DAY, DAY, ["Кузовной цех"])
+    everything = conversion_service.get_conversion_summary(db_session, DAY, DAY)
+
+    # Mechanical: the number is attributed through its order; its calls on both lines count.
+    assert mech_summary.target_phones == 1
+    assert mech_summary.converted_new_clients == 1
+    assert mech_summary.work_orders_new_clients == 1
+    assert mech_summary.calls_total == 2
+    # Body: both numbers called its line; none got a BODY order.
+    assert body_summary.target_phones == 2
+    assert body_summary.converted_new_clients == 0
+    # Company-wide nothing changes.
+    assert everything.target_phones == 2
+    assert everything.converted_new_clients == 1
+
+
+# ---- Заказ-наряды после звонка / без звонка ------------------------------------------
+
+
+def test_work_orders_of_the_period_after_a_target_call_and_without_one(
+    db_session: Session,
+) -> None:
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
+    db_session.add(
+        _wo("AFTER-CALL", datetime(2026, 10, 10, 15, 0, tzinfo=UTC), phone="+7 999 000 00 01")
+    )
+    db_session.add(  # walk-in: no call at all
+        _wo("WALK-IN", datetime(2026, 10, 10, 8, 0, tzinfo=UTC), phone="+7 999 000 00 05")
+    )
+    db_session.add(  # created BEFORE the call of its number: not "after a call"
+        _wo("BEFORE-CALL", datetime(2026, 10, 10, 5, 0, tzinfo=UTC), phone="+7 999 000 00 01")
+    )
+    db_session.commit()
+
+    summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
+
+    assert summary.work_orders_total == 3
+    assert summary.work_orders_after_call == 1
+    assert summary.work_orders_without_call == 2

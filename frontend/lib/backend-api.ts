@@ -488,6 +488,10 @@ export type ConversionSummary = {
   converted_new_clients: number;
   work_orders_new_clients: number;
   work_orders_total: number;
+  // Of the period's work orders: those preceded by a target call of the same
+  // number (counted in the funnels), and the rest (walk-ins, repeat clients...).
+  work_orders_after_call: number;
+  work_orders_without_call: number;
   conversion_pct: number | null;
   // The same funnel for existing clients (all earlier work orders finished).
   existing_topic_phones: number;

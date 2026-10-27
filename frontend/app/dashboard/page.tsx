@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { DashboardPeriodSync } from "@/components/DashboardPeriodSync";
 import { ConversionDonut } from "@/components/ConversionDonut";
+import { ConversionHelp } from "@/components/ConversionHelp";
 import { MonthlyBarChart } from "@/components/MonthlyRevenueChart";
 import { RankedList, type RankedItem } from "@/components/RankedList";
 import { RevenueTrendChart } from "@/components/RevenueTrendChart";
@@ -481,27 +482,34 @@ export default async function DashboardPage({
               </div>
 
               <div className="card">
-                <h2 className="chart-title">Конверсия новых клиентов</h2>
+                <h2 className="chart-title">Конверсия звонков в заказ-наряды</h2>
                 <p className="chart-subtitle">
-                  входящие и перезвоны с разговором по теме → заказ-наряды, за выбранный период
+                  за выбранный период: клиенты с целевым разговором → заказ-наряды, и откуда пришли заказ-наряды
                 </p>
-                <ConversionDonut
-                  summary={conversionSummary}
-                  variant="new"
-                  departments={selectedDepartments}
-                />
-              </div>
-
-              <div className="card">
-                <h2 className="chart-title">Конверсия существующих клиентов</h2>
-                <p className="chart-subtitle">
-                  то же для клиентов, у которых к моменту звонка все прежние заказ-наряды закрыты или отказаны
-                </p>
-                <ConversionDonut
-                  summary={conversionSummary}
-                  variant="existing"
-                  departments={selectedDepartments}
-                />
+                <div className="conversion-trio">
+                  <section className="conversion-trio-col">
+                    <h3 className="conversion-sub-title">
+                      Новые клиенты <ConversionHelp topic="new" />
+                    </h3>
+                    <ConversionDonut summary={conversionSummary} variant="new" departments={selectedDepartments} />
+                  </section>
+                  <section className="conversion-trio-col">
+                    <h3 className="conversion-sub-title">
+                      Существующие клиенты <ConversionHelp topic="existing" />
+                    </h3>
+                    <ConversionDonut
+                      summary={conversionSummary}
+                      variant="existing"
+                      departments={selectedDepartments}
+                    />
+                  </section>
+                  <section className="conversion-trio-col">
+                    <h3 className="conversion-sub-title">
+                      Источник заказ-нарядов <ConversionHelp topic="sources" />
+                    </h3>
+                    <ConversionDonut summary={conversionSummary} variant="sources" departments={selectedDepartments} />
+                  </section>
+                </div>
               </div>
             </div>
 

@@ -275,9 +275,11 @@ class ConversionSummaryResponse(BaseModel):
     converted_new_clients: int
     work_orders_new_clients: int
     work_orders_total: int
+    work_orders_after_call: int
+    work_orders_without_call: int
     conversion_pct: float | None
     existing_topic_phones: int
-    existing_excluded: int
+    existing_excluded: int  # numbers whose target calls were all about the current order
     existing_clients: int
     converted_existing_clients: int
     work_orders_existing_clients: int

@@ -15,21 +15,19 @@ export type Cohort =
   | "existing_all"
   | "existing_counted"
   | "existing_converted"
-  | "existing_unanswered"
-  | "existing_excluded";
+  | "existing_unanswered";
 
 export const COHORTS: { key: Cohort; label: string }[] = [
   { key: "all", label: "Все входящие звонки" },
-  { key: "target", label: "Целевые (разговор по теме, без ремонтов в работе)" },
+  { key: "target", label: "Целевые звонки (тема определена или разговор дольше 20 секунд)" },
   { key: "new_all", label: "Новые клиенты — все номера" },
   { key: "new", label: "Новые клиенты — разговор по теме" },
   { key: "new_converted", label: "Новые клиенты — дошли до заказ-наряда" },
   { key: "new_unanswered", label: "Новые клиенты — остались без ответа" },
-  { key: "existing_all", label: "Существующие клиенты — все номера (без исключённых)" },
+  { key: "existing_all", label: "Существующие клиенты — все номера" },
   { key: "existing_counted", label: "Существующие клиенты — разговор по теме" },
   { key: "existing_converted", label: "Существующие клиенты — дошли до заказ-наряда" },
   { key: "existing_unanswered", label: "Существующие клиенты — остались без ответа" },
-  { key: "existing_excluded", label: "Существующие клиенты — исключены (ремонт в работе)" },
 ];
 
 const COHORT_KEYS = new Set<string>(COHORTS.map((c) => c.key));
@@ -60,8 +58,6 @@ export function groupInCohort(group: ConversionGroup, cohort: Cohort): boolean {
       return group.segment === "existing_counted" && group.conversion_row;
     case "existing_unanswered":
       return group.client_class === "existing_counted" && group.phone_unanswered;
-    case "existing_excluded":
-      return group.segment === "existing_excluded";
   }
 }
 
