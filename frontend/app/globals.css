@@ -6713,7 +6713,8 @@ main:has(.cockpit-page) {
 }
 
 /* Бюджеты: Работы / Запчасти are sub-rows of the fact-revenue row above them */
-.budget-row--parent td {
+.budget-row--parent .expenses-td-item,
+.budget-row--parent .budget-td-company {
   font-weight: 700;
 }
 
@@ -6779,4 +6780,11 @@ main:has(.cockpit-page) {
 .data-table--labor th.num,
 .data-table--parts th.num {
   text-align: center;
+}
+
+/* Бюджеты: итоговый столбец «Вся компания» каждого месяца */
+.budget-th-company,
+.budget-td-company {
+  font-weight: 700;
+  border-left: 1px solid var(--border, #d0d5dd);
 }

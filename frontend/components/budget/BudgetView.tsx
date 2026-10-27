@@ -67,6 +67,17 @@ function recompute(month: BudgetMonthValues): BudgetMonthValues {
   return { ...month, profit: String(fact - expenses), money: String(payments - expenses) };
 }
 
+// "Вся компания": every metric summed over the workshops of the month.
+function companyMonth(workshops: BudgetYear["workshops"], monthIdx: number): BudgetMonthValues {
+  const total = { ...workshops[0].months[monthIdx] } as Record<string, string | number>;
+  for (const metric of METRICS) {
+    total[metric.key] = String(
+      workshops.reduce((sum, ws) => sum + Number(ws.months[monthIdx][metric.key]), 0),
+    );
+  }
+  return total as unknown as BudgetMonthValues;
+}
+
 // Grouped with spaces while not focused (per product feedback, 2026-10-03:
 // a plain "5000000" wasn't readable) - plain digits while editing, since a
 // native text input can't keep the caret position sane while reformatting
@@ -115,7 +126,8 @@ export function EditableCell({
 /** Бюджеты (product ask, 2026-10-26: laid out like Расходы): the metrics down,
  * the months across with the workshops side by side inside each month, large
  * cells, the item names pinned on the left, one scrollbar below (the table has
- * few rows) and the current month first on screen. */
+ * few rows), a "Вся компания" column closing each month and the previous month
+ * first on screen. */
 export function BudgetView({ initialData }: { initialData: BudgetYear }) {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
@@ -126,7 +138,7 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
   const [error, setError] = useState<string | null>(null);
   const isFirstRender = useRef(true);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const currentMonthHeaderRef = useRef<HTMLTableCellElement | null>(null);
+  const previousMonthHeaderRef = useRef<HTMLTableCellElement | null>(null);
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -155,14 +167,14 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
     };
   }, [year]);
 
-  // The current month is the first one on screen, right after the pinned
-  // "Показатель" column; another year starts at January. Runs when the shown
-  // year changes, not on every edit.
+  // The month BEFORE the current one is the first on screen, right after the
+  // pinned "Показатель" column (so the closed month is in view); another year
+  // starts at January. Runs when the shown year changes, not on every edit.
   const shownYear = data.year;
   useEffect(() => {
     const box = scrollRef.current;
     if (!box) return;
-    const target = shownYear === currentYear ? currentMonthHeaderRef.current : null;
+    const target = shownYear === currentYear ? previousMonthHeaderRef.current : null;
     const firstColumn = box.querySelector<HTMLElement>(".expenses-th-item");
     box.scrollLeft = target ? target.offsetLeft - (firstColumn?.offsetWidth ?? 0) : 0;
   }, [shownYear, currentYear]);
@@ -232,11 +244,13 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
               </th>
               {MONTH_LABELS.map((label, idx) => {
                 const isCurrent = year === currentYear && idx + 1 === currentMonth;
+                // January has no month before it - start at the first column.
+                const isScrollTarget = year === currentYear && idx + 1 === Math.max(currentMonth - 1, 1);
                 return (
                   <th
                     key={label}
-                    colSpan={data.workshops.length}
-                    ref={isCurrent ? currentMonthHeaderRef : undefined}
+                    colSpan={data.workshops.length + 1}
+                    ref={isScrollTarget ? previousMonthHeaderRef : undefined}
                     className={[
                       "budget-th-month expenses-th-month expenses-month-start",
                       isCurrent ? "budget-th-month--current" : "",
@@ -251,8 +265,8 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
               })}
             </tr>
             <tr>
-              {MONTH_LABELS.flatMap((label, monthIdx) =>
-                data.workshops.map((ws, wsIdx) => (
+              {MONTH_LABELS.flatMap((label, monthIdx) => [
+                ...data.workshops.map((ws, wsIdx) => (
                   <th
                     key={`${label}-${ws.workshop_id}`}
                     className={[
@@ -267,15 +281,24 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
                     {ws.workshop_label.replace(" — ", "\n")}
                   </th>
                 )),
-              )}
+                <th
+                  key={`${label}-company`}
+                  className={[
+                    "expenses-th-workshop budget-th-company",
+                    (monthIdx + 1) % 2 === 0 ? "expenses-month-even" : "expenses-month-odd",
+                  ].join(" ")}
+                >
+                  Вся компания
+                </th>,
+              ])}
             </tr>
           </thead>
           <tbody>
             {METRICS.map((metric) => (
               <tr key={metric.key} className={metric.level ? "budget-row--sub" : metric.parent ? "budget-row--parent" : undefined}>
                 <td className="expenses-td-item">{metric.level ? `└ ${metric.label}` : metric.label}</td>
-                {MONTH_LABELS.flatMap((label, monthIdx) =>
-                  data.workshops.map((ws, wsIdx) => {
+                {MONTH_LABELS.flatMap((label, monthIdx) => [
+                  ...data.workshops.map((ws, wsIdx) => {
                     const m = ws.months[monthIdx];
                     const value = m[metric.key];
                     const negative =
@@ -298,7 +321,24 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
                       </td>
                     );
                   }),
-                )}
+                  (() => {
+                    const value = companyMonth(data.workshops, monthIdx)[metric.key];
+                    const negative =
+                      (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
+                    return (
+                      <td
+                        key={`${label}-company`}
+                        className={cellClass(
+                          monthIdx + 1,
+                          1,
+                          ["budget-td-company", negative ? "budget-td-month--negative" : ""].join(" "),
+                        )}
+                      >
+                        {formatRub(value)}
+                      </td>
+                    );
+                  })(),
+                ])}
               </tr>
             ))}
           </tbody>
