@@ -52,6 +52,7 @@ from app.models.body_car_stage import BodyCarStage
 from app.models.budget_entry import BudgetEntry
 from app.models.department import Department
 from app.models.work_order import WorkOrder
+from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
@@ -184,8 +185,7 @@ def _mapped_source_departments(db: Session, *, workshop_id: uuid.UUID | None) ->
     return list(db.scalars(query))
 
 
-def _closed_revenue(
-    db: Session,
+def _closed_revenue_filters(
     *,
     source_departments: list[str] | None,
     period_start: datetime,
@@ -194,7 +194,11 @@ def _closed_revenue(
     exclude_internal: bool,
     excluded_repair_types: list[str] | None = None,
     only_repair_types: list[str] | None = None,
-) -> Decimal:
+) -> list:
+    """The work orders that make up a period's revenue (closed in it, a revenue
+    status, ...) - shared by the total (_closed_revenue) and by its split into
+    labor / parts lines (_closed_revenue_lines), so the two always cover the
+    very same orders."""
     filters = [
         WorkOrder.closed_date.is_not(None),
         WorkOrder.closed_date >= period_start,
@@ -217,7 +221,28 @@ def _closed_revenue(
                 WorkOrder.repair_type.not_in(excluded_repair_types),
             )
         )
+    return filters
+
+
+def _closed_revenue(db: Session, **kwargs) -> Decimal:
+    filters = _closed_revenue_filters(**kwargs)
     total = db.execute(select(func.sum(WorkOrder.amount)).where(*filters)).scalar_one()
+    return total or Decimal("0")
+
+
+def _closed_revenue_lines(db: Session, *, kind: str, **kwargs) -> Decimal:
+    """The same revenue seen through the work orders' tabular sections: the sum
+    of their labor lines ("labor" - Работы) or part lines ("parts" - Запчасти),
+    each line AFTER its discount (total_amount); a line imported before the
+    discount was exported falls back to its amount."""
+    line = WorkOrderLaborLine if kind == "labor" else WorkOrderPartLine
+    filters = _closed_revenue_filters(**kwargs)
+    total = db.execute(
+        select(func.sum(func.coalesce(line.total_amount, line.amount)))
+        .select_from(line)
+        .join(WorkOrder, WorkOrder.id == line.work_order_id)
+        .where(*filters)
+    ).scalar_one()
     return total or Decimal("0")
 
 

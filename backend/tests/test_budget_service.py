@@ -247,3 +247,82 @@ def test_set_budget_value_rejects_unknown_field(db_session: Session, workshop: W
             field="bogus",
             value=Decimal("1"),
         )
+
+
+def test_fact_revenue_sub_rows_are_the_labor_and_part_lines_of_the_same_orders(
+    db_session: Session, workshop: Workshop
+) -> None:
+    """Работы / Запчасти under each fact row: the sums of the labor and part
+    lines of exactly the orders that make up that row."""
+    from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+    from app.services.settings_service import get_app_settings
+
+    get_app_settings(db_session).insurance_repair_type = "Страховой"
+    closed = datetime(2026, 9, 15, tzinfo=UTC)
+    insurance = _work_order(closed_date=closed, amount=Decimal("1000"), repair_type="Страховой")
+    main = _work_order(closed_date=closed, amount=Decimal("500"), repair_type="Текущий")
+    other = _work_order(closed_date=closed, amount=Decimal("9999"), repair_type="Основной")
+    old = _work_order(
+        closed_date=datetime(2026, 8, 15, tzinfo=UTC), amount=Decimal("77"), repair_type="Текущий"
+    )
+    db_session.add_all([insurance, main, other, old])
+    db_session.flush()
+    for order, labor, parts in (
+        (insurance, "300", "700"),
+        (main, "200", "300"),
+        (other, "5000", "4999"),  # not a revenue row: stays out
+        (old, "70", "7"),  # another month: stays out
+    ):
+        db_session.add(WorkOrderLaborLine(work_order_id=order.id, amount=Decimal(labor)))
+        db_session.add(WorkOrderPartLine(work_order_id=order.id, amount=Decimal(parts)))
+    db_session.commit()
+
+    september = budget_service.get_budget_year(db_session, 2026, now=NOW)[0].months[8]
+
+    assert september.fact_revenue_insurance == Decimal("1000")
+    assert september.fact_revenue_insurance_labor == Decimal("300")
+    assert september.fact_revenue_insurance_parts == Decimal("700")
+    assert september.fact_revenue_main == Decimal("500")
+    assert september.fact_revenue_main_labor == Decimal("200")
+    assert september.fact_revenue_main_parts == Decimal("300")
+    # the sub-rows add up to the row above
+    assert september.fact_revenue_main == september.fact_revenue_main_labor + (
+        september.fact_revenue_main_parts
+    )
+
+
+def test_fact_revenue_sub_rows_use_the_line_total_after_the_discount(
+    db_session: Session, workshop: Workshop
+) -> None:
+    """Работы = 470 300 before a 5% discount, 446 785 after it: the sub-row takes
+    the AFTER amount so Работы + Запчасти = the document amount; lines imported
+    before the discount was exported (no total) fall back to their amount."""
+    from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+
+    order = _work_order(
+        closed_date=datetime(2026, 9, 15, tzinfo=UTC),
+        amount=Decimal("763885"),
+        repair_type="Текущий",
+    )
+    db_session.add(order)
+    db_session.flush()
+    db_session.add(
+        WorkOrderLaborLine(
+            work_order_id=order.id,
+            amount=Decimal("470300"),
+            discount_amount=Decimal("23515"),
+            total_amount=Decimal("446785"),
+        )
+    )
+    db_session.add(WorkOrderPartLine(work_order_id=order.id, amount=Decimal("317100")))  # old row
+    db_session.commit()
+
+    september = budget_service.get_budget_year(db_session, 2026, now=NOW)[0].months[8]
+
+    assert september.fact_revenue_main == Decimal("763885")
+    assert september.fact_revenue_main_labor == Decimal("446785")
+    assert september.fact_revenue_main_parts == Decimal("317100")
+    assert (
+        september.fact_revenue_main_labor + september.fact_revenue_main_parts
+        == september.fact_revenue_main
+    )

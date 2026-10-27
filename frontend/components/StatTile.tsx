@@ -50,7 +50,7 @@ export function StatTile({
    * figure - so the number is always one click away from being checkable,
    * not just asserted. */
   href?: string;
-  /** Small secondary pill under the value, e.g. "Оплачено 3 200 000 ₽" on
+  /** Small secondary pill beside the value, e.g. "Оплачено 3 200 000 ₽" on
    * the revenue tile - a related figure that doesn't deserve its own tile
    * but is worth surfacing without a click-through. */
   badge?: string;
@@ -70,6 +70,7 @@ export function StatTile({
       </div>
       <div className="stat-bottom">
         <span className="stat-value">{value}</span>
+        {badge && <span className="stat-badge">{badge}</span>}
         {line && (
           <svg className="sparkline" viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`} preserveAspectRatio="none">
             <path d={area} className="sparkline-area" />
@@ -78,7 +79,6 @@ export function StatTile({
           </svg>
         )}
       </div>
-      {badge && <span className="stat-badge">{badge}</span>}
     </>
   );
 

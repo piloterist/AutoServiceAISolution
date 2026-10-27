@@ -12,7 +12,11 @@ class BudgetMonthOut(BaseModel):
     # Fact revenue is two rows only (product ask, 2026-10-26): closed orders with
     # the insurance repair type, and with "Текущий"; fact_revenue is their sum.
     fact_revenue_insurance: Decimal
+    fact_revenue_insurance_labor: Decimal
+    fact_revenue_insurance_parts: Decimal
     fact_revenue_main: Decimal
+    fact_revenue_main_labor: Decimal
+    fact_revenue_main_parts: Decimal
     fact_revenue: Decimal
     expenses: Decimal
     profit: Decimal

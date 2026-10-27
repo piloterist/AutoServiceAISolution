@@ -73,6 +73,39 @@ function formatDuration(ms: number): string {
   return `${minutes} ${pluralize(minutes, "минута", "минуты", "минут")}`;
 }
 
+type DiscountLine = {
+  amount: string | null;
+  discount_percent: string | null;
+  discount_amount: string | null;
+  total_amount: string | null;
+  discount_name: string | null;
+};
+
+/** The line's total after its discount; a line exported before the discount
+ * was sent has none, so it shows its amount. */
+function lineTotal(line: DiscountLine): number {
+  return Number(line.total_amount ?? line.amount ?? 0);
+}
+
+/** The totals row of a lines table: sum before the discount, the discount
+ * given, and the sum after it (product ask, 2026-10-28 - so the discount on
+ * works / on parts is seen at once, not added up by hand). */
+function sumLines(lines: DiscountLine[]): { amount: number; discount: number; total: number } {
+  return lines.reduce(
+    (acc, line) => ({
+      amount: acc.amount + Number(line.amount ?? 0),
+      discount: acc.discount + Number(line.discount_amount ?? 0),
+      total: acc.total + lineTotal(line),
+    }),
+    { amount: 0, discount: 0, total: 0 },
+  );
+}
+
+function formatPercent(value: string | null): string {
+  if (value === null || Number(value) === 0) return "—";
+  return `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 2 })}%`;
+}
+
 type Tab = "labor" | "parts" | "history" | "payments" | "invoices";
 
 export function WorkOrderLineTabs({
@@ -155,6 +188,10 @@ export function WorkOrderLineTabs({
                 <th>Работа</th>
                 <th className="num">Цена</th>
                 <th className="num">Сумма</th>
+                <th className="num">Скидка, %</th>
+                <th className="num">Скидка, ₽</th>
+                <th>Скидка (название)</th>
+                <th className="num">Итого</th>
               </tr>
             </thead>
             <tbody>
@@ -163,16 +200,33 @@ export function WorkOrderLineTabs({
                   <td>{line.operation_name || "—"}</td>
                   <td className="num">{formatMoney(line.price)}</td>
                   <td className="num">{formatMoney(line.amount)}</td>
+                  <td className="num">{formatPercent(line.discount_percent)}</td>
+                  <td className="num">{formatMoney(line.discount_amount)}</td>
+                  <td>{line.discount_name || "—"}</td>
+                  <td className="num">{formatMoney(String(lineTotal(line)))}</td>
                 </tr>
               ))}
               {labor.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="table-empty">
+                  <td colSpan={7} className="table-empty">
                     Нет строк по работам.
                   </td>
                 </tr>
               )}
             </tbody>
+            {labor.length > 0 && (
+              <tfoot>
+                <tr className="lines-total-row">
+                  <td>Итого по работам</td>
+                  <td />
+                  <td className="num">{formatMoney(String(sumLines(labor).amount))}</td>
+                  <td />
+                  <td className="num">{formatMoney(String(sumLines(labor).discount))}</td>
+                  <td />
+                  <td className="num">{formatMoney(String(sumLines(labor).total))}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}
@@ -186,6 +240,10 @@ export function WorkOrderLineTabs({
                 <th className="num">Количество</th>
                 <th className="num">Цена</th>
                 <th className="num">Сумма</th>
+                <th className="num">Скидка, %</th>
+                <th className="num">Скидка, ₽</th>
+                <th>Скидка (название)</th>
+                <th className="num">Итого</th>
               </tr>
             </thead>
             <tbody>
@@ -195,16 +253,34 @@ export function WorkOrderLineTabs({
                   <td className="num">{formatQuantity(line.quantity)}</td>
                   <td className="num">{formatMoney(line.price)}</td>
                   <td className="num">{formatMoney(line.amount)}</td>
+                  <td className="num">{formatPercent(line.discount_percent)}</td>
+                  <td className="num">{formatMoney(line.discount_amount)}</td>
+                  <td>{line.discount_name || "—"}</td>
+                  <td className="num">{formatMoney(String(lineTotal(line)))}</td>
                 </tr>
               ))}
               {parts.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="table-empty">
+                  <td colSpan={8} className="table-empty">
                     Нет строк по товарам.
                   </td>
                 </tr>
               )}
             </tbody>
+            {parts.length > 0 && (
+              <tfoot>
+                <tr className="lines-total-row">
+                  <td>Итого по товарам</td>
+                  <td />
+                  <td />
+                  <td className="num">{formatMoney(String(sumLines(parts).amount))}</td>
+                  <td />
+                  <td className="num">{formatMoney(String(sumLines(parts).discount))}</td>
+                  <td />
+                  <td className="num">{formatMoney(String(sumLines(parts).total))}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}

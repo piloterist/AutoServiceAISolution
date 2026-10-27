@@ -31,7 +31,14 @@ class WorkOrderLaborLine(Base):
 
     operation_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
     price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    # Before the discount (1C: Сумма); discount_amount / total_amount (after it,
+    # 1C: СуммаВсего) arrive with the export of 2026-10-28 - NULL for lines
+    # imported before that.
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)
+    discount_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    total_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    discount_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
 
 class WorkOrderPartLine(Base):
@@ -49,3 +56,7 @@ class WorkOrderPartLine(Base):
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3), nullable=True)
     price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    discount_percent: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), nullable=True)
+    discount_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    total_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    discount_name: Mapped[str | None] = mapped_column(String(200), nullable=True)

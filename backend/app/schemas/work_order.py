@@ -158,7 +158,11 @@ class StatusSummaryResponse(BaseModel):
 class WorkOrderLaborLineItem(BaseModel):
     operation_name: str | None
     price: Decimal | None
-    amount: Decimal | None
+    amount: Decimal | None  # before the discount
+    discount_percent: Decimal | None = None
+    discount_amount: Decimal | None = None
+    total_amount: Decimal | None = None  # after the discount
+    discount_name: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -167,7 +171,11 @@ class WorkOrderPartLineItem(BaseModel):
     item_name: str | None
     quantity: Decimal | None
     price: Decimal | None
-    amount: Decimal | None
+    amount: Decimal | None  # before the discount
+    discount_percent: Decimal | None = None
+    discount_amount: Decimal | None = None
+    total_amount: Decimal | None = None  # after the discount
+    discount_name: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -90,6 +90,14 @@ export function ExpensesView() {
     return () => observer.disconnect();
   }, [data]);
 
+  // The table is scrolled to the current month on load, before the top bar has
+  // its width - bring the top bar to the same position once it has.
+  useEffect(() => {
+    const top = topScrollRef.current;
+    const box = scrollRef.current;
+    if (top && box) top.scrollLeft = box.scrollLeft;
+  }, [tableWidth]);
+
   const syncScroll = (from: "top" | "bottom") => {
     if (syncing.current) {
       syncing.current = false;

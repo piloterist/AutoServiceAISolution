@@ -1318,7 +1318,8 @@ table.admin-data-table td.audit-changes-cell {
 }
 
 .vt-cell--num {
-  text-align: right;
+  /* numbers are left-aligned like everything else (product ask, 2026-10-28) */
+  text-align: left;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1497,10 +1498,10 @@ table.admin-data-table td.audit-changes-cell {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 1rem 1.25rem;
+  padding: 0.7rem 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.35rem;
   text-decoration: none;
   color: inherit;
 }
@@ -1555,9 +1556,13 @@ table.admin-data-table td.audit-changes-cell {
 
 .stat-bottom {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  align-items: center;
   gap: 0.75rem;
+}
+
+/* the sparkline stays at the far right */
+.stat-bottom .sparkline {
+  margin-left: auto;
 }
 
 .stat-value {
@@ -1567,8 +1572,8 @@ table.admin-data-table td.audit-changes-cell {
 }
 
 .stat-badge {
-  align-self: flex-start;
-  font-size: 0.68rem;
+  align-self: center;
+  font-size: 0.75rem;
   font-weight: 600;
   color: var(--ok);
   background: color-mix(in srgb, var(--ok) 12%, transparent);
@@ -2366,37 +2371,54 @@ table.admin-data-table td.audit-changes-cell {
   border-bottom-color: var(--accent);
 }
 
-/* Labor (Работы) table: name gets most of the room, price/amount narrow
-   and numeric-aligned. */
+/* Labor (Работы) table, 7 columns: name, price, sum (before the discount), the
+   discount in % and in rubles, its name, and the total after it. Column widths
+   must add up for every column (table-layout is fixed), numbers stay on one
+   line, rows stay thin. */
 .data-table--labor th:nth-child(1),
-.data-table--labor td:nth-child(1) {
-  width: 60%;
-}
+.data-table--labor td:nth-child(1) { width: 34%; }
 .data-table--labor th:nth-child(2),
-.data-table--labor td:nth-child(2) {
-  width: 20%;
-}
+.data-table--labor td:nth-child(2) { width: 9%; }
 .data-table--labor th:nth-child(3),
-.data-table--labor td:nth-child(3) {
-  width: 20%;
+.data-table--labor td:nth-child(3) { width: 11%; }
+.data-table--labor th:nth-child(4),
+.data-table--labor td:nth-child(4) { width: 9%; }
+.data-table--labor th:nth-child(5),
+.data-table--labor td:nth-child(5) { width: 11%; }
+.data-table--labor th:nth-child(6),
+.data-table--labor td:nth-child(6) { width: 14%; }
+.data-table--labor th:nth-child(7),
+.data-table--labor td:nth-child(7) { width: 12%; }
+
+/* Parts (Товары) table, 8 columns: the same plus the quantity. */
+.data-table--parts th:nth-child(1),
+.data-table--parts td:nth-child(1) { width: 28%; }
+.data-table--parts th:nth-child(2),
+.data-table--parts td:nth-child(2) { width: 8%; }
+.data-table--parts th:nth-child(3),
+.data-table--parts td:nth-child(3) { width: 9%; }
+.data-table--parts th:nth-child(4),
+.data-table--parts td:nth-child(4) { width: 10%; }
+.data-table--parts th:nth-child(5),
+.data-table--parts td:nth-child(5) { width: 8%; }
+.data-table--parts th:nth-child(6),
+.data-table--parts td:nth-child(6) { width: 10%; }
+.data-table--parts th:nth-child(7),
+.data-table--parts td:nth-child(7) { width: 15%; }
+.data-table--parts th:nth-child(8),
+.data-table--parts td:nth-child(8) { width: 12%; }
+
+.data-table--labor th.num,
+.data-table--labor td.num,
+.data-table--parts th.num,
+.data-table--parts td.num {
+  white-space: nowrap;
 }
 
-/* Parts (Товары) table: same idea, one extra numeric column (quantity). */
-.data-table--parts th:nth-child(1),
-.data-table--parts td:nth-child(1) {
-  width: 46%;
-}
-.data-table--parts th:nth-child(2),
-.data-table--parts td:nth-child(2) {
-  width: 18%;
-}
-.data-table--parts th:nth-child(3),
-.data-table--parts td:nth-child(3) {
-  width: 18%;
-}
-.data-table--parts th:nth-child(4),
-.data-table--parts td:nth-child(4) {
-  width: 18%;
+.data-table--labor td,
+.data-table--parts td {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
 }
 
 /* Payment history (История оплат) table - date, then three money columns
@@ -6674,4 +6696,87 @@ main:has(.cockpit-page) {
 
 .conversion-donut-numbers > .conversion-donut-row--plain:hover dd {
   text-decoration: none;
+}
+
+/* A card heading with its note on the same line (Динамика выручки) */
+.chart-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.chart-head .chart-title,
+.chart-head .chart-subtitle {
+  margin: 0;
+}
+
+/* Бюджеты: Работы / Запчасти are sub-rows of the fact-revenue row above them */
+.budget-row--parent td {
+  font-weight: 700;
+}
+
+.budget-row--sub td {
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.budget-row--sub td.expenses-td-item {
+  padding-left: 1.8rem;
+}
+
+/* The totals row under the work / parts lines */
+.lines-total-row td {
+  font-weight: 700;
+  border-top: 2px solid var(--border);
+}
+
+/* Work orders list: vertical rules between the fields, column titles centred,
+   the contents of every column left-aligned (product ask, 2026-10-28). */
+.vt-row .vt-cell {
+  border-right: 1px solid var(--border);
+  text-align: left;
+}
+
+.vt-row .vt-cell:last-child {
+  border-right: none;
+}
+
+.vt-header .vt-row:not(.filter-row) .vt-cell {
+  text-align: center;
+}
+
+/* Lines of a work order (Работы / Товары): vertical rules between the fields,
+   titles centred, every column's content left-aligned (product ask, 2026-10-28). */
+.data-table--labor th,
+.data-table--labor td,
+.data-table--parts th,
+.data-table--parts td {
+  border-right: 1px solid var(--border);
+  text-align: left;
+}
+
+.data-table--labor th:last-child,
+.data-table--labor td:last-child,
+.data-table--parts th:last-child,
+.data-table--parts td:last-child {
+  border-right: none;
+}
+
+.data-table--labor th,
+.data-table--parts th {
+  text-align: center;
+}
+
+.data-table--labor th.num,
+.data-table--labor td.num,
+.data-table--parts th.num,
+.data-table--parts td.num {
+  text-align: left;
+}
+
+.data-table--labor th.num,
+.data-table--parts th.num {
+  text-align: center;
 }

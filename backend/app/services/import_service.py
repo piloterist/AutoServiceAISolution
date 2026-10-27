@@ -399,6 +399,10 @@ def _replace_line_items(
                 operation_name=line.operation,
                 price=line.price,
                 amount=line.amount,
+                discount_percent=line.discount_percent,
+                discount_amount=line.discount,
+                total_amount=line.total,
+                discount_name=(line.discount_name or None),
             )
         )
 
@@ -410,6 +414,10 @@ def _replace_line_items(
                 quantity=line.quantity,
                 price=line.price,
                 amount=line.amount,
+                discount_percent=line.discount_percent,
+                discount_amount=line.discount,
+                total_amount=line.total,
+                discount_name=(line.discount_name or None),
             )
         )
 

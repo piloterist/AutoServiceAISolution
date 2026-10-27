@@ -78,7 +78,7 @@ export default async function WorkOrderDetailPage({
   }
 
   return (
-    <div>
+    <div className="wide-page">
       <p className="detail-back">
         <Link href={backHref}>{backLabel}</Link>
       </p>

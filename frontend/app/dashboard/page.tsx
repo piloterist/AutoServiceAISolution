@@ -86,60 +86,6 @@ function pluralWorkOrders(count: number): string {
   return "заказ-нарядов";
 }
 
-/** The department whose revenue moved the most (up or down) between the two
- * periods - drives the insight banner's "основной вклад: ..." line. Missing
- * from one side just counts as 0 there (a department with no closed work
- * orders last period is a 100%-swing contributor this period, which is a
- * fair thing to call out). */
-function topDepartmentContributor(
-  current: DepartmentSummaryItem[],
-  previous: DepartmentSummaryItem[],
-): { department: string; deltaAmount: number } | null {
-  if (current.length === 0) return null;
-  const previousByDept = new Map(previous.map((d) => [d.department, Number(d.total_amount)]));
-
-  let best: { department: string; deltaAmount: number } | null = null;
-  for (const d of current) {
-    const deltaAmount = Number(d.total_amount) - (previousByDept.get(d.department) ?? 0);
-    if (best === null || Math.abs(deltaAmount) > Math.abs(best.deltaAmount)) {
-      best = { department: d.department, deltaAmount };
-    }
-  }
-  return best;
-}
-
-function buildInsightText({
-  revenueDeltaPct,
-  countDeltaPct,
-  currentDepartments,
-  previousDepartments,
-}: {
-  revenueDeltaPct: number | null;
-  countDeltaPct: number | null;
-  currentDepartments: DepartmentSummaryItem[];
-  previousDepartments: DepartmentSummaryItem[];
-}): string | null {
-  // No previous-period baseline (e.g. nothing was closed in it) - a
-  // percentage comparison would be meaningless, so say nothing rather than
-  // show a misleading "+∞%".
-  if (revenueDeltaPct === null) return null;
-
-  const direction = revenueDeltaPct >= 0 ? "выросла" : "снизилась";
-  const top = topDepartmentContributor(currentDepartments, previousDepartments);
-  const contributorPhrase =
-    top && Math.abs(top.deltaAmount) > 0 ? ` — основной вклад: ${top.department}` : "";
-  const countPhrase =
-    countDeltaPct !== null
-      ? `, закрыто заказ-нарядов ${countDeltaPct >= 0 ? "больше" : "меньше"} на ${Math.abs(
-          countDeltaPct,
-        ).toFixed(0)}%`
-      : "";
-
-  return `Выручка ${direction} на ${Math.abs(revenueDeltaPct).toFixed(
-    0,
-  )}% к предыдущему периоду${contributorPhrase}${countPhrase}.`;
-}
-
 export default async function DashboardPage({
   searchParams,
 }: {
@@ -199,7 +145,6 @@ export default async function DashboardPage({
 
   let monthlySummary;
   let departmentSummary;
-  let departmentSummaryPrevious;
   let paymentDepartmentSummary;
   let revenuePaidSummary;
   let statusSummary;
@@ -213,7 +158,6 @@ export default async function DashboardPage({
     const [
       monthlyRes,
       deptRes,
-      deptPrevRes,
       paymentDeptRes,
       revenuePaidRes,
       statusRes,
@@ -224,7 +168,6 @@ export default async function DashboardPage({
     ] = await Promise.all([
       getMonthlySummary(yearToDateParams),
       getDepartmentSummary(filterParams),
-      getDepartmentSummary(previousFilterParams),
       getPaymentDepartmentSummary(filterParams),
       getRevenuePaidSummary(filterParams),
       getStatusSummary(filterParams),
@@ -235,7 +178,6 @@ export default async function DashboardPage({
     ]);
     monthlySummary = monthlyRes;
     departmentSummary = deptRes;
-    departmentSummaryPrevious = deptPrevRes;
     paymentDepartmentSummary = paymentDeptRes;
     revenuePaidSummary = revenuePaidRes;
     statusSummary = statusRes;
@@ -331,13 +273,6 @@ export default async function DashboardPage({
         : "",
   }));
 
-  const insightText = buildInsightText({
-    revenueDeltaPct,
-    countDeltaPct,
-    currentDepartments: departmentSummary?.items ?? [],
-    previousDepartments: departmentSummaryPrevious?.items ?? [],
-  });
-
   // The revenue figure is closed_date-based (see monthly_summary/
   // department_summary) - this link has to filter the work-orders list by
   // closed_date too, or clicking through would show a different set of
@@ -404,13 +339,6 @@ export default async function DashboardPage({
 
       {!error && (
         <>
-          {insightText && (
-            <div className="insight-banner">
-              <span className="insight-icon">{revenueDeltaPct !== null && revenueDeltaPct >= 0 ? "▲" : "▼"}</span>
-              <p>{insightText}</p>
-            </div>
-          )}
-
           <div className="stat-row">
             <StatTile
               label="Выручка за период"
@@ -457,8 +385,10 @@ export default async function DashboardPage({
               the same height. See .dashboard-grid in globals.css. */}
           <div className="dashboard-grid">
             <div className="card">
-              <h2 className="chart-title">Динамика выручки</h2>
-              <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
+              <div className="chart-head">
+                <h2 className="chart-title">Динамика выручки</h2>
+                <p className="chart-subtitle">по дате закрытия заказ-наряда</p>
+              </div>
               <RevenueTrendChart
                 current={trendCurrentItems}
                 previous={trendPreviousItems}

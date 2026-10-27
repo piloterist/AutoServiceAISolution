@@ -192,14 +192,23 @@ export type PaymentTrendResponse = {
 export type WorkOrderLaborLineItem = {
   operation_name: string | null;
   price: string | null;
-  amount: string | null;
+  amount: string | null; // before the discount
+  // Filled from the export of 2026-10-28; null for older lines.
+  discount_percent: string | null;
+  discount_amount: string | null;
+  total_amount: string | null; // after the discount
+  discount_name: string | null;
 };
 
 export type WorkOrderPartLineItem = {
   item_name: string | null;
   quantity: string | null;
   price: string | null;
-  amount: string | null;
+  amount: string | null; // before the discount
+  discount_percent: string | null;
+  discount_amount: string | null;
+  total_amount: string | null; // after the discount
+  discount_name: string | null;
 };
 
 export type StatusHistoryItem = {
@@ -1746,7 +1755,12 @@ export type BudgetMonthValues = {
   // Fact revenue is two rows (2026-10-26): closed orders with the insurance
   // repair type and with "Текущий"; fact_revenue is their sum.
   fact_revenue_insurance: string;
+  // Sub-rows of the two above: the labor and part lines of the same orders.
+  fact_revenue_insurance_labor: string;
+  fact_revenue_insurance_parts: string;
   fact_revenue_main: string;
+  fact_revenue_main_labor: string;
+  fact_revenue_main_parts: string;
   fact_revenue: string;
   expenses: string; // sum of the cost items entered on Финансы -> Расходы
   profit: string; // fact_revenue - expenses

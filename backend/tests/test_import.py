@@ -1534,3 +1534,52 @@ def test_import_chunk_failure_does_not_roll_back_earlier_committed_chunks(
     assert batch.records_inserted == chunk_size
     assert batch.error_message is not None
     assert "simulated failure" in batch.error_message
+
+
+def test_import_stores_the_discount_and_the_total_of_each_line(
+    client, db_session, auth_headers
+) -> None:
+    from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
+
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-10-28T10:00:00",
+        "batch_id": "discount-test-1",
+        "records": [
+            {
+                "number": "DISC-0001",
+                "date": "2026-10-20T10:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 100,
+                "labor": [
+                    {
+                        "operation": "Мойка",
+                        "price": 3000,
+                        "amount": 3000,
+                        "discount_percent": 5,
+                        "discount_name": "5% на работы",
+                        "discount": 150,
+                        "total": 2850,
+                    }
+                ],
+                "parts": [{"item": "Фильтр", "quantity": 1, "price": 50, "amount": 50}],
+            }
+        ],
+    }
+
+    assert client.post(IMPORT_URL, json=payload, headers=auth_headers).status_code == 200
+
+    labor = db_session.execute(select(WorkOrderLaborLine)).scalars().one()
+    part = db_session.execute(select(WorkOrderPartLine)).scalars().one()
+    assert (labor.amount, labor.discount_percent, labor.discount_amount, labor.total_amount) == (
+        3000,
+        5,
+        150,
+        2850,
+    )
+    assert labor.discount_name == "5% на работы"
+    assert (part.amount, part.discount_percent, part.total_amount) == (50, None, None)
+    assert part.discount_name is None

@@ -28,6 +28,7 @@ from app.models.workshop import Workshop
 from app.services import finance_service
 from app.services.cockpit_service import (
     _closed_revenue,
+    _closed_revenue_lines,
     _mapped_source_departments,
     _payments,
     period_bounds,
@@ -48,7 +49,13 @@ class BudgetMonth:
     month: int
     plan_revenue: Decimal
     fact_revenue_insurance: Decimal
+    # ... and its parts (product ask, 2026-10-28): the labor and part lines of the
+    # same work orders - they should add up to the row above.
+    fact_revenue_insurance_labor: Decimal
+    fact_revenue_insurance_parts: Decimal
     fact_revenue_main: Decimal
+    fact_revenue_main_labor: Decimal
+    fact_revenue_main_parts: Decimal
     fact_revenue: Decimal
     expenses: Decimal
     profit: Decimal
@@ -106,6 +113,12 @@ def get_budget_year(
             fact_insurance = _closed_revenue(db, only_repair_types=insurance_types, **common)
             fact_main = _closed_revenue(db, only_repair_types=[MAIN_REPAIR_TYPE], **common)
             fact_revenue = fact_insurance + fact_main
+            insurance_kwargs = dict(common, only_repair_types=insurance_types)
+            main_kwargs = dict(common, only_repair_types=[MAIN_REPAIR_TYPE])
+            insurance_labor = _closed_revenue_lines(db, kind="labor", **insurance_kwargs)
+            insurance_parts = _closed_revenue_lines(db, kind="parts", **insurance_kwargs)
+            main_labor = _closed_revenue_lines(db, kind="labor", **main_kwargs)
+            main_parts = _closed_revenue_lines(db, kind="parts", **main_kwargs)
             payments = _payments(
                 db,
                 source_departments=source_departments,
@@ -121,7 +134,11 @@ def get_budget_year(
                     month=month,
                     plan_revenue=plan_revenue,
                     fact_revenue_insurance=fact_insurance,
+                    fact_revenue_insurance_labor=insurance_labor,
+                    fact_revenue_insurance_parts=insurance_parts,
                     fact_revenue_main=fact_main,
+                    fact_revenue_main_labor=main_labor,
+                    fact_revenue_main_parts=main_parts,
                     fact_revenue=fact_revenue,
                     expenses=expenses,
                     profit=fact_revenue - expenses,

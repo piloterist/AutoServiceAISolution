@@ -18,7 +18,8 @@ import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } fro
 // 1 Дата документа | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
 // 5 Контрагент | 6 Статус | 7 Внутренний | 8 Запланирован | 9 Подразделение |
 // 10 Вид ремонта | 11 Сумма | 12 Сумма оплаты | 13 % оплаты
-const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 12% 8% 7% 9% 6% 8% 8% 7% 7% 7%";
+// "Запланирован" (col 8) is a bit wider so its header does not wrap.
+const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 11% 8% 7% 8.5% 7.5% 8% 8% 7% 7% 7%";
 
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";

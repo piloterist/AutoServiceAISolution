@@ -22,17 +22,27 @@ const MONTH_LABELS = [
 type MetricKey =
   | "plan_revenue"
   | "fact_revenue_insurance"
+  | "fact_revenue_insurance_labor"
+  | "fact_revenue_insurance_parts"
   | "fact_revenue_main"
+  | "fact_revenue_main_labor"
+  | "fact_revenue_main_parts"
   | "expenses"
   | "profit"
   | "payments"
   | "money";
 type EditableKey = "plan_revenue";
 
-const METRICS: { key: MetricKey; label: string; editable: boolean }[] = [
+// `level`: 1 = a sub-row of the row above it (shown indented, in a lighter style) -
+// the fact revenue rows are made up of their Работы and Запчасти.
+const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2; parent?: boolean }[] = [
   { key: "plan_revenue", label: "Выручка план", editable: true },
-  { key: "fact_revenue_insurance", label: "Выручка факт страховые", editable: false },
-  { key: "fact_revenue_main", label: "Выручка факт основные", editable: false },
+  { key: "fact_revenue_insurance", label: "Выручка факт страховые", editable: false, parent: true },
+  { key: "fact_revenue_insurance_labor", label: "Работы", editable: false, level: 1 },
+  { key: "fact_revenue_insurance_parts", label: "Запчасти", editable: false, level: 1 },
+  { key: "fact_revenue_main", label: "Выручка факт основные", editable: false, parent: true },
+  { key: "fact_revenue_main_labor", label: "Работы", editable: false, level: 1 },
+  { key: "fact_revenue_main_parts", label: "Запчасти", editable: false, level: 1 },
   // Not typed in here any more: the sum of the cost items on Финансы -> Расходы.
   { key: "expenses", label: "Расходы", editable: false },
   { key: "profit", label: "Прибыль", editable: false },
@@ -104,8 +114,8 @@ export function EditableCell({
 
 /** Бюджеты (product ask, 2026-10-26: laid out like Расходы): the metrics down,
  * the months across with the workshops side by side inside each month, large
- * cells, the item names pinned on the left, a scrollbar above and below, and
- * the current month first on screen. */
+ * cells, the item names pinned on the left, one scrollbar below (the table has
+ * few rows) and the current month first on screen. */
 export function BudgetView({ initialData }: { initialData: BudgetYear }) {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
@@ -116,10 +126,7 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
   const [error, setError] = useState<string | null>(null);
   const isFirstRender = useRef(true);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const topScrollRef = useRef<HTMLDivElement | null>(null);
   const currentMonthHeaderRef = useRef<HTMLTableCellElement | null>(null);
-  const syncing = useRef(false);
-  const [tableWidth, setTableWidth] = useState(0);
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -159,31 +166,6 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
     const firstColumn = box.querySelector<HTMLElement>(".expenses-th-item");
     box.scrollLeft = target ? target.offsetLeft - (firstColumn?.offsetWidth ?? 0) : 0;
   }, [shownYear, currentYear]);
-
-  // A second scrollbar above the table, kept in step with the bottom one.
-  useEffect(() => {
-    const box = scrollRef.current;
-    if (!box) return;
-    const measure = () => setTableWidth(box.scrollWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(box);
-    const table = box.querySelector("table");
-    if (table) observer.observe(table);
-    return () => observer.disconnect();
-  }, [data]);
-
-  const syncScroll = (from: "top" | "bottom") => {
-    if (syncing.current) {
-      syncing.current = false;
-      return;
-    }
-    const source = from === "top" ? topScrollRef.current : scrollRef.current;
-    const target = from === "top" ? scrollRef.current : topScrollRef.current;
-    if (!source || !target || target.scrollLeft === source.scrollLeft) return;
-    syncing.current = true;
-    target.scrollLeft = source.scrollLeft;
-  };
 
   const handleCommit = (workshopId: string, month: number, field: EditableKey, value: string) => {
     setData((prev) => ({
@@ -241,10 +223,7 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
 
       {error && <p className="admin-form-error">{error}</p>}
 
-      <div className="expenses-scroll-top" ref={topScrollRef} onScroll={() => syncScroll("top")} aria-hidden="true">
-        <div style={{ width: tableWidth, height: 1 }} />
-      </div>
-      <div className="budget-scroll" ref={scrollRef} onScroll={() => syncScroll("bottom")}>
+      <div className="budget-scroll" ref={scrollRef}>
         <table className="budget-table expenses-table">
           <thead>
             <tr>
@@ -293,8 +272,8 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
           </thead>
           <tbody>
             {METRICS.map((metric) => (
-              <tr key={metric.key}>
-                <td className="expenses-td-item">{metric.label}</td>
+              <tr key={metric.key} className={metric.level ? "budget-row--sub" : metric.parent ? "budget-row--parent" : undefined}>
+                <td className="expenses-td-item">{metric.level ? `└ ${metric.label}` : metric.label}</td>
                 {MONTH_LABELS.flatMap((label, monthIdx) =>
                   data.workshops.map((ws, wsIdx) => {
                     const m = ws.months[monthIdx];

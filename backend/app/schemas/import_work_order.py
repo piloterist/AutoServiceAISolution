@@ -11,7 +11,14 @@ class ImportLaborLineRecord(BaseModel):
 
     operation: str | None = None
     price: Decimal | None = None
-    amount: Decimal | None = None
+    amount: Decimal | None = None  # before the discount
+    # The line's own discount and its total AFTER it (1C: СуммаСкидки / СуммаВсего);
+    # the total of the lines adds up to the document amount.
+    discount_percent: Decimal | None = None
+    discount: Decimal | None = None
+    total: Decimal | None = None
+    # The discount applied to the line, by name ("5% на работы") - the reason.
+    discount_name: str | None = None
 
 
 class ImportPartLineRecord(BaseModel):
@@ -20,7 +27,12 @@ class ImportPartLineRecord(BaseModel):
     item: str | None = None
     quantity: Decimal | None = None
     price: Decimal | None = None
-    amount: Decimal | None = None
+    amount: Decimal | None = None  # before the discount
+    discount_percent: Decimal | None = None
+    discount: Decimal | None = None
+    total: Decimal | None = None
+    # The discount applied to the line, by name ("5% на работы") - the reason.
+    discount_name: str | None = None
 
 
 class ImportPaymentEventRecord(BaseModel):
