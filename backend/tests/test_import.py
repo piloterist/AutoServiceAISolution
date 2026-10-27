@@ -1583,3 +1583,32 @@ def test_import_stores_the_discount_and_the_total_of_each_line(
     assert labor.discount_name == "5% на работы"
     assert (part.amount, part.discount_percent, part.total_amount) == (50, None, None)
     assert part.discount_name is None
+
+
+def test_import_accepts_a_phone_longer_than_thirty_characters(
+    client, db_session, auth_headers
+) -> None:
+    from app.models.work_order import WorkOrder
+
+    phone = "+7 (978) 111-22-33, +7 (978) 444-55-66 (жена, звонить после 18:00)"
+    assert len(phone) > 30
+    payload = {
+        "source": "alpha-auto",
+        "branch": "kahovka",
+        "entity": "work_orders",
+        "exported_at": "2026-10-27T10:00:00",
+        "batch_id": "long-phone-test-1",
+        "records": [
+            {
+                "number": "PHONE-0001",
+                "date": "2026-10-20T10:00:00",
+                "customer": "Test Customer",
+                "car": "VW TIGUAN",
+                "amount": 100,
+                "phone": phone,
+            }
+        ],
+    }
+
+    assert client.post(IMPORT_URL, json=payload, headers=auth_headers).status_code == 200
+    assert db_session.execute(select(WorkOrder.phone)).scalar_one() == phone
