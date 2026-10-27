@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
       onlyReceivables: params.get("only_receivables") === "true",
       onlyRevenue: params.get("only_revenue") === "true",
       workshopId: params.get("workshop_id") || undefined,
+      includeRequests: params.get("include_requests") === "true",
       limit: params.get("limit") ? Number(params.get("limit")) : undefined,
       offset: params.get("offset") ? Number(params.get("offset")) : undefined,
     });

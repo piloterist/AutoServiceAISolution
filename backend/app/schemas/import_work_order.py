@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -95,6 +96,11 @@ class ImportWorkOrderRecord(BaseModel):
     """One Alpha-Auto work order as sent by the 1C export job."""
 
     number: str = Field(..., description="External work order number (Alpha-Auto document number)")
+    # "repair_request" = Заявка на ремонт (a free defect-check visit, see
+    # models/work_order.py); older exports send nothing = a work order.
+    doc_type: Literal["work_order", "repair_request"] = "work_order"
+    # Repair requests only: numbers of the work orders created from it.
+    linked_work_orders: list[str] = Field(default_factory=list)
     date: datetime = Field(..., description="Document date")
     customer: str | None = None
     # ЗаказНаряд.НомерТелефона - raw passthrough, whatever 1C sends.

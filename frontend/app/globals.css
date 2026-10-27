@@ -6788,3 +6788,12 @@ main:has(.cockpit-page) {
   font-weight: 700;
   border-left: 1px solid var(--border, #d0d5dd);
 }
+
+/* Список ЗН: заявка на ремонт, по которой уже создан заказ-наряд (как цветом в 1С) */
+.vt-row--request-linked {
+  background: color-mix(in srgb, #3fb950 16%, var(--surface));
+}
+
+.vt-row--request-linked:hover {
+  background: color-mix(in srgb, #3fb950 26%, var(--surface));
+}

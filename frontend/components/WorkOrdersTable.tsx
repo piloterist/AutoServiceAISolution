@@ -15,11 +15,11 @@ import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } fro
 // for why this is grid-per-row rather than a real <table>: a virtualizer
 // has to absolutely-position each row by a computed offset, which a native
 // <table>'s row-flow layout doesn't support.
-// 1 Дата документа | 2 Дата закрытия | 3 Номер | 4 Автомобиль |
-// 5 Контрагент | 6 Статус | 7 Внутренний | 8 Запланирован | 9 Подразделение |
-// 10 Вид ремонта | 11 Сумма | 12 Сумма оплаты | 13 % оплаты
-// "Запланирован" (col 8) is a bit wider so its header does not wrap.
-const GRID_TEMPLATE_COLUMNS = "7% 7% 7% 11% 8% 7% 8.5% 7.5% 8% 8% 7% 7% 7%";
+// 1 Дата документа | 2 Дата закрытия | 3 Номер | 4 Тип | 5 Автомобиль |
+// 6 Контрагент | 7 Статус | 8 Внутренний | 9 Запланирован | 10 Подразделение |
+// 11 Вид ремонта | 12 Сумма | 13 Сумма оплаты | 14 % оплаты
+// "Запланирован" (col 9) is a bit wider so its header does not wrap.
+const GRID_TEMPLATE_COLUMNS = "6.5% 6.5% 7% 8.5% 8.5% 7.5% 6.5% 7.5% 6.5% 8% 7.5% 6.5% 6.5% 6.5%";
 
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
@@ -50,6 +50,13 @@ function formatPercentOrDash(percent: string | null): string {
   return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(Number(percent)) + "%";
 }
 
+// "Тип документа": Заказ-наряд / Заявка на ремонт (a free defect-check visit, see backend
+// WorkOrder.doc_type) - a checkbox dropdown like Вид ремонта, nothing checked = both.
+const DOC_TYPE_LABELS = {
+  work_order: "Заказ-наряды",
+  repair_request: "Заявки на ремонт",
+} as const;
+const DOC_TYPE_OPTIONS = [DOC_TYPE_LABELS.work_order, DOC_TYPE_LABELS.repair_request];
 type InternalFilter = "all" | "internal" | "external";
 type ScheduledFilter = "all" | "yes" | "no";
 
@@ -209,6 +216,7 @@ type Row = {
   documentDate: string;
   closedDate: string;
   number: string;
+  docType: string;
   vehicle: string;
   customer: string;
   status: string;
@@ -225,6 +233,7 @@ type ColumnKey =
   | "documentDate"
   | "closedDate"
   | "number"
+  | "docType"
   | "vehicle"
   | "customer"
   | "status"
@@ -240,6 +249,7 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "documentDate", label: "Дата документа" },
   { key: "closedDate", label: "Дата закрытия" },
   { key: "number", label: "Номер" },
+  { key: "docType", label: "Тип" },
   { key: "vehicle", label: "Автомобиль" },
   { key: "customer", label: "Контрагент" },
   { key: "status", label: "Статус" },
@@ -276,6 +286,7 @@ type PersistedFilters = {
   internalFilter: InternalFilter;
   scheduledFilter: ScheduledFilter;
   onlyIndividualCustomer: boolean;
+  selectedDocTypes?: string[];
 };
 
 /** Last 10 digits of a phone in any format ("+7 (999) 000-00-01" ->
@@ -543,6 +554,7 @@ export function WorkOrdersTable({
     documentDate: persisted?.columnFilters.documentDate ?? "",
     closedDate: persisted?.columnFilters.closedDate ?? "",
     number: persisted?.columnFilters.number ?? "",
+    docType: "",
     vehicle: persisted?.columnFilters.vehicle ?? "",
     customer: persisted?.columnFilters.customer ?? "",
     status: "",
@@ -583,6 +595,11 @@ export function WorkOrdersTable({
   );
   const [scheduledFilter, setScheduledFilter] = useState<ScheduledFilter>(
     () => persisted?.scheduledFilter ?? "all",
+  );
+  // A link from a dashboard figure/status chip is about work orders - repair requests
+  // (not part of any figure) stay hidden there; the bare list shows both.
+  const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(
+    () => persisted?.selectedDocTypes ?? (hasUrlFilters ? [DOC_TYPE_LABELS.work_order] : []),
   );
   const [onlyIndividualCustomer, setOnlyIndividualCustomer] = useState(
     () => initialOnlyIndividualCustomer ?? persisted?.onlyIndividualCustomer ?? false,
@@ -633,6 +650,7 @@ export function WorkOrdersTable({
       internalFilter,
       scheduledFilter,
       onlyIndividualCustomer,
+      selectedDocTypes,
     });
   }, [
     search,
@@ -647,6 +665,7 @@ export function WorkOrdersTable({
     internalFilter,
     scheduledFilter,
     onlyIndividualCustomer,
+    selectedDocTypes,
   ]);
 
   const resetFilters = () => {
@@ -655,6 +674,7 @@ export function WorkOrdersTable({
       documentDate: "",
       closedDate: "",
       number: "",
+      docType: "",
       vehicle: "",
       customer: "",
       status: "",
@@ -675,6 +695,7 @@ export function WorkOrdersTable({
     setClosedTo("");
     setInternalFilter("all");
     setScheduledFilter("all");
+    setSelectedDocTypes([]);
     setOnlyIndividualCustomer(false);
     setPhoneFilter("");
     setConversionActive(false);
@@ -688,6 +709,7 @@ export function WorkOrdersTable({
         documentDate: formatDateOrDash(item.document_date),
         closedDate: formatDateOrDash(item.closed_date),
         number: item.external_number,
+        docType: item.doc_type === "repair_request" ? "Заявка на ремонт" : "Заказ-наряд",
         vehicle: item.vehicle_description ?? "",
         customer: item.customer_name ?? "",
         status: item.status ?? "",
@@ -731,6 +753,12 @@ export function WorkOrdersTable({
   const togglePayment = (bucket: string) => {
     setSelectedPayments((prev) =>
       prev.includes(bucket) ? prev.filter((value) => value !== bucket) : [...prev, bucket],
+    );
+  };
+
+  const toggleDocType = (value: string) => {
+    setSelectedDocTypes((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
     );
   };
 
@@ -779,6 +807,14 @@ export function WorkOrdersTable({
       if (!isWithinDateRange(row.item.document_date, dateFrom, dateTo)) return false;
       if (!isWithinDateRange(row.item.closed_date, closedFrom, closedTo)) return false;
       if (!matchesPaymentFilter(row.item.payment_percent, row.item.amount, selectedPayments)) return false;
+      if (
+        selectedDocTypes.length > 0 &&
+        !selectedDocTypes.includes(DOC_TYPE_LABELS[row.item.doc_type ?? "work_order"])
+      ) {
+        return false;
+      }
+      // A repair request has no payments - it never belongs to an "Оплата" bucket.
+      if (selectedPayments.length > 0 && row.item.doc_type === "repair_request") return false;
       if (!matchesInternalFilter(row.item.is_internal, internalFilter)) return false;
       if (!matchesScheduledFilter(row.item.is_scheduled, scheduledFilter)) return false;
       if (!matchesIndividualCustomerFilter(row.item.is_individual_customer, onlyIndividualCustomer)) {
@@ -804,6 +840,7 @@ export function WorkOrdersTable({
     closedTo,
     internalFilter,
     scheduledFilter,
+    selectedDocTypes,
     onlyIndividualCustomer,
     phoneFilter,
     conversionActive,
@@ -812,8 +849,13 @@ export function WorkOrdersTable({
 
   // Recomputes with filteredRows - the whole point is that it tracks
   // whatever's currently visible, not the unfiltered total.
+  // Repair requests are an estimate, not revenue - left out of the sums.
   const filteredAmount = useMemo(
-    () => filteredRows.reduce((sum, row) => sum + Number(row.item.amount), 0),
+    () =>
+      filteredRows.reduce(
+        (sum, row) => (row.item.doc_type === "repair_request" ? sum : sum + Number(row.item.amount)),
+        0,
+      ),
     [filteredRows],
   );
   // The sum of the "Оплачено" column over the same visible rows (an order
@@ -917,6 +959,15 @@ export function WorkOrdersTable({
       )}
 
       <div className="toolbar">
+        <MultiSelectDropdown
+          label="Тип документа"
+          options={DOC_TYPE_OPTIONS}
+          selected={selectedDocTypes}
+          onToggle={toggleDocType}
+          onClear={() => setSelectedDocTypes([])}
+          emptyMessage="Нет данных"
+        />
+
         <MultiSelectDropdown
           label="Оплата"
           options={[...PAYMENT_BUCKETS]}
@@ -1051,7 +1102,7 @@ export function WorkOrdersTable({
             style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
           >
             {COLUMNS.map((col) =>
-              col.key === "status" || col.key === "repairType" ? (
+              col.key === "status" || col.key === "repairType" || col.key === "docType" ? (
                 <div key={col.key} className="vt-cell" role="columnheader" />
               ) : col.key === "internal" ? (
                 <div key={col.key} className="vt-cell" role="columnheader">
@@ -1121,7 +1172,9 @@ export function WorkOrdersTable({
                   className={
                     isUnpaidClosedIndividual(row.item)
                       ? "vt-row vt-row--body vt-row--unpaid-individual"
-                      : "vt-row vt-row--body"
+                      : row.item.doc_type === "repair_request" && row.item.linked_work_orders
+                        ? "vt-row vt-row--body vt-row--request-linked"
+                        : "vt-row vt-row--body"
                   }
                   role="row"
                   tabIndex={0}
@@ -1174,6 +1227,19 @@ export function WorkOrdersTable({
                       </span>
                     )}
                     {row.number}
+                  </div>
+                  <div
+                    className="vt-cell"
+                    role="gridcell"
+                    title={
+                      row.item.doc_type === "repair_request"
+                        ? row.item.linked_work_orders
+                          ? `Заявка на ремонт. Заказ-наряд создан: ${row.item.linked_work_orders}`
+                          : "Заявка на ремонт. Заказ-наряд пока не создан"
+                        : "Заказ-наряд"
+                    }
+                  >
+                    {row.docType}
                   </div>
                   <div className="vt-cell" role="gridcell">
                     {row.vehicle || "—"}

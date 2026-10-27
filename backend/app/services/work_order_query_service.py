@@ -94,6 +94,7 @@ def list_work_orders(
     paid_to: datetime | None = None,
     only_receivables: bool = False,
     only_revenue: bool = False,
+    include_requests: bool = False,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[WorkOrder], int]:
@@ -173,10 +174,18 @@ def list_work_orders(
 
     base_query = select(WorkOrder).where(*filters)
 
-    total = db.execute(select(func.count()).select_from(base_query.subquery())).scalar_one()
+    # Repair requests (Заявки на ремонт) are shown only where asked for - the work
+    # order list page; every figure-linked list stays work orders only.
+    options = {"include_repair_requests": include_requests}
+    total = db.execute(
+        select(func.count()).select_from(base_query.subquery()), execution_options=options
+    ).scalar_one()
 
     items = (
-        db.execute(base_query.order_by(WorkOrder.document_date.desc()).limit(limit).offset(offset))
+        db.execute(
+            base_query.order_by(WorkOrder.document_date.desc()).limit(limit).offset(offset),
+            execution_options=options,
+        )
         .scalars()
         .all()
     )
@@ -649,10 +658,19 @@ def list_repair_types(db: Session) -> list[str]:
     return [row[0] for row in rows]
 
 
+def _get_any_document(db: Session, work_order_id: UUID) -> WorkOrder | None:
+    """A work order or a repair request by id (the ORM filter would hide a request)."""
+    return db.execute(
+        select(WorkOrder).where(WorkOrder.id == work_order_id),
+        execution_options={"include_repair_requests": True},
+    ).scalar_one_or_none()
+
+
 def get_work_order(db: Session, work_order_id: UUID) -> WorkOrder | None:
     """Single work order by id, or None if it doesn't exist - the header
-    shown on the work order detail page (same fields as the list row)."""
-    return db.get(WorkOrder, work_order_id)
+    shown on the work order detail page (same fields as the list row). Also finds
+    a repair request - the card opens both kinds."""
+    return _get_any_document(db, work_order_id)
 
 
 def update_work_order_comment(
@@ -661,7 +679,7 @@ def update_work_order_comment(
     """Saves the detail card's free-text "Комментарий" field. Returns None
     if the work order doesn't exist, same not-found convention as
     delete_work_order."""
-    work_order = db.get(WorkOrder, work_order_id)
+    work_order = _get_any_document(db, work_order_id)
     if work_order is None:
         return None
     work_order.comment = comment
@@ -678,13 +696,29 @@ def update_work_order_closed_without_payment(
     models/work_order.py's own docstring on this column). Returns None if
     the work order doesn't exist, same not-found convention as
     delete_work_order/update_work_order_comment."""
-    work_order = db.get(WorkOrder, work_order_id)
+    work_order = _get_any_document(db, work_order_id)
     if work_order is None:
         return None
     work_order.closed_without_payment = closed_without_payment
     db.commit()
     db.refresh(work_order)
     return work_order
+
+
+def list_linked_work_orders(db: Session, document: WorkOrder) -> list[WorkOrder]:
+    """The work orders created from a repair request (empty for anything else).
+    linked_work_orders holds their numbers; the ORM filter keeps requests out, so
+    only real work orders can match."""
+    if document.doc_type != "repair_request" or not document.linked_work_orders:
+        return []
+    numbers = [n.strip() for n in document.linked_work_orders.split(",") if n.strip()]
+    return list(
+        db.execute(
+            select(WorkOrder)
+            .where(WorkOrder.source_system == "alpha-auto", WorkOrder.external_number.in_(numbers))
+            .order_by(WorkOrder.document_date)
+        ).scalars()
+    )
 
 
 def list_labor_lines(db: Session, work_order_id: UUID) -> list[WorkOrderLaborLine]:

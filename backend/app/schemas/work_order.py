@@ -14,6 +14,10 @@ from pydantic import BaseModel
 class WorkOrderListItem(BaseModel):
     id: UUID
     external_number: str
+    # "work_order" (Заказ-наряд) or "repair_request" (Заявка на ремонт).
+    doc_type: str
+    # Repair requests: numbers of the work orders made from it, comma-separated.
+    linked_work_orders: str | None
     document_date: datetime
     # Alpha-Auto's own document requisites (ДатаСоздания/ДатаНачала/
     # ДатаОкончания/ДатаЗакрытия) - distinct from document_date above.
@@ -265,6 +269,14 @@ class PlannerRecordOut(BaseModel):
     date: date
 
 
+class LinkedWorkOrder(BaseModel):
+    """A work order created from a repair request - for the card's "Перейти к
+    заказ-наряду" button."""
+
+    id: UUID
+    external_number: str
+
+
 class WorkOrderDetail(WorkOrderListItem):
     """Single work order's header (same fields as the list, plus `vin`)
     plus its labor (Работы) and parts (Товары) tabular-section lines, its
@@ -283,6 +295,9 @@ class WorkOrderDetail(WorkOrderListItem):
     # Free-text staff note - see models/work_order.py's own docstring.
     # Shown/edited on the detail card only, like `vin` above.
     comment: str | None
+    # Repair requests only: the work orders made from it that exist here (a number in
+    # linked_work_orders whose work order is not imported yet is left out).
+    linked_work_order_refs: list[LinkedWorkOrder] = []
     labor: list[WorkOrderLaborLineItem]
     parts: list[WorkOrderPartLineItem]
     status_history: list[StatusHistoryItem]

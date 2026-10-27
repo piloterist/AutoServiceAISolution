@@ -54,7 +54,9 @@ export default async function WorkOrderDetailPage({
   const backHref = safeBack ?? (from ? `/work-orders${from}` : "/work-orders");
   const backLabel = safeBack?.startsWith("/budget")
     ? "← К дебиторской задолженности"
-    : "← К списку заказ-нарядов";
+    : safeBack?.startsWith("/work-orders/")
+      ? "← Назад к заявке на ремонт"
+      : "← К списку заказ-нарядов";
   const user = await getCurrentUser();
   const isAdmin = user?.role === ROLE_ADMIN;
 
@@ -92,7 +94,22 @@ export default async function WorkOrderDetailPage({
       {workOrder && (
         <>
           <div className="detail-title-row">
-            <h1>Заказ-наряд {workOrder.external_number}</h1>
+            <h1>
+              {workOrder.doc_type === "repair_request" ? "Заявка на ремонт" : "Заказ-наряд"}{" "}
+              {workOrder.external_number}
+            </h1>
+            {(workOrder.linked_work_order_refs ?? []).map((linked) => (
+              <Link
+                key={linked.id}
+                // The work order's back link returns to this request (and its list view).
+                href={`/work-orders/${linked.id}?back=${encodeURIComponent(
+                  `/work-orders/${workOrder.id}${from ? `?from=${encodeURIComponent(from)}` : ""}`,
+                )}`}
+                className="admin-btn admin-btn-primary"
+              >
+                Перейти к заказ-наряду {linked.external_number}
+              </Link>
+            ))}
             {workOrder.planner_record && (
               <Link
                 href={`/planner?workshop=${workOrder.planner_record.workshop_id}&zn=${encodeURIComponent(workOrder.external_number)}&date=${workOrder.planner_record.date}`}
@@ -132,6 +149,12 @@ export default async function WorkOrderDetailPage({
               <span className="detail-label">Статус</span>
               <span>{workOrder.status || "—"}</span>
             </div>
+            {workOrder.doc_type === "repair_request" && (
+              <div className="detail-field">
+                <span className="detail-label">Заказ-наряд по заявке</span>
+                <span>{workOrder.linked_work_orders || "ещё не создан"}</span>
+              </div>
+            )}
             <div className="detail-field">
               <span className="detail-label">Подразделение</span>
               <span>{workOrder.department || "—"}</span>
@@ -140,10 +163,12 @@ export default async function WorkOrderDetailPage({
               <span className="detail-label">Вид ремонта</span>
               <span>{workOrder.repair_type || "—"}</span>
             </div>
-            <div className="detail-field">
-              <span className="detail-label">Внутренний</span>
-              <span>{workOrder.is_internal ? "Да" : "Нет"}</span>
-            </div>
+            {workOrder.doc_type !== "repair_request" && (
+              <div className="detail-field">
+                <span className="detail-label">Внутренний</span>
+                <span>{workOrder.is_internal ? "Да" : "Нет"}</span>
+              </div>
+            )}
             <div className="detail-field">
               <span className="detail-label">VIN</span>
               <span>{workOrder.vin || "—"}</span>
@@ -152,6 +177,8 @@ export default async function WorkOrderDetailPage({
               <span className="detail-label">Сумма</span>
               <span>{formatAmount(workOrder.amount)}</span>
             </div>
+            {workOrder.doc_type !== "repair_request" && (
+              <>
             <div className="detail-field">
               <span className="detail-label">% оплаты</span>
               <span>{formatPercent(workOrder.payment_percent)}</span>
@@ -169,6 +196,8 @@ export default async function WorkOrderDetailPage({
               initialValue={workOrder.closed_without_payment}
               canEdit={isAdmin}
             />
+              </>
+            )}
           </div>
 
           <WorkOrderComment workOrderId={workOrder.id} initialComment={workOrder.comment} />

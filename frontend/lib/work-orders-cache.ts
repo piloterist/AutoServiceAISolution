@@ -17,7 +17,7 @@ import type { WorkOrderListItem } from "@/lib/backend-api";
 // this was invisible to the usual troubleshooting steps; bumping the key
 // here invalidates every existing cache outright on this deploy, instead
 // of relying on every affected session to clear site data manually.
-const CACHE_KEY = "work-orders-cache:v2";
+const CACHE_KEY = "work-orders-cache:v3";
 // Long enough to survive a normal dashboard-then-work-orders click, short
 // enough that a stale list can't linger unnoticed for the rest of a long
 // session after a new 1C export lands.
@@ -90,6 +90,7 @@ async function fetchAllWorkOrders(
     onlyReceivables?: boolean;
     onlyRevenue?: boolean;
     workshopId?: string;
+    includeRequests?: boolean;
   },
   onProgress?: (items: WorkOrderListItem[], total: number) => void,
 ): Promise<{ items: WorkOrderListItem[]; total: number }> {
@@ -104,6 +105,7 @@ async function fetchAllWorkOrders(
     if (params.onlyReceivables) query.set("only_receivables", "true");
     if (params.onlyRevenue) query.set("only_revenue", "true");
     if (params.workshopId) query.set("workshop_id", params.workshopId);
+    if (params.includeRequests) query.set("include_requests", "true");
 
     const res = await fetch(`/api/work-orders?${query.toString()}`);
     if (!res.ok) throw new Error(`Не удалось загрузить заказ-наряды (${res.status})`);
@@ -139,7 +141,8 @@ export function loadWorkOrdersCached(
 
   if (inFlight) return inFlight;
 
-  inFlight = fetchAllWorkOrders({}, onProgress)
+  // The unfiltered list also carries the repair requests (Заявки на ремонт).
+  inFlight = fetchAllWorkOrders({ includeRequests: true }, onProgress)
     .then(({ items, total }) => {
       const entry: CacheEntry = { items, total, complete: true, fetchedAt: Date.now() };
       memoryCache = entry;

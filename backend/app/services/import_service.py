@@ -66,6 +66,14 @@ def _opt_msk_to_utc(value: datetime | None) -> datetime | None:
     return _naive_msk_to_utc(value) if value is not None else None
 
 
+def _source_system(source: str, doc_type: str) -> str:
+    """Work orders keep the plain source ("alpha-auto"). A repair request lives in
+    its own number space: 1C numbers requests and work orders with the SAME prefixes
+    and sequences (ПС..., СЛ...), so under one key a request would overwrite the work
+    order that happens to share its number."""
+    return source if doc_type == "work_order" else f"{source}-{doc_type}"
+
+
 def _upsert_work_order(
     db: Session, source: str, exported_at, record: ImportWorkOrderRecord
 ) -> tuple[uuid.UUID, bool]:
@@ -78,8 +86,10 @@ def _upsert_work_order(
     """
     values = {
         "external_number": record.number,
-        "source_system": source,
+        "source_system": _source_system(source, record.doc_type),
         "source_key": record.source_key,
+        "doc_type": record.doc_type,
+        "linked_work_orders": ", ".join(record.linked_work_orders) or None,
         # Every 1C wall-clock value is MSK and must be converted (see
         # _naive_msk_to_utc) - stored raw, the dates read 3 hours late and an
         # order closed after 21:00 showed up on the next day (fixed

@@ -15,11 +15,31 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column, with_loader_criteria
 
 from app.db.base import Base
+
+# Document kinds stored in this table. A "repair request" (1C: Заявка на ремонт)
+# is a free visit for a defect check and an estimate - it looks like a work order
+# (header, labor and part lines) but is NOT one: it has no revenue, payments or
+# debt, and must stay out of every work-order figure (revenue, receivables,
+# conversion, kanban...) - see the do_orm_execute filter at the end of this file.
+# Its source_system is "<source>-repair_request", not the work orders' "alpha-auto":
+# 1C numbers the two kinds with the same prefixes and sequences, so they cannot
+# share the (source_system, external_number) key.
+DOC_TYPE_WORK_ORDER = "work_order"
+DOC_TYPE_REPAIR_REQUEST = "repair_request"
 
 
 class WorkOrder(Base):
@@ -83,6 +103,20 @@ class WorkOrder(Base):
     # ЗаказНаряд.Организация - which of the client's own legal entities the
     # work order was raised under (relevant for multi-entity operations).
     organization: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # "work_order" (Заказ-наряд) or "repair_request" (Заявка на ремонт) - see
+    # DOC_TYPE_* above. Every ORM SELECT of WorkOrder hides the requests unless it
+    # sets the execution option include_repair_requests (the work order list and card).
+    doc_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=DOC_TYPE_WORK_ORDER,
+        server_default=DOC_TYPE_WORK_ORDER,
+        index=True,
+    )
+    # Repair requests only: numbers of the work orders created from this request
+    # (1C: ЗаказНаряд.ДокументОснование = the request), comma-separated; NULL while none.
+    linked_work_orders: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # ЗаказНаряд.Автомобиль.VIN - raw passthrough from 1C's vehicle catalog,
     # shown on the work order detail card only (never on the list/dashboard -
@@ -158,3 +192,24 @@ class WorkOrder(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<WorkOrder {self.source_system}:{self.external_number}>"
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _hide_repair_requests(state) -> None:
+    """Keeps repair requests out of every ORM SELECT of work orders (also in
+    joins, subqueries and aliases), so no revenue/receivables/conversion/kanban
+    query has to remember to filter them. A query that does want them passes
+    execution_options={"include_repair_requests": True}."""
+    if (
+        state.is_select
+        and not state.is_column_load
+        and not state.is_relationship_load
+        and not state.execution_options.get("include_repair_requests", False)
+    ):
+        state.statement = state.statement.options(
+            with_loader_criteria(
+                WorkOrder,
+                lambda cls: cls.doc_type == DOC_TYPE_WORK_ORDER,
+                include_aliases=True,
+            )
+        )

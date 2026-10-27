@@ -13,6 +13,11 @@ import { API_URL } from "@/lib/config";
 export type WorkOrderListItem = {
   id: string;
   external_number: string;
+  // "work_order" (Заказ-наряд) or "repair_request" (Заявка на ремонт - a free defect-check
+  // visit; no revenue/payments). Rows cached before this field existed have none = work order.
+  doc_type?: "work_order" | "repair_request";
+  // Repair requests: numbers of the work orders created from it, comma-separated.
+  linked_work_orders?: string | null;
   document_date: string;
   // Alpha-Auto's own document requisites (ДатаСоздания/ДатаНачала/
   // ДатаОкончания/ДатаЗакрытия) - distinct from document_date above.
@@ -271,6 +276,8 @@ export type WorkOrderDetail = WorkOrderListItem & {
   // Free-text staff note - the one user-editable field on this otherwise
   // read-only (1C-imported) card. See updateWorkOrderComment below.
   comment: string | null;
+  // Repair requests: the work orders made from it that exist in the system.
+  linked_work_order_refs?: { id: string; external_number: string }[];
   labor: WorkOrderLaborLineItem[];
   parts: WorkOrderPartLineItem[];
   status_history: StatusHistoryItem[];
@@ -467,6 +474,8 @@ export function getWorkOrders(
      * closed_from/closed_to/departments. */
     onlyRevenue?: boolean;
     workshopId?: string;
+    /** Also list the repair requests (Заявки на ремонт) - the work orders list page. */
+    includeRequests?: boolean;
     limit?: number;
     offset?: number;
   },
@@ -480,6 +489,7 @@ export function getWorkOrders(
     only_receivables: params?.onlyReceivables ? "true" : "",
     only_revenue: params?.onlyRevenue ? "true" : "",
     workshop_id: params?.workshopId ?? "",
+    include_requests: params?.includeRequests ? "true" : "",
     limit: params?.limit ? String(params.limit) : "",
     offset: params?.offset ? String(params.offset) : "",
   });

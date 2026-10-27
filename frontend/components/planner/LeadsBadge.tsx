@@ -116,7 +116,7 @@ export function LeadsBadge() {
                   className="leads-badge-row leads-badge-row-btn"
                   onClick={() => {
                     setOpen(false);
-                    router.push(`/leads?id=${lead.id}`);
+                    router.push(`/telephony?tab=leads&id=${lead.id}`);
                   }}
                 >
                   <span className="leads-badge-row-client">

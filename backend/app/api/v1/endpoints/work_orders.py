@@ -20,6 +20,7 @@ from app.schemas.work_order import (
     DepartmentSummaryItem,
     DepartmentSummaryResponse,
     InvoiceItem,
+    LinkedWorkOrder,
     MonthlySummaryItem,
     MonthlySummaryResponse,
     PaymentEventItem,
@@ -53,6 +54,7 @@ from app.services.work_order_query_service import (
     list_departments,
     list_invoices,
     list_labor_lines,
+    list_linked_work_orders,
     list_part_lines,
     list_payment_events,
     list_payment_history,
@@ -101,6 +103,10 @@ def get_work_orders(
         default=None,
         description="Scopes only_receivables to one workshop, like Cockpit's own filter",
     ),
+    include_requests: bool = Query(
+        default=False,
+        description="Also list the repair requests (Заявки на ремонт) - the list page only",
+    ),
     # The work orders list page fetches everything in one call and filters
     # client-side (see WorkOrdersTable) so its own filters stay correct
     # across the whole dataset - it needs a limit comfortably above the
@@ -129,6 +135,7 @@ def get_work_orders(
         paid_to=paid_to,
         only_receivables=only_receivables,
         only_revenue=only_revenue,
+        include_requests=include_requests,
         limit=limit,
         offset=offset,
     )
@@ -354,6 +361,10 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
         **WorkOrderListItem.model_validate(work_order).model_dump(),
         vin=work_order.vin,
         comment=work_order.comment,
+        linked_work_order_refs=[
+            LinkedWorkOrder(id=row.id, external_number=row.external_number)
+            for row in list_linked_work_orders(db, work_order)
+        ],
         planner_record=PlannerRecordOut(
             kind=record.kind, workshop_id=record.workshop_id, date=record.date
         )
