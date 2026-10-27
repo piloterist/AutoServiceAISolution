@@ -14,7 +14,14 @@ export async function GET(request: NextRequest) {
     .filter(Boolean);
 
   try {
-    return NextResponse.json(await getConversion({ startDate, endDate, departments }));
+    return NextResponse.json(
+      await getConversion({
+        startDate,
+        endDate,
+        departments,
+        includeRequests: searchParams.get("include_requests") === "true",
+      }),
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 502 });

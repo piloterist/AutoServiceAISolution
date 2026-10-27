@@ -26,6 +26,7 @@ export function TelephonyTabs({
   conversionTo,
   conversionCohort,
   conversionDepartments,
+  conversionIncludeRequests,
   initialLeads,
   initialLeadId,
 }: {
@@ -36,6 +37,7 @@ export function TelephonyTabs({
   conversionTo?: string;
   conversionCohort?: string;
   conversionDepartments?: string;
+  conversionIncludeRequests?: boolean;
   // null = the leads could not be loaded (the tab says so).
   initialLeads: WebsiteLead[] | null;
   // /telephony?tab=leads&id=... (the planner's envelope icon) opens this lead.
@@ -77,6 +79,7 @@ export function TelephonyTabs({
             initialEnd={conversionTo}
             initialCohort={conversionCohort}
             initialDepartments={conversionDepartments}
+            includeRequests={conversionIncludeRequests}
           />
         </div>
       )}

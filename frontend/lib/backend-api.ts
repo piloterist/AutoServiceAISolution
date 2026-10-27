@@ -518,6 +518,9 @@ export type ConversionSummary = {
   existing_clients: number;
   converted_existing_clients: number;
   work_orders_existing_clients: number;
+  // The repair requests (Заявки на ремонт) they got - counted like work orders in the conversion.
+  repair_requests_new_clients: number;
+  repair_requests_existing_clients: number;
   existing_conversion_pct: number | null;
   // Figures beside the donuts, all in unique phone numbers: the target ones
   // (= new_clients + existing_clients) and those missed and never reached
@@ -529,16 +532,18 @@ export type ConversionSummary = {
 
 // The work orders counted in a donut's "Заказ-нарядов" figure.
 export function getConversionWorkOrderIds(params: {
-  kind: "new" | "existing";
+  kind: "new" | "existing" | "new_requests" | "existing_requests" | "total" | "after_call" | "without_call";
   startDate: string;
   endDate: string;
   departments?: string[];
+  includeRequests?: boolean;
 }): Promise<{ work_order_ids: string[] }> {
   return backendGet<{ work_order_ids: string[] }>("/api/v1/telephony/conversion/work-orders", {
     kind: params.kind,
     start_date: params.startDate,
     end_date: params.endDate,
     departments: departmentsParam(params.departments),
+    include_requests: params.includeRequests ? "true" : "",
   });
 }
 
@@ -548,11 +553,14 @@ export function getConversionSummary(params: {
   // The dashboard's department filter (raw 1C names): the figures are then
   // for the workshop(s) mapped to them in Settings.
   departments?: string[];
+  // "Включить заявки на ремонт": a repair request after the call converts like a work order.
+  includeRequests?: boolean;
 }): Promise<ConversionSummary> {
   return backendGet<ConversionSummary>("/api/v1/telephony/conversion/summary", {
     start_date: params.dateFrom,
     end_date: params.dateTo,
     departments: departmentsParam(params.departments),
+    include_requests: params.includeRequests ? "true" : "",
   });
 }
 
@@ -1506,6 +1514,11 @@ export type ConversionGroup = {
   // The phone's first group that led to a counted work order - one row per
   // converted number ("Дошли до заказ-наряда").
   conversion_row: boolean;
+  // The repair request (Заявка на ремонт) created after the group's first call - found
+  // like the work order; a phone may have both.
+  request_id: string | null;
+  request_number: string | null;
+  request_created_date: string | null;
 };
 
 export type ConversionResponse = {
@@ -1518,11 +1531,13 @@ export function getConversion(params: {
   startDate?: string;
   endDate?: string;
   departments?: string[];
+  includeRequests?: boolean;
 }): Promise<ConversionResponse> {
   return backendGet<ConversionResponse>("/api/v1/telephony/conversion", {
     start_date: params.startDate ?? "",
     end_date: params.endDate ?? "",
     departments: departmentsParam(params.departments),
+    include_requests: params.includeRequests ? "true" : "",
   });
 }
 
@@ -1963,6 +1978,30 @@ export function getCashBook(
     { workshop_id: params.workshopId, date_from: params.dateFrom, date_to: params.dateTo },
     actorHeaders(actor),
   );
+}
+
+// "В Excel": the cash book of one desk over a period as an .xlsx file (the raw bytes
+// and the backend's own Content-Disposition, which carries the file name).
+export async function getCashExcel(
+  params: { workshopId: string; dateFrom: string; dateTo: string },
+  actor: CashActor,
+): Promise<{ body: ArrayBuffer; contentType: string; contentDisposition: string | null }> {
+  const url = new URL("/api/v1/cash/export", API_URL);
+  url.searchParams.set("workshop_id", params.workshopId);
+  url.searchParams.set("date_from", params.dateFrom);
+  url.searchParams.set("date_to", params.dateTo);
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${backendToken()}`, ...actorHeaders(actor) },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Backend request failed: ${res.status} ${await res.text()}`);
+  }
+  return {
+    body: await res.arrayBuffer(),
+    contentType: res.headers.get("content-type") ?? "application/octet-stream",
+    contentDisposition: res.headers.get("content-disposition"),
+  };
 }
 
 export function searchCashEntries(

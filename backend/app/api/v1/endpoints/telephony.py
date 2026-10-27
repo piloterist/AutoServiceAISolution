@@ -439,14 +439,25 @@ def conversion_work_orders(
     start_date: date | None = None,
     end_date: date | None = None,
     departments: str | None = None,
+    include_requests: bool = False,
     db: Session = Depends(get_db),
 ) -> ConversionWorkOrdersResponse:
     """Ids of the work orders counted in a donut's "Заказ-нарядов" figure
-    (kind = "new" | "existing") - the work-order list filters down to them."""
-    if kind not in ("new", "existing"):
+    (kind = "new" | "existing", or "total" | "after_call" | "without_call" for the
+    order-source donut) - the work-order list filters down to them."""
+    if kind not in (
+        "new",
+        "existing",
+        "new_requests",
+        "existing_requests",
+        "total",
+        "after_call",
+        "without_call",
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="kind must be 'new' or 'existing'",
+            detail="kind must be new, existing, new_requests, existing_requests, total, "
+            "after_call or without_call",
         )
     today = date.today()
     range_start = start_date or today.replace(day=1)
@@ -458,7 +469,7 @@ def conversion_work_orders(
         )
     return ConversionWorkOrdersResponse(
         work_order_ids=conversion_service.conversion_work_order_ids(
-            db, range_start, range_end, kind, _split_departments(departments)
+            db, range_start, range_end, kind, _split_departments(departments), include_requests
         )
     )
 
@@ -468,6 +479,7 @@ def conversion_summary(
     start_date: date | None = None,
     end_date: date | None = None,
     departments: str | None = None,
+    include_requests: bool = False,
     db: Session = Depends(get_db),
 ) -> ConversionSummaryResponse:
     """Конверсия новых клиентов в заказ-наряды за период (product ask,
@@ -482,7 +494,7 @@ def conversion_summary(
             detail="end_date must not be before start_date",
         )
     summary = conversion_service.get_conversion_summary(
-        db, range_start, range_end, _split_departments(departments)
+        db, range_start, range_end, _split_departments(departments), include_requests
     )
     return ConversionSummaryResponse(
         start_date=range_start,
@@ -496,6 +508,7 @@ def conversion(
     start_date: date | None = None,
     end_date: date | None = None,
     departments: str | None = None,
+    include_requests: bool = False,
     db: Session = Depends(get_db),
 ) -> ConversionResponse:
     """Телефония -> "Конверсия" (product ask, 2026-10-23): inbound calls of
@@ -512,7 +525,7 @@ def conversion(
         )
 
     groups = conversion_service.list_conversion(
-        db, range_start, range_end, _split_departments(departments)
+        db, range_start, range_end, _split_departments(departments), include_requests
     )
     workshop_labels = _workshop_label_map(db)
     return ConversionResponse(
@@ -530,6 +543,9 @@ def conversion(
                 client_class=group.client_class,
                 phone_unanswered=group.phone_unanswered,
                 conversion_row=group.conversion_row,
+                request_id=group.request_id,
+                request_number=group.request_number,
+                request_created_date=group.request_created_date,
                 calls=[_event_out(call, workshop_labels) for call in group.calls],
             )
             for group in groups

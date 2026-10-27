@@ -1,6 +1,15 @@
 """Телефония -> "Конверсия": inbound calls of a period, grouped by phone and the
 work order they (most plausibly) led to.
 
+A repair request (Заявка на ремонт - a free defect-check visit, see models/work_order.py)
+is looked up exactly like a work order, in its own list per phone: a number may have a
+request AND a work order. It does not change whether a number is new / existing or a
+call is a status call (those look at work orders only), but a request created after the
+counted call counts as a conversion, as if it were a work order (the number is counted
+once), and the requests themselves are counted beside the work orders - but only with
+`include_requests` (the checkbox "Включить заявки на ремонт" on Аналитика, off by default);
+without it every figure is exactly the work-order-only one.
+
 Matching mirrors leads_service._match_work_order (a lead's work order = the
 earliest one on the same phone created after the lead), with one deliberate
 difference: "created" here is WorkOrder.created_date (ДатаСоздания, the date
@@ -19,7 +28,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import NamedTuple
 
@@ -67,6 +76,11 @@ class ConversionGroup:
     # This group is its phone's FIRST one that led to a counted work order: the
     # single row per converted number ("Дошли до заказ-наряда").
     conversion_row: bool = False
+    # The repair request created after the group's first call (same rule as the
+    # work order) - None when there is none.
+    request_id: uuid.UUID | None = None
+    request_number: str | None = None
+    request_created_date: datetime | None = None
 
 
 def _real_moment(stored: datetime | None) -> datetime | None:
@@ -94,12 +108,14 @@ def _last10(value: str | None) -> str:
 
 
 def _work_orders_by_phone(
-    db: Session, phones: set[str], skip_repair_types: set[str]
+    db: Session, phones: set[str], skip_repair_types: set[str], requests: bool = False
 ) -> dict[str, list[PhoneWorkOrder]]:
     """Work orders for just the given (normalized) phones, each list sorted
     oldest-created first. WorkOrder.phone is raw 1C passthrough (any
     format), hence normalizing in Python rather than comparing columns.
-    Work orders of the given (warranty) repair types are left out."""
+    Work orders of the given (warranty) repair types are left out. With
+    `requests` the repair requests (Заявки на ремонт) of those phones are returned
+    instead, in the same shape."""
     rows = db.execute(
         select(
             WorkOrder.phone,
@@ -113,7 +129,11 @@ def _work_orders_by_phone(
             WorkOrder.document_date,
             WorkOrder.department,
             WorkOrder.repair_type,
-        ).where(WorkOrder.phone.is_not(None))
+        ).where(
+            WorkOrder.phone.is_not(None),
+            WorkOrder.doc_type == ("repair_request" if requests else "work_order"),
+        ),
+        execution_options={"include_repair_requests": requests},
     ).all()
     by_phone: dict[str, list[PhoneWorkOrder]] = {}
     for (
@@ -151,7 +171,11 @@ def _work_orders_by_phone(
 
 
 def list_conversion(
-    db: Session, start_day: date, end_day: date, departments: list[str] | None = None
+    db: Session,
+    start_day: date,
+    end_day: date,
+    departments: list[str] | None = None,
+    include_requests: bool = False,
 ) -> list[ConversionGroup]:
     """One group per (phone, matched work order): a call is matched to the
     first work order created after it on that phone (calls with none go to
@@ -167,15 +191,25 @@ def list_conversion(
     phones = {e.client for e in events if e.client}
     warranty = set(settings_service.get_app_settings(db).warranty_repair_types or [])
     work_orders = _work_orders_by_phone(db, phones, warranty)
+    requests = _work_orders_by_phone(db, phones, warranty, requests=True)
 
-    groups: dict[tuple[str, uuid.UUID | None], ConversionGroup] = {}
+    groups: dict[tuple[str, uuid.UUID | None, uuid.UUID | None], ConversionGroup] = {}
     for event in sorted(events, key=lambda e: e.time):
         client = event.client or ""
         call_time = datetime.strptime(event.time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=_MSK)
         call_time_utc = call_time.astimezone(UTC)
         candidates = work_orders.get(client, [])
         match: PhoneWorkOrder | None = next((c for c in candidates if c[0] > call_time_utc), None)
-        key = (client, match[1] if match else None)
+        request_match: PhoneWorkOrder | None = next(
+            (c for c in requests.get(client, []) if c[0] > call_time_utc), None
+        )
+        # Calls leading to one work order collapse into one row; calls with no work
+        # order get a row per repair request they led to.
+        key = (
+            client,
+            match[1] if match else None,
+            None if match else (request_match[1] if request_match else None),
+        )
         group = groups.get(key)
         if group is None:
             group = groups[key] = ConversionGroup(
@@ -186,24 +220,30 @@ def list_conversion(
                 # Judged at the group's first call (events are oldest-first).
                 is_existing=any(created < call_time_utc for created, *_ in candidates),
                 calls=[],
+                request_id=request_match[1] if request_match else None,
+                request_number=request_match[2] if request_match else None,
+                request_created_date=request_match[0] if request_match else None,
             )
         group.calls.append(event)
 
-    classification = classify_phones(db, start_day, end_day, departments)
+    classification = classify_phones(db, start_day, end_day, departments, include_requests)
     for group in groups.values():
         info = classification.phones.get(group.client)
         if info is not None:
             group.client_class = info.client_class
             group.segment = info.client_class if info.has_topic else "none"
-            group.phone_converted = info.work_orders > 0
+            group.phone_converted = info.work_orders > 0 or info.repair_requests > 0
             group.phone_unanswered = info.unanswered
 
     # One conversion row per converted phone: its earliest group whose work
-    # order is one of those counted for it.
+    # order (or repair request) is one of those counted for it.
     best: dict[str, ConversionGroup] = {}
     for group in groups.values():
         info = classification.phones.get(group.client)
-        if info is None or group.work_order_id not in info.work_order_ids:
+        if info is None or (
+            group.work_order_id not in info.work_order_ids
+            and group.request_id not in info.repair_request_ids
+        ):
             continue
         current = best.get(group.client)
         if current is None or group.calls[0].time < current.calls[0].time:
@@ -239,6 +279,9 @@ class ConversionSummary:
     existing_clients: int  # ... the rest, i.e. counted
     converted_existing_clients: int
     work_orders_existing_clients: int
+    # The repair requests they got (counted like the work orders, see the module docstring).
+    repair_requests_new_clients: int
+    repair_requests_existing_clients: int
     existing_conversion_pct: float | None
     # Figures beside the donuts (all in unique phone numbers): the target ones
     # are new_clients + existing_clients (numbers with a topic conversation,
@@ -433,6 +476,10 @@ class PhoneInfo:
     # It had a missed inbound call and no real conversation (either direction)
     # after the last one before the period ended - "остались без ответа".
     unanswered: bool = False
+    # The repair requests created after its counted call - same window rule as the
+    # work orders; they make the number "converted" too.
+    repair_requests: int = 0
+    repair_request_ids: list[uuid.UUID] = field(default_factory=list)
 
 
 @dataclass
@@ -464,7 +511,11 @@ def workshop_ids_for_departments(
 
 
 def classify_phones(
-    db: Session, start_day: date, end_day: date, departments: list[str] | None = None
+    db: Session,
+    start_day: date,
+    end_day: date,
+    departments: list[str] | None = None,
+    include_requests: bool = False,
 ) -> Classification:
     """Sort the period's phone numbers into client classes and work out the
     conversion (product ask, 2026-10-24) - one entry per unique number.
@@ -563,6 +614,10 @@ def classify_phones(
     warranty = set(settings_service.get_app_settings(db).warranty_repair_types or [])
     all_phones = set(first_call) | set(qualifying_all)
     work_orders = _work_orders_by_phone(db, all_phones, warranty)
+    # The repair requests only matter when they are included in the conversion.
+    requests = (
+        _work_orders_by_phone(db, all_phones, warranty, requests=True) if include_requests else {}
+    )
     resolver = _StatusResolver(
         _status_timelines(
             db,
@@ -603,12 +658,17 @@ def classify_phones(
         db, set(counted_call) | set(candidates), period_end_utc
     )
 
-    def led_to_for(phone: str, counted_time: datetime) -> list[uuid.UUID]:
+    def led_to_for(
+        phone: str,
+        counted_time: datetime,
+        pool: dict[str, list[PhoneWorkOrder]] | None = None,
+    ) -> list[uuid.UUID]:
+        # `pool`: the work orders (default) or the repair requests of the phones
         counted_utc = to_utc(counted_time)
         window_end = next_conversation.get(phone)
         return [
             wo.id
-            for wo in work_orders.get(phone, [])
+            for wo in (work_orders if pool is None else pool).get(phone, [])
             if counted_utc < wo.created
             and (window_end is None or wo.created < window_end)
             and (departments is None or wo.department in departments)
@@ -618,7 +678,7 @@ def classify_phones(
     # order of this department; its calls on the other lines are counted too.
     attributed: set[str] = set()
     for phone, counted in candidates.items():
-        if led_to_for(phone, counted[0]):
+        if led_to_for(phone, counted[0]) or led_to_for(phone, counted[0], requests):
             attributed.add(phone)
             counted_call[phone] = counted
             calls_total += calls_all.get(phone, 0) - calls_by_phone.get(phone, 0)
@@ -650,8 +710,10 @@ def classify_phones(
         }[state]
 
         led_to: list[uuid.UUID] = []
+        led_to_requests: list[uuid.UUID] = []
         if phone in counted_call:
             led_to = led_to_for(phone, counted_time)
+            led_to_requests = led_to_for(phone, counted_time, requests)
         phones[phone] = PhoneInfo(
             client_class=client_class,
             calls=calls_by_phone.get(phone, 0)
@@ -664,6 +726,8 @@ def classify_phones(
             work_orders=len(led_to),
             work_order_ids=led_to,
             unanswered=unanswered,
+            repair_requests=len(led_to_requests),
+            repair_request_ids=led_to_requests,
         )
 
     return Classification(
@@ -675,28 +739,13 @@ def classify_phones(
     )
 
 
-def get_conversion_summary(
-    db: Session, start_day: date, end_day: date, departments: list[str] | None = None
-) -> ConversionSummary:
-    """The numbers behind the two conversion donuts on Аналитика - see
-    classify_phones for the rules. conversion_pct = new numbers that got a
-    work order / new numbers; existing_conversion_pct = counted existing
-    numbers that got one / counted existing numbers (both over the numbers
-    in the target calls, each number once - a client with two work orders
-    is still one converted client; the work orders themselves are shown
-    beside the donut). The figures beside the donuts are
-    unique numbers too: see ConversionSummary."""
-    classification = classify_phones(db, start_day, end_day, departments)
-    infos = list(classification.phones.values())
-
-    new_all = [x for x in infos if x.client_class == "new"]
-    counted_all = [x for x in infos if x.client_class == "existing_counted"]
-    excluded_topic = [x for x in infos if x.had_qualifying and not x.has_topic]
-    new = [x for x in new_all if x.has_topic]
-    counted = [x for x in counted_all if x.has_topic]
-    new_converted = [x for x in new if x.work_orders]
-    counted_converted = [x for x in counted if x.work_orders]
-
+def _period_work_order_ids(
+    db: Session, start_day: date, end_day: date, departments: list[str] | None
+) -> set[uuid.UUID]:
+    """Every work order created in the period ("Всего заказ-нарядов" of the order-source
+    donut): without warranty repair types, without internal orders when the settings
+    exclude them, within the departments when given. Repair requests are never work
+    orders (the ORM filter hides them)."""
     # The period's bounds are Moscow midnights (created_date is a real instant).
     total_filters = [
         WorkOrder.created_date >= datetime.combine(start_day, datetime.min.time(), tzinfo=_MSK),
@@ -712,7 +761,37 @@ def get_conversion_summary(
         )
     if departments:
         total_filters.append(WorkOrder.department.in_(departments))
-    period_ids = set(db.scalars(select(WorkOrder.id).where(*total_filters)))
+    return set(db.scalars(select(WorkOrder.id).where(*total_filters)))
+
+
+def get_conversion_summary(
+    db: Session,
+    start_day: date,
+    end_day: date,
+    departments: list[str] | None = None,
+    include_requests: bool = False,
+) -> ConversionSummary:
+    """The numbers behind the two conversion donuts on Аналитика - see
+    classify_phones for the rules. conversion_pct = new numbers that got a
+    work order / new numbers; existing_conversion_pct = counted existing
+    numbers that got one / counted existing numbers (both over the numbers
+    in the target calls, each number once - a client with two work orders
+    is still one converted client; the work orders themselves are shown
+    beside the donut). The figures beside the donuts are
+    unique numbers too: see ConversionSummary."""
+    classification = classify_phones(db, start_day, end_day, departments, include_requests)
+    infos = list(classification.phones.values())
+
+    new_all = [x for x in infos if x.client_class == "new"]
+    counted_all = [x for x in infos if x.client_class == "existing_counted"]
+    excluded_topic = [x for x in infos if x.had_qualifying and not x.has_topic]
+    new = [x for x in new_all if x.has_topic]
+    counted = [x for x in counted_all if x.has_topic]
+    # A repair request after the call converts the number too (as if it were a work order).
+    new_converted = [x for x in new if x.work_orders or x.repair_requests]
+    counted_converted = [x for x in counted if x.work_orders or x.repair_requests]
+
+    period_ids = _period_work_order_ids(db, start_day, end_day, departments)
     work_orders_total = len(period_ids)
     after_call_ids = {
         work_order_id for info in infos if info.has_topic for work_order_id in info.work_order_ids
@@ -734,6 +813,8 @@ def get_conversion_summary(
         existing_clients=len(counted),
         converted_existing_clients=len(counted_converted),
         work_orders_existing_clients=sum(x.work_orders for x in counted_converted),
+        repair_requests_new_clients=sum(x.repair_requests for x in new_converted),
+        repair_requests_existing_clients=sum(x.repair_requests for x in counted_converted),
         existing_conversion_pct=(
             round(len(counted_converted) / len(counted) * 100, 1) if counted else None
         ),
@@ -749,12 +830,35 @@ def conversion_work_order_ids(
     end_day: date,
     kind: str,
     departments: list[str] | None = None,
+    include_requests: bool = False,
 ) -> list[uuid.UUID]:
     """The work orders counted in "Заказ-нарядов" beside a donut - those of
     the new ("new") or counted existing ("existing") clients of
-    classify_phones. The work-order list opens on exactly these."""
+    classify_phones ("new_requests" / "existing_requests": the repair requests they
+    got instead); for the order-source donut "total" (all created in the period),
+    "after_call" (created after a target call) and "without_call" (the rest). The
+    work-order list opens on exactly these."""
+    classification = classify_phones(db, start_day, end_day, departments, include_requests)
+    if kind in ("total", "after_call", "without_call"):
+        period_ids = _period_work_order_ids(db, start_day, end_day, departments)
+        after_call_ids = {
+            work_order_id
+            for info in classification.phones.values()
+            if info.has_topic
+            for work_order_id in info.work_order_ids
+        } & period_ids
+        if kind == "total":
+            return list(period_ids)
+        return list(after_call_ids if kind == "after_call" else period_ids - after_call_ids)
+    if kind in ("new_requests", "existing_requests"):
+        wanted = "new" if kind == "new_requests" else "existing_counted"
+        return [
+            request_id
+            for info in classification.phones.values()
+            if info.has_topic and info.client_class == wanted
+            for request_id in info.repair_request_ids
+        ]
     wanted = "new" if kind == "new" else "existing_counted"
-    classification = classify_phones(db, start_day, end_day, departments)
     return [
         work_order_id
         for info in classification.phones.values()

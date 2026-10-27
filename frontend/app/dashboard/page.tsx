@@ -1,9 +1,11 @@
+import { cookies } from "next/headers";
 import Image from "next/image";
 import { Suspense } from "react";
 
 import { DashboardFilters } from "@/components/DashboardFilters";
 import { DashboardPeriodSync } from "@/components/DashboardPeriodSync";
 import { ConversionDonut } from "@/components/ConversionDonut";
+import { ConversionRequestsToggle } from "@/components/ConversionRequestsToggle";
 import { ConversionHelp } from "@/components/ConversionHelp";
 import { MonthlyBarChart } from "@/components/MonthlyRevenueChart";
 import { RankedList, type RankedItem } from "@/components/RankedList";
@@ -191,10 +193,17 @@ export default async function DashboardPage({
 
   // The telephony conversion donut must never take the rest of the page down
   // with it (telephony is an optional module): no data -> an empty card.
+  // "Включить заявки на ремонт" (off by default) - a session cookie set by the toggle.
+  const includeRequests = (await cookies()).get("conv_requests")?.value === "1";
   let conversionSummary: ConversionSummary | null = null;
   if (!error) {
     try {
-      conversionSummary = await getConversionSummary({ dateFrom, dateTo, departments: selectedDepartments });
+      conversionSummary = await getConversionSummary({
+        dateFrom,
+        dateTo,
+        departments: selectedDepartments,
+        includeRequests,
+      });
     } catch {
       conversionSummary = null;
     }
@@ -421,7 +430,12 @@ export default async function DashboardPage({
                     <h3 className="conversion-sub-title">
                       Новые клиенты <ConversionHelp topic="new" />
                     </h3>
-                    <ConversionDonut summary={conversionSummary} variant="new" departments={selectedDepartments} />
+                    <ConversionDonut
+                      summary={conversionSummary}
+                      variant="new"
+                      departments={selectedDepartments}
+                      includeRequests={includeRequests}
+                    />
                   </section>
                   <section className="conversion-trio-col">
                     <h3 className="conversion-sub-title">
@@ -431,6 +445,7 @@ export default async function DashboardPage({
                       summary={conversionSummary}
                       variant="existing"
                       departments={selectedDepartments}
+                      includeRequests={includeRequests}
                     />
                   </section>
                   <section className="conversion-trio-col">
@@ -440,6 +455,7 @@ export default async function DashboardPage({
                     <ConversionDonut summary={conversionSummary} variant="sources" departments={selectedDepartments} />
                   </section>
                 </div>
+                <ConversionRequestsToggle checked={includeRequests} />
               </div>
             </div>
 

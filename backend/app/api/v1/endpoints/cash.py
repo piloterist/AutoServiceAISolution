@@ -9,8 +9,9 @@ another desk's book.
 
 import uuid
 from datetime import date
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
@@ -25,7 +26,7 @@ from app.schemas.cash import (
     CashSearchHit,
     CashWorkOrderOut,
 )
-from app.services import cash_service
+from app.services import cash_export_service, cash_service
 from app.services.cash_service import (
     CashError,
     CashForbidden,
@@ -84,6 +85,33 @@ def book(
         )
     except CashError as exc:
         raise _http_error(exc) from exc
+
+
+XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/export")
+def export_excel(
+    workshop_id: uuid.UUID,
+    date_from: date,
+    date_to: date,
+    who: tuple[uuid.UUID | None, str] = Depends(actor),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Every operation of one cash desk over [date_from, date_to] as an Excel table
+    (Год / Месяц / День / Операция / Сумма, two balance rows for every day)."""
+    access = cash_service.get_access(db, who[0])
+    try:
+        rows = cash_export_service.export_rows(db, access, workshop_id, date_from, date_to)
+    except CashError as exc:
+        raise _http_error(exc) from exc
+    label = cash_service._workshop_label(db, workshop_id).replace("/", "-")
+    filename = f"Касса {label} {date_from:%d.%m.%Y}-{date_to:%d.%m.%Y}.xlsx"
+    return Response(
+        content=cash_export_service.build_workbook(rows),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @router.get("/search", response_model=list[CashSearchHit])

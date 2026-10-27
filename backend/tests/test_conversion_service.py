@@ -1384,3 +1384,126 @@ def test_work_orders_of_the_period_after_a_target_call_and_without_one(
     assert summary.work_orders_total == 3
     assert summary.work_orders_after_call == 1
     assert summary.work_orders_without_call == 2
+
+
+def test_order_source_figures_open_the_matching_work_orders_and_skip_repair_requests(
+    db_session: Session,
+) -> None:
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
+    db_session.add(
+        _wo("AFTER-CALL", datetime(2026, 10, 10, 15, 0, tzinfo=UTC), phone="+7 999 000 00 01")
+    )
+    db_session.add(
+        _wo("WALK-IN", datetime(2026, 10, 10, 8, 0, tzinfo=UTC), phone="+7 999 000 00 05")
+    )
+    # a repair request (free defect-check visit) is not a work order: never counted
+    db_session.add(
+        _wo(
+            "REQUEST",
+            datetime(2026, 10, 10, 16, 0, tzinfo=UTC),
+            phone="+7 999 000 00 01",
+            doc_type="repair_request",
+        )
+    )
+    db_session.commit()
+
+    summary = conversion_service.get_conversion_summary(db_session, DAY, DAY)
+    ids = {
+        kind: set(conversion_service.conversion_work_order_ids(db_session, DAY, DAY, kind))
+        for kind in ("total", "after_call", "without_call")
+    }
+
+    assert (summary.work_orders_total, summary.work_orders_after_call) == (2, 1)
+    assert [len(ids[k]) for k in ("total", "after_call", "without_call")] == [2, 1, 1]
+    assert ids["after_call"] | ids["without_call"] == ids["total"]
+    assert not ids["after_call"] & ids["without_call"]
+
+
+# ---- Заявки на ремонт ------------------------------------------------------------
+
+
+def _request(number: str, created: datetime, phone: str = "+7 999 000 00 01", **kw):
+    return _wo(number, created, phone=phone, doc_type="repair_request", **kw)
+
+
+def test_a_repair_request_after_the_call_converts_the_number_like_a_work_order(
+    db_session: Session,
+) -> None:
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
+    db_session.add(_request("REQ-1", datetime(2026, 10, 10, 15, 0, tzinfo=UTC)))
+    db_session.commit()
+
+    summary = conversion_service.get_conversion_summary(db_session, DAY, DAY, include_requests=True)
+    assert (summary.new_clients, summary.converted_new_clients) == (1, 1)
+    assert summary.conversion_pct == 100.0
+    assert summary.work_orders_new_clients == 0  # a request is not a work order
+    assert summary.repair_requests_new_clients == 1
+
+    (group,) = conversion_service.list_conversion(db_session, DAY, DAY, include_requests=True)
+    assert group.work_order_number is None
+    assert (group.request_number, group.conversion_row, group.phone_converted) == (
+        "REQ-1",
+        True,
+        True,
+    )
+    request_ids = conversion_service.conversion_work_order_ids(
+        db_session, DAY, DAY, "new_requests", include_requests=True
+    )
+    assert len(request_ids) == 1
+    assert conversion_service.conversion_work_order_ids(db_session, DAY, DAY, "new") == []
+    # ... and the order-source donut still counts work orders only
+    assert summary.work_orders_total == 0
+
+
+def test_a_number_with_a_request_and_a_work_order_is_converted_once(db_session: Session) -> None:
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
+    db_session.add(_request("REQ-1", datetime(2026, 10, 10, 13, 0, tzinfo=UTC)))
+    db_session.add(_wo("WO-1", datetime(2026, 10, 10, 16, 0, tzinfo=UTC), phone="+7 999 000 00 01"))
+    db_session.commit()
+
+    summary = conversion_service.get_conversion_summary(db_session, DAY, DAY, include_requests=True)
+    assert (summary.new_clients, summary.converted_new_clients) == (1, 1)  # the number counts once
+    assert (summary.work_orders_new_clients, summary.repair_requests_new_clients) == (1, 1)
+
+    (group,) = conversion_service.list_conversion(db_session, DAY, DAY, include_requests=True)
+    assert (group.work_order_number, group.request_number) == ("WO-1", "REQ-1")
+
+
+def test_a_repair_request_does_not_make_a_client_existing_or_count_before_the_call(
+    db_session: Session,
+) -> None:
+    # a request BEFORE the call: not a conversion of this call, and not an "existing" client
+    db_session.add(_request("REQ-OLD", datetime(2026, 10, 9, 8, 0, tzinfo=UTC)))
+    # a request of ANOTHER number after the call
+    db_session.add(
+        _request("REQ-OTHER", datetime(2026, 10, 10, 15, 0, tzinfo=UTC), "+7 999 000 00 05")
+    )
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
+    db_session.commit()
+
+    summary = conversion_service.get_conversion_summary(db_session, DAY, DAY, include_requests=True)
+    assert (summary.new_clients, summary.existing_clients) == (1, 0)
+    assert (summary.converted_new_clients, summary.repair_requests_new_clients) == (0, 0)
+
+
+def test_repair_requests_are_left_out_of_the_conversion_unless_included(
+    db_session: Session,
+) -> None:
+    _call(db_session, external_id="a", client="9990000001", talk_sec=40, topic_tag=TOPIC)
+    db_session.add(_request("REQ-1", datetime(2026, 10, 10, 15, 0, tzinfo=UTC)))
+    db_session.commit()
+
+    off = conversion_service.get_conversion_summary(db_session, DAY, DAY)  # the default
+    on = conversion_service.get_conversion_summary(db_session, DAY, DAY, include_requests=True)
+
+    assert (off.new_clients, off.converted_new_clients, off.conversion_pct) == (1, 0, 0.0)
+    assert off.repair_requests_new_clients == 0
+    assert (on.converted_new_clients, on.conversion_pct, on.repair_requests_new_clients) == (
+        1,
+        100.0,
+        1,
+    )
+    (group,) = conversion_service.list_conversion(db_session, DAY, DAY)  # flag off
+    assert group.request_number == "REQ-1"  # the request is still shown in its column ...
+    assert (group.conversion_row, group.phone_converted) == (False, False)  # ... but not counted
+    assert conversion_service.conversion_work_order_ids(db_session, DAY, DAY, "new_requests") == []

@@ -812,3 +812,108 @@ def test_search_finds_entries_earliest_first_and_stays_in_the_desk(
     assert cash_service.search_entries(db_session, access, world["body"].id, "  ") == []
     with pytest.raises(CashForbidden):
         cash_service.search_entries(db_session, access, world["other"].id, "10503")
+
+
+# ---- В Excel -----------------------------------------------------------------------
+
+
+def test_excel_rows_have_two_balance_rows_for_every_day_and_carry_the_balance(
+    db_session: Session, world: dict
+) -> None:
+    from app.services import cash_export_service
+
+    _add(db_session, world, KIND_CASH_IN, "1000", date(2026, 10, 9))  # before the period
+    _add(db_session, world, KIND_CASH_IN, "500", DAY, work_order_number="ПС00000001")
+    _add(db_session, world, KIND_CASH_IN, "200", DAY, comment="сдача")
+    _add(db_session, world, KIND_CARD_IN, "300", DAY, work_order_number="ПС00000002")
+    _add(db_session, world, KIND_CASH_OUT, "150", DAY, comment="хоз. расходы")
+    # DAY + 1 has no operations at all; DAY + 2 only a card payment
+    _add(db_session, world, KIND_CARD_IN, "50", DAY + timedelta(days=2))
+
+    rows = cash_export_service.export_rows(
+        db_session,
+        _access(db_session, world["cashier"]),
+        world["body"].id,
+        DAY,
+        DAY + timedelta(days=2),
+    )
+
+    assert [(d.day, op, wo, comment, str(a)) for d, op, wo, comment, a in rows] == [
+        (10, "Остаток на начало", None, None, "1000.00"),
+        (10, "Приход НАЛ", "ПС00000001", None, "500.00"),  # one row per entry
+        (10, "Приход НАЛ", None, "сдача", "200.00"),
+        (10, "Приход КАРТА", "ПС00000002", None, "300.00"),
+        (10, "Расход НАЛ", None, "хоз. расходы", "-150.00"),  # an expense is negative
+        (10, "Остаток на конец", None, None, "1550.00"),  # card does not touch the cash balance
+        (11, "Остаток на начало", None, None, "1550.00"),
+        (11, "Остаток на конец", None, None, "1550.00"),  # an empty day still has both rows
+        (12, "Остаток на начало", None, None, "1550.00"),
+        (12, "Приход КАРТА", None, None, "50.00"),
+        (12, "Остаток на конец", None, None, "1550.00"),
+    ]
+
+
+def test_excel_file_is_a_filtered_table_with_the_requested_columns(
+    client, db_session: Session, world: dict, auth_headers: dict
+) -> None:
+    import io
+
+    from openpyxl import load_workbook
+
+    _add(
+        db_session, world, KIND_CASH_IN, "500", DAY, work_order_number="ПС00000001", comment="аванс"
+    )
+    _add(db_session, world, KIND_CASH_OUT, "120", DAY)
+    headers = {**auth_headers, "X-Actor-User-Id": str(world["cashier"].id)}
+
+    response = client.get(
+        "/api/v1/cash/export",
+        params={
+            "workshop_id": str(world["body"].id),
+            "date_from": "2026-10-10",
+            "date_to": "2026-10-11",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "attachment" in response.headers["content-disposition"]
+    sheet = load_workbook(io.BytesIO(response.content)).active
+    assert [c.value for c in sheet[1]] == [
+        "Год",
+        "Месяц",
+        "День",
+        "Операция",
+        "Заказ-наряд",
+        "Комментарий",
+        "Сумма",
+    ]
+    assert [c.value for c in sheet[2]][:2] == [2026, "Октябрь"]
+    assert sheet[2][2].value.date() == DAY and sheet[2][2].number_format == "DD.MM.YYYY"
+    assert [c.value for c in sheet[3]][3:] == ["Приход НАЛ", "ПС00000001", "аванс", 500]
+    assert [c.value for c in sheet[4]][3:] == ["Расход НАЛ", None, None, -120]
+    table = next(iter(sheet.tables.values()))
+    assert table.ref == "A1:G7" and table.autoFilter is not None  # filter on every column
+    # header + opening, 2 entries, closing + the empty day's 2 rows
+    assert sheet.max_row == 7
+
+
+def test_excel_export_of_a_foreign_desk_is_forbidden(
+    client, db_session: Session, world: dict, auth_headers: dict
+) -> None:
+    headers = {**auth_headers, "X-Actor-User-Id": str(world["cashier"].id)}
+
+    response = client.get(
+        "/api/v1/cash/export",
+        params={
+            "workshop_id": str(world["other"].id),
+            "date_from": "2026-10-10",
+            "date_to": "2026-10-10",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 403

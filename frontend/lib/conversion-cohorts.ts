@@ -67,21 +67,36 @@ export function conversionHref(
   to: string,
   cohort: Cohort,
   departments: string[] = [],
+  includeRequests = false,
 ): string {
   const query = new URLSearchParams({ tab: "conversion", from, to, cohort });
+  if (includeRequests) query.set("requests", "1");
   if (departments.length > 0) query.set("departments", departments.join(","));
   return `/telephony?${query.toString()}`;
 }
 
+/** Which work orders a donut figure links to: those of new / existing clients, or (the
+ * order-source donut) all / after a call / without a call. */
+export type ConversionWorkOrdersKind =
+  | "new"
+  | "existing"
+  | "new_requests"
+  | "existing_requests"
+  | "total"
+  | "after_call"
+  | "without_call";
+
 /** Link to the work-order list narrowed to the work orders counted in a
- * donut's "Заказ-нарядов" figure (new or existing clients). */
+ * donut's "Заказ-нарядов" figure. */
 export function conversionWorkOrdersHref(
-  kind: "new" | "existing",
+  kind: ConversionWorkOrdersKind,
   from: string,
   to: string,
   departments: string[] = [],
+  includeRequests = false,
 ): string {
   const query = new URLSearchParams({ conv: kind, conv_from: from, conv_to: to });
+  if (includeRequests) query.set("conv_requests", "1");
   if (departments.length > 0) query.set("conv_departments", departments.join(","));
   return `/work-orders?${query.toString()}`;
 }

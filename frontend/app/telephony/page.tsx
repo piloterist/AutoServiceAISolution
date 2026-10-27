@@ -1,3 +1,5 @@
+import { cookies } from "next/headers";
+
 import { TelephonyTabs } from "@/components/telephony/TelephonyTabs";
 import { getLeads, getSourceSummary } from "@/lib/backend-api";
 import type { WebsiteLead } from "@/lib/backend-api";
@@ -13,6 +15,9 @@ type SearchParams = {
   cohort?: string;
   departments?: string;
   id?: string;
+  // "Включить заявки на ремонт" of the Аналитика donut the link came from (1 / 0); without it
+  // the dashboard's own session cookie decides.
+  requests?: string;
 };
 
 export default async function TelephonyPage({
@@ -23,6 +28,9 @@ export default async function TelephonyPage({
   // Arriving from the conversion donuts on Аналитика: open the "Конверсия"
   // tab for that period, narrowed to the clicked figure's numbers.
   const params = await searchParams;
+  const includeRequests = params.requests
+    ? params.requests === "1"
+    : (await cookies()).get("conv_requests")?.value === "1";
   let initialSummary;
   let error: string | null = null;
   let leads: WebsiteLead[] | null = null;
@@ -57,6 +65,7 @@ export default async function TelephonyPage({
           conversionTo={params.to}
           conversionCohort={params.cohort}
           conversionDepartments={params.departments}
+          conversionIncludeRequests={includeRequests}
           initialLeads={leads}
           initialLeadId={params.id}
         />

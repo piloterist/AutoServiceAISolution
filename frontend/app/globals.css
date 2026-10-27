@@ -6797,3 +6797,31 @@ main:has(.cockpit-page) {
 .vt-row--request-linked:hover {
   background: color-mix(in srgb, #3fb950 26%, var(--surface));
 }
+
+/* Касса: кнопка «В Excel» под периодом */
+.cash-period-excel {
+  display: block;
+  margin-top: 8px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.cash-period-excel--off {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Аналитика: галка «Включить заявки на ремонт» под бубликами конверсии */
+.conversion-requests-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.conversion-requests-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}

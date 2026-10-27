@@ -260,6 +260,10 @@ class ConversionGroupOut(BaseModel):
     # The phone's first group that led to a counted work order - one row per
     # converted number ("Дошли до заказ-наряда").
     conversion_row: bool
+    # The repair request (Заявка на ремонт) created after the group's first call.
+    request_id: uuid.UUID | None = None
+    request_number: str | None = None
+    request_created_date: datetime | None = None
 
 
 class ConversionSummaryResponse(BaseModel):
@@ -283,6 +287,8 @@ class ConversionSummaryResponse(BaseModel):
     existing_clients: int
     converted_existing_clients: int
     work_orders_existing_clients: int
+    repair_requests_new_clients: int
+    repair_requests_existing_clients: int
     existing_conversion_pct: float | None
     target_phones: int
     unanswered_new: int

@@ -46,6 +46,8 @@ type SearchParams = {
   conv_from?: string;
   conv_to?: string;
   conv_departments?: string;
+  // "Включить заявки на ремонт" of the donut the link came from (1).
+  conv_requests?: string;
 };
 
 export default async function WorkOrdersPage({
@@ -77,12 +79,21 @@ export default async function WorkOrdersPage({
         initialUnpaid={params.unpaid === "1"}
         initialPhone={params.phone}
         conversionFilter={
-          (params.conv === "new" || params.conv === "existing") && params.conv_from && params.conv_to
+          (params.conv === "new" ||
+            params.conv === "existing" ||
+            params.conv === "new_requests" ||
+            params.conv === "existing_requests" ||
+            params.conv === "total" ||
+            params.conv === "after_call" ||
+            params.conv === "without_call") &&
+          params.conv_from &&
+          params.conv_to
             ? {
                 kind: params.conv,
                 from: params.conv_from,
                 to: params.conv_to,
                 departments: params.conv_departments ?? "",
+                includeRequests: params.conv_requests === "1",
               }
             : undefined
         }

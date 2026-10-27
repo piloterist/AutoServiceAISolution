@@ -24,7 +24,7 @@ import { getConversionClient } from "@/lib/telephony-client";
 // "Конверсия" can list a few thousand rows for a long period - render it in
 // pages instead of putting hundreds of recording players on the page at once.
 const PAGE_SIZE = 200;
-const COLUMN_COUNT = 15;
+const COLUMN_COUNT = 16;
 // A call counts as a real conversation from this many seconds of talk time
 // (same threshold as the backend's MIN_REAL_TALK_SEC).
 const REAL_TALK_SEC = 5;
@@ -63,13 +63,14 @@ type Filters = {
   wait: string;
   talk: string;
   topic: TopicFilter;
+  hasRequest: YesNo;
   hasWorkOrder: YesNo;
   existing: YesNo;
 };
 
 type TextFilterKey = "time" | "number" | "callsCount" | "dst" | "operator" | "wait" | "talk";
 type SelectFilterKey = "source" | "event" | "workshop";
-type YesNoFilterKey = "hasWorkOrder" | "existing";
+type YesNoFilterKey = "hasRequest" | "hasWorkOrder" | "existing";
 
 const EMPTY_FILTERS: Filters = {
   source: "",
@@ -83,6 +84,7 @@ const EMPTY_FILTERS: Filters = {
   wait: "",
   talk: "",
   topic: "",
+  hasRequest: "",
   hasWorkOrder: "",
   existing: "",
 };
@@ -91,7 +93,7 @@ const EMPTY_FILTERS: Filters = {
 const NO_VALUE = "—";
 
 function groupKey(group: ConversionGroup): string {
-  return `${group.client}|${group.work_order_id ?? ""}`;
+  return `${group.client}|${group.work_order_id ?? ""}|${group.request_id ?? ""}`;
 }
 
 function includesText(haystack: string, query: string): boolean {
@@ -192,6 +194,7 @@ export function ConversionView({
   initialEnd,
   initialCohort,
   initialDepartments,
+  includeRequests = false,
 }: {
   // From the Аналитика donuts' links (/telephony?tab=conversion&from=&to=&cohort=):
   // that page's period, and which numbers to show. Default: the current
@@ -202,6 +205,8 @@ export function ConversionView({
   // Comma-separated raw 1C department names - the dashboard's department
   // filter, so the tab shows the same workshop(s) as the donuts.
   initialDepartments?: string;
+  // "Включить заявки на ремонт": a repair request after a call counts as a conversion.
+  includeRequests?: boolean;
 }) {
   const initial = useMemo(() => {
     const month = currentMonthRange();
@@ -230,7 +235,12 @@ export function ConversionView({
     setLoading(true);
     setError(null);
     try {
-      const result = await getConversionClient({ startDate: from, endDate: to, departments: depts });
+      const result = await getConversionClient({
+        startDate: from,
+        endDate: to,
+        departments: depts,
+        includeRequests,
+      });
       setGroups(result.groups);
       setExpanded(new Set());
       setVisibleCount(PAGE_SIZE);
@@ -240,7 +250,7 @@ export function ConversionView({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [includeRequests]);
 
   useEffect(() => {
     void load(initial.start, initial.end, departments);
@@ -259,6 +269,7 @@ export function ConversionView({
     for (const group of groups) {
       if (!groupInCohort(group, cohort)) continue;
       if (!matchesYesNo(group.is_existing, filters.existing)) continue;
+      if (!matchesYesNo(Boolean(group.request_id), filters.hasRequest)) continue;
       if (!matchesYesNo(Boolean(group.work_order_id), filters.hasWorkOrder)) continue;
       if (!matchesNumeric(group.calls.length, String(group.calls.length), filters.callsCount)) continue;
       const matching = group.calls.filter((c) => callMatches(c, filters));
@@ -321,10 +332,9 @@ export function ConversionView({
     const firstGroupByPhone = new Map<string, ConversionGroup>();
     for (const { group } of rows) {
       phones.add(group.client);
-      if (group.work_order_id) {
-        converted.add(group.client);
-        workOrders.add(group.work_order_id);
-      }
+      // A repair request converts the number like a work order does.
+      if (group.work_order_id || group.request_id) converted.add(group.client);
+      if (group.work_order_id) workOrders.add(group.work_order_id);
       const earliest = firstGroupByPhone.get(group.client);
       if (!earliest || group.calls[0].time < earliest.calls[0].time) {
         firstGroupByPhone.set(group.client, group);
@@ -489,6 +499,7 @@ export function ConversionView({
                 <th className="telephony-num">Разговор</th>
                 <th>Тема</th>
                 <th>Запись</th>
+                <th>Заявка на ремонт</th>
                 <th>Заказ-наряд</th>
                 <th>Существующий</th>
                 <th />
@@ -517,6 +528,7 @@ export function ConversionView({
                   </select>
                 </th>
                 <th />
+                <th>{yesNoInput("hasRequest", "Заявка на ремонт")}</th>
                 <th>{yesNoInput("hasWorkOrder", "Заказ-наряд")}</th>
                 <th>{yesNoInput("existing", "Существующий")}</th>
                 <th />
@@ -559,6 +571,18 @@ export function ConversionView({
                       </td>
                       <td>
                         <CallRecordingPlayer callId={call.call_id} hasRecording={call.has_recording} />
+                      </td>
+                      <td>
+                        {group.request_id ? (
+                          <>
+                            <Link href={`/work-orders/${group.request_id}`} className="telephony-wo-link">
+                              {group.request_number}
+                            </Link>
+                            <div className="telephony-wo-date">от {formatShortDate(group.request_created_date)}</div>
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td>
                         {group.work_order_id ? (

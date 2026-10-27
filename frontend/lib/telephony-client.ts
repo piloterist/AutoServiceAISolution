@@ -106,8 +106,10 @@ export function getConversionClient(params: {
   startDate: string;
   endDate: string;
   departments?: string[];
+  includeRequests?: boolean;
 }): Promise<ConversionResponse> {
   const query = new URLSearchParams({ start_date: params.startDate, end_date: params.endDate });
+  if (params.includeRequests) query.set("include_requests", "true");
   if (params.departments && params.departments.length > 0) {
     query.set("departments", params.departments.join(","));
   }

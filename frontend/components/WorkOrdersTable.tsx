@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DateInput } from "@/components/DateInput";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import type { WorkOrderListItem } from "@/lib/backend-api";
+import type { ConversionWorkOrdersKind } from "@/lib/conversion-cohorts";
 import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } from "@/lib/work-orders-cache";
 
 // Column widths as a CSS grid template (percentages), applied identically to
@@ -56,6 +57,16 @@ const DOC_TYPE_LABELS = {
   work_order: "Заказ-наряды",
   repair_request: "Заявки на ремонт",
 } as const;
+// The chip over the list when it is narrowed to the work orders of a dashboard donut.
+const CONVERSION_KIND_LABELS: Record<ConversionWorkOrdersKind, string> = {
+  new: "Конверсия новых клиентов",
+  existing: "Конверсия существующих клиентов",
+  new_requests: "Заявки на ремонт новых клиентов",
+  existing_requests: "Заявки на ремонт существующих клиентов",
+  total: "Источник заказ-нарядов: все за период",
+  after_call: "Источник заказ-нарядов: после звонка",
+  without_call: "Источник заказ-нарядов: без звонка",
+};
 const DOC_TYPE_OPTIONS = [DOC_TYPE_LABELS.work_order, DOC_TYPE_LABELS.repair_request];
 type InternalFilter = "all" | "internal" | "external";
 type ScheduledFilter = "all" | "yes" | "no";
@@ -466,7 +477,8 @@ export function WorkOrdersTable({
    * work orders counted in that figure (resolved by the backend, see
    * /api/telephony/conversion/work-orders). Not persisted - a one-off link. */
   conversionFilter?: {
-    kind: "new" | "existing";
+    includeRequests?: boolean;
+    kind: ConversionWorkOrdersKind;
     from: string;
     to: string;
     departments: string;
@@ -547,6 +559,8 @@ export function WorkOrdersTable({
       initialPhone ||
       conversionFilter,
   );
+  // "Открыть ЗН" of a phone (Конверсия): all its documents, work orders AND repair requests.
+  const onlyPhoneLink = Boolean(initialPhone) && !conversionFilter && !initialStatus;
   const persisted = hasUrlFilters ? null : readPersistedFilters();
 
   const [search, setSearch] = useState(() => persisted?.search ?? "");
@@ -599,7 +613,13 @@ export function WorkOrdersTable({
   // A link from a dashboard figure/status chip is about work orders - repair requests
   // (not part of any figure) stay hidden there; the bare list shows both.
   const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(
-    () => persisted?.selectedDocTypes ?? (hasUrlFilters ? [DOC_TYPE_LABELS.work_order] : []),
+    () =>
+      persisted?.selectedDocTypes ??
+      (conversionFilter?.kind.endsWith("_requests")
+        ? [DOC_TYPE_LABELS.repair_request]
+        : hasUrlFilters && !onlyPhoneLink
+          ? [DOC_TYPE_LABELS.work_order]
+          : []),
   );
   const [onlyIndividualCustomer, setOnlyIndividualCustomer] = useState(
     () => initialOnlyIndividualCustomer ?? persisted?.onlyIndividualCustomer ?? false,
@@ -614,6 +634,7 @@ export function WorkOrdersTable({
   const conversionFrom = conversionFilter?.from;
   const conversionTo = conversionFilter?.to;
   const conversionDepartments = conversionFilter?.departments;
+  const conversionIncludeRequests = conversionFilter?.includeRequests;
   useEffect(() => {
     if (!conversionKind || !conversionFrom || !conversionTo) return;
     let cancelled = false;
@@ -623,6 +644,7 @@ export function WorkOrdersTable({
       end_date: conversionTo,
     });
     if (conversionDepartments) query.set("departments", conversionDepartments);
+    if (conversionIncludeRequests) query.set("include_requests", "true");
     fetch(`/api/telephony/conversion/work-orders?${query.toString()}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(String(res.status)))))
       .then((data: { work_order_ids: string[] }) => {
@@ -634,7 +656,7 @@ export function WorkOrdersTable({
     return () => {
       cancelled = true;
     };
-  }, [conversionKind, conversionFrom, conversionTo, conversionDepartments]);
+  }, [conversionKind, conversionFrom, conversionTo, conversionDepartments, conversionIncludeRequests]);
 
   useEffect(() => {
     writePersistedFilters({
@@ -1021,7 +1043,7 @@ export function WorkOrdersTable({
 
         {conversionActive && conversionFilter && (
           <span className="phone-filter-chip">
-            Конверсия {conversionFilter.kind === "new" ? "новых" : "существующих"} клиентов:{" "}
+            {CONVERSION_KIND_LABELS[conversionFilter.kind]}:{" "}
             {conversionIds === null ? "загрузка…" : `${conversionIds.size} заказ-нарядов`}
             <button
               type="button"

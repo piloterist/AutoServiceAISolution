@@ -1,7 +1,12 @@
 import Link from "next/link";
 
 import type { ConversionSummary } from "@/lib/backend-api";
-import { conversionHref, conversionWorkOrdersHref, type Cohort } from "@/lib/conversion-cohorts";
+import {
+  conversionHref,
+  conversionWorkOrdersHref,
+  type Cohort,
+  type ConversionWorkOrdersKind,
+} from "@/lib/conversion-cohorts";
 
 const SIZE = 184;
 const STROKE = 20;
@@ -24,7 +29,7 @@ type Row = {
   hint: string;
   value: number;
   cohort?: Cohort; // no cohort and no workOrders = a plain row, not a link
-  workOrders?: "new" | "existing";
+  workOrders?: ConversionWorkOrdersKind;
 };
 
 type Figures = {
@@ -58,16 +63,19 @@ function figuresFor(variant: "new" | "existing" | "sources", s: ConversionSummar
           label: "Всего заказ-нарядов",
           hint: "Заказ-наряды, созданные за период (без гарантийных; внутренние — если в настройках включено их исключение)",
           value: total,
+          workOrders: "total",
         },
         {
           label: "После звонка",
           hint: "Заказ-наряд создан после целевого звонка клиента с этого же номера — того звонка, который учтён в конверсии",
           value: s.work_orders_after_call,
+          workOrders: "after_call",
         },
         {
           label: "Без звонка",
           hint: `Все остальные: клиент приехал сам, звонил до периода, звонок был не целевой или с другого номера (${withoutPct.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}% от всех)`,
           value: s.work_orders_without_call,
+          workOrders: "without_call",
         },
       ],
     };
@@ -105,7 +113,7 @@ function figuresFor(variant: "new" | "existing" | "sources", s: ConversionSummar
         },
         {
           label: "Дошли до заказ-наряда",
-          hint: "Новые клиенты (уникальные номера), по которым после разговора по теме создан хотя бы один заказ-наряд; от «Новых клиентов» это и есть процент конверсии",
+          hint: "Новые клиенты (уникальные номера), по которым после разговора по теме создан хотя бы один заказ-наряд или заявка на ремонт; от «Новых клиентов» это и есть процент конверсии",
           value: s.converted_new_clients,
           cohort: "new_converted",
         },
@@ -115,6 +123,13 @@ function figuresFor(variant: "new" | "existing" | "sources", s: ConversionSummar
           value: s.work_orders_new_clients,
           cohort: "new_converted",
           workOrders: "new",
+        },
+        {
+          label: "Заявок на ремонт",
+          hint: `Заявки на ремонт по новым клиентам после разговора по теме (бесплатный заезд на дефектовку), от ${formatInt(s.converted_new_clients)} номеров. Заявка засчитывается в конверсию как заказ-наряд: номер, по которому есть заявка или заказ-наряд, считается один раз`,
+          value: s.repair_requests_new_clients,
+          cohort: "new_converted",
+          workOrders: "new_requests",
         },
         {
           label: "Остались без ответа",
@@ -143,7 +158,7 @@ function figuresFor(variant: "new" | "existing" | "sources", s: ConversionSummar
       },
       {
         label: "Дошли до заказ-наряда",
-        hint: "Существующие клиенты (уникальные номера), по которым после разговора по теме создан хотя бы один заказ-наряд; от «Существующих клиентов» это и есть процент конверсии",
+        hint: "Существующие клиенты (уникальные номера), по которым после разговора по теме создан хотя бы один заказ-наряд или заявка на ремонт; от «Существующих клиентов» это и есть процент конверсии",
         value: s.converted_existing_clients,
         cohort: "existing_converted",
       },
@@ -153,6 +168,13 @@ function figuresFor(variant: "new" | "existing" | "sources", s: ConversionSummar
         value: s.work_orders_existing_clients,
         cohort: "existing_converted",
         workOrders: "existing",
+      },
+      {
+        label: "Заявок на ремонт",
+        hint: `Заявки на ремонт по существующим клиентам после разговора по теме (бесплатный заезд на дефектовку), от ${formatInt(s.converted_existing_clients)} номеров. Заявка засчитывается в конверсию как заказ-наряд: номер, по которому есть заявка или заказ-наряд, считается один раз`,
+        value: s.repair_requests_existing_clients,
+        cohort: "existing_converted",
+        workOrders: "existing_requests",
       },
       {
         label: "Остались без ответа",
@@ -188,9 +210,13 @@ export function ConversionDonut({
   summary,
   variant,
   departments = [],
+  includeRequests = false,
 }: {
   summary: ConversionSummary | null;
   variant: "new" | "existing" | "sources";
+  // "Включить заявки на ремонт": the figures already count them; show their rows and carry
+  // the choice into the links so the lists match the donut.
+  includeRequests?: boolean;
   // The dashboard's department filter, carried into the links so the tab
   // shows the same workshop.
   departments?: string[];
@@ -217,7 +243,7 @@ export function ConversionDonut({
       <DonutWrap
         href={
           figures.cohort
-            ? conversionHref(summary.start_date, summary.end_date, figures.cohort, departments)
+            ? conversionHref(summary.start_date, summary.end_date, figures.cohort, departments, includeRequests)
             : null
         }
       >
@@ -253,15 +279,29 @@ export function ConversionDonut({
       </DonutWrap>
 
       <dl className="conversion-donut-numbers">
-        {figures.rows.map((row) =>
+        {figures.rows
+          .filter((row) => includeRequests || !row.workOrders?.endsWith("_requests"))
+          .map((row) =>
           row.workOrders || row.cohort ? (
             <Link
               key={row.label}
               className="conversion-donut-row"
               href={
                 row.workOrders
-                  ? conversionWorkOrdersHref(row.workOrders, summary.start_date, summary.end_date, departments)
-                  : conversionHref(summary.start_date, summary.end_date, row.cohort as Cohort, departments)
+                  ? conversionWorkOrdersHref(
+                      row.workOrders,
+                      summary.start_date,
+                      summary.end_date,
+                      departments,
+                      includeRequests,
+                    )
+                  : conversionHref(
+                      summary.start_date,
+                      summary.end_date,
+                      row.cohort as Cohort,
+                      departments,
+                      includeRequests,
+                    )
               }
               title={row.hint}
             >

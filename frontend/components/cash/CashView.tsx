@@ -234,6 +234,20 @@ export function CashView({ context }: { context: CashContext }) {
           >
             Показать
           </button>
+          {/* A plain link: the file is built by the server and just opens/downloads - nothing is saved by us. */}
+          {workshopId && draftFrom && draftTo && draftFrom <= draftTo ? (
+            <a
+              className="admin-btn cash-period-excel"
+              href={`/api/cash/export?workshop_id=${workshopId}&date_from=${draftFrom}&date_to=${draftTo}`}
+              title="Все операции кассы за указанный период — файл Excel"
+            >
+              В Excel
+            </a>
+          ) : (
+            <span className="admin-btn cash-period-excel cash-period-excel--off" aria-disabled="true">
+              В Excel
+            </span>
+          )}
           {lock.from && lock.to && (
             <p className="cash-lock-note">
               🔒 Заблокирован период {formatDay(lock.from)} — {formatDay(lock.to)}

@@ -7,7 +7,16 @@ import { getConversionWorkOrderIds } from "@/lib/backend-api";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const kind = searchParams.get("kind") === "existing" ? "existing" : "new";
+  const requested = searchParams.get("kind");
+  const kind =
+    requested === "existing" ||
+    requested === "new_requests" ||
+    requested === "existing_requests" ||
+    requested === "total" ||
+    requested === "after_call" ||
+    requested === "without_call"
+      ? requested
+      : "new";
   const startDate = searchParams.get("start_date");
   const endDate = searchParams.get("end_date");
   if (!startDate || !endDate) {
@@ -20,7 +29,13 @@ export async function GET(request: NextRequest) {
 
   try {
     return NextResponse.json(
-      await getConversionWorkOrderIds({ kind, startDate, endDate, departments }),
+      await getConversionWorkOrderIds({
+        kind,
+        startDate,
+        endDate,
+        departments,
+        includeRequests: searchParams.get("include_requests") === "true",
+      }),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
