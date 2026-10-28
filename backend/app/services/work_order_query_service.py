@@ -27,6 +27,7 @@ from app.services.order_exclusion import (
     exclusion_filters,
     order_exclusion,
 )
+from app.services.receivables_age import max_age_days, receivable_age_filters
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
 # Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
@@ -150,6 +151,9 @@ def list_work_orders(
         if settings.revenue_statuses_list:
             filters.append(WorkOrder.status.in_(settings.revenue_statuses_list))
         filters.extend(exclusion_filters(order_exclusion(app_settings)))
+        filters.extend(
+            receivable_age_filters(max_age_days(app_settings), today=datetime.now(_MSK).date())
+        )
         if app_settings.warranty_repair_types:
             # Гарантийные (product ask, 2026-10-23): never get paid, so
             # they're not receivable. NULL repair_type must stay in - a plain

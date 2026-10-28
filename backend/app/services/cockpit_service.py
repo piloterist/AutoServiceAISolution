@@ -63,6 +63,8 @@ from app.services.order_exclusion import (
     exclusion_filters,
     order_exclusion,
 )
+from app.services.receivables_age import max_age_days as receivable_max_age_days
+from app.services.receivables_age import receivable_age_filters
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
 # Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
@@ -361,6 +363,8 @@ def _receivables(
     revenue_statuses: list[str],
     exclusion: OrderExclusion | None,
     warranty_repair_types: list[str] | None = None,
+    max_age_days: int | None = None,
+    today: date | None = None,
 ) -> Decimal:
     """ДЗ (дебиторская задолженность) - a running total, not scoped to a
     period (unlike revenue/payments above): the sum of WorkOrder.debt_amount
@@ -401,6 +405,9 @@ def _receivables(
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
     filters.extend(exclusion_filters(exclusion))
+    # Older than receivables_max_age_days: not shown (see receivables_age.py).
+    today = today or datetime.now(MSK).date()
+    filters.extend(receivable_age_filters(max_age_days, today=today))
     if warranty_repair_types:
         filters.append(
             or_(
@@ -561,6 +568,8 @@ def get_snapshot(
         revenue_statuses=revenue_statuses,
         exclusion=exclusion,
         warranty_repair_types=app_settings.warranty_repair_types,
+        max_age_days=receivable_max_age_days(app_settings),
+        today=effective_now.astimezone(MSK).date(),
     )
 
     period_start_msk = period_start.astimezone(MSK)

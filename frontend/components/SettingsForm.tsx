@@ -31,6 +31,9 @@ export function SettingsForm({
   const [orderExclusionMode, setOrderExclusionMode] = useState<OrderExclusionMode>(
     initialSettings.order_exclusion_mode,
   );
+  const [receivablesMaxAgeDays, setReceivablesMaxAgeDays] = useState(
+    initialSettings.receivables_max_age_days ? String(initialSettings.receivables_max_age_days) : "",
+  );
   const [hideInternalOrders, setHideInternalOrders] = useState(
     initialSettings.hide_internal_orders,
   );
@@ -100,6 +103,7 @@ export function SettingsForm({
           insurance_repair_type: insuranceRepairType || null,
           exclude_internal_insurance: excludeInternal,
           order_exclusion_mode: orderExclusionMode,
+          receivables_max_age_days: Number(receivablesMaxAgeDays) > 0 ? Number(receivablesMaxAgeDays) : null,
           hide_internal_orders: hideInternalOrders,
           warranty_repair_types: warrantyRepairTypes,
           virtual_repair_types: virtualRepairTypes,
@@ -239,6 +243,23 @@ export function SettingsForm({
           />
           <p className="settings-description">
             Не попадают в выручку ни на одной вкладке (Аналитика, ESP, Финансы).
+          </p>
+        </div>
+
+        <div className="settings-field">
+          <label htmlFor="receivables-max-age">Не показывать дебиторку старше (дней)</label>
+          <input
+            id="receivables-max-age"
+            type="number"
+            min={1}
+            placeholder="без ограничения"
+            value={receivablesMaxAgeDays}
+            onChange={(event) => setReceivablesMaxAgeDays(event.target.value)}
+          />
+          <p className="settings-description">
+            Долг, просроченный больше чем на указанное число дней (от даты последнего счёта на
+            оплату, а если счёта нет — от даты закрытия), не показывается ни в Финансы →
+            Дебиторская задолженность, ни на плашке ДЗ во вкладке ESP. Пусто — показывать всё.
           </p>
         </div>
 

@@ -30,6 +30,7 @@ def write_settings(
         insurance_repair_type=payload.insurance_repair_type,
         exclude_internal_insurance=payload.exclude_internal_insurance,
         order_exclusion_mode=payload.order_exclusion_mode,
+        receivables_max_age_days=payload.receivables_max_age_days,
         hide_internal_orders=payload.hide_internal_orders,
         warranty_repair_types=payload.warranty_repair_types,
         virtual_repair_types=payload.virtual_repair_types,

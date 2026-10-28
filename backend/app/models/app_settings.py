@@ -43,6 +43,11 @@ class AppSettings(Base):
     order_exclusion_mode: Mapped[str] = mapped_column(
         String(10), nullable=False, default="none", server_default="none"
     )
+    # "Не показывать дебиторку старше" N days (product ask, 2026-10-29): a debt older
+    # than this (counted as in the aging table: from its latest invoice, else from the
+    # closing date) is hidden everywhere the ДЗ is shown (services/receivables_age.py).
+    # NULL = no limit.
+    receivables_max_age_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Not wired to any filtering logic yet - deliberately inert (see
     # SettingsForm.tsx's "в разработке" caption). Still persisted like any
     # other setting so its checkbox state survives a reload.

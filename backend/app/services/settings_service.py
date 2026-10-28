@@ -41,11 +41,13 @@ def update_app_settings(
     virtual_repair_types: list[str] | None = None,
     cash_lock_from: date | None = None,
     cash_lock_to: date | None = None,
+    receivables_max_age_days: int | None = None,
 ) -> AppSettings:
     settings = get_app_settings(db)
     settings.insurance_repair_type = insurance_repair_type
     settings.exclude_internal_insurance = exclude_internal_insurance
     settings.order_exclusion_mode = order_exclusion_mode
+    settings.receivables_max_age_days = receivables_max_age_days or None
     settings.hide_internal_orders = hide_internal_orders
     settings.warranty_repair_types = warranty_repair_types or None
     settings.virtual_repair_types = virtual_repair_types or None

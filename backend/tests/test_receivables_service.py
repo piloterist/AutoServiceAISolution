@@ -327,3 +327,59 @@ def test_response_defaults_insurance_and_warranty_settings_when_unconfigured(
 
     assert report.insurance_repair_type is None
     assert report.warranty_repair_types == []
+
+
+# ---- "Не показывать дебиторку старше N дней" (receivables_max_age_days) ------
+
+
+def test_debts_older_than_the_configured_days_are_hidden(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(AppSettings(id=1, receivables_max_age_days=30))
+    db_session.add(
+        _make_work_order(external_number="NEW", closed_date=datetime(2026, 10, 1, tzinfo=UTC))
+    )
+    db_session.add(
+        _make_work_order(external_number="EDGE", closed_date=datetime(2026, 9, 21, tzinfo=UTC))
+    )
+    db_session.add(
+        _make_work_order(external_number="OLD", closed_date=datetime(2026, 9, 20, tzinfo=UTC))
+    )
+    db_session.commit()
+
+    report = receivables_service.get_aging_report(db_session, now=NOW)
+
+    # 20 and exactly 30 days are shown, 31 days is not.
+    assert sorted(row.work_order_number for row in report.rows) == ["EDGE", "NEW"]
+    assert report.totals.total == Decimal("2000.00")
+
+
+def test_the_age_limit_follows_the_latest_invoice_not_the_closing_date(
+    db_session: Session, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(AppSettings(id=1, receivables_max_age_days=30))
+    wo = _make_work_order(external_number="INV", closed_date=datetime(2026, 1, 1, tzinfo=UTC))
+    db_session.add(wo)
+    db_session.commit()
+    db_session.add(
+        WorkOrderInvoice(
+            work_order_id=wo.id,
+            source_document_id=f"inv-{uuid.uuid4().hex}",
+            document_date=datetime(2026, 10, 16, tzinfo=UTC),
+            amount=Decimal("1000.00"),
+        )
+    )
+    db_session.commit()
+
+    report = receivables_service.get_aging_report(db_session, now=NOW)
+
+    assert [row.work_order_number for row in report.rows] == ["INV"]
+
+
+def test_no_age_limit_when_the_setting_is_empty(db_session: Session, monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(AppSettings(id=1, receivables_max_age_days=None))
+    db_session.add(_make_work_order(closed_date=datetime(2025, 1, 1, tzinfo=UTC)))
+    db_session.commit()
+
+    assert len(receivables_service.get_aging_report(db_session, now=NOW).rows) == 1

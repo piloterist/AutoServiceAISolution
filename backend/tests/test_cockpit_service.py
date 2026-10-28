@@ -9,6 +9,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.orm import Session
 
+from app.models.app_settings import AppSettings
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
 from app.models.budget_entry import BudgetEntry
@@ -1061,3 +1062,32 @@ def test_revenue_skips_warranty_and_virtual_repair_types(db_session: Session, mo
     )
 
     assert snapshot.revenue_rub == Decimal("110")
+
+
+def test_receivables_hide_debts_older_than_the_configured_days(
+    db_session: Session, monkeypatch
+) -> None:
+    _patch_settings(monkeypatch)
+    db_session.add(AppSettings(id=1, receivables_max_age_days=30))
+    # NOW is 2026-09-28: 27 days vs 58 days since closing.
+    db_session.add(
+        _make_work_order(
+            closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+            amount=Decimal("7000.00"),
+            debt_amount=Decimal("7000.00"),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            closed_date=datetime(2026, 8, 1, tzinfo=UTC),
+            amount=Decimal("5000.00"),
+            debt_amount=Decimal("5000.00"),
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("7000.00")

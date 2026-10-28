@@ -32,6 +32,7 @@ from app.services.order_exclusion import (
     exclusion_filters,
     order_exclusion,
 )
+from app.services.receivables_age import max_age_days, receivable_age_filters
 from app.services.settings_service import get_app_settings
 
 # Duplicated per this codebase's own established convention for this
@@ -89,6 +90,7 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
     filters.extend(exclusion_filters(order_exclusion(app_settings)))
+    filters.extend(receivable_age_filters(max_age_days(app_settings), today=effective_now.date()))
 
     # Most recently closed first (product ask, 2026-10-21) - not the
     # overdue-aging order, just a plain browsing order for the table.
