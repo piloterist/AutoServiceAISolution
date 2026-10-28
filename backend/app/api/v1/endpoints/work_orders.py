@@ -46,6 +46,9 @@ from app.schemas.work_order import (
 from app.services import planner_service
 from app.services.cockpit_service import _mapped_source_departments
 from app.services.internal_order_rules import is_physical_person
+from app.services.order_exclusion import (
+    order_exclusion,
+)
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 from app.services.work_order_query_service import (
     delete_work_order,
@@ -184,7 +187,7 @@ def get_monthly_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
-        exclude_internal=get_app_settings(db).exclude_internal_orders,
+        exclusion=order_exclusion(get_app_settings(db)),
         excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
     )
     return MonthlySummaryResponse(items=[MonthlySummaryItem(**row) for row in rows])
@@ -206,7 +209,7 @@ def get_revenue_paid_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
-        exclude_internal=get_app_settings(db).exclude_internal_orders,
+        exclusion=order_exclusion(get_app_settings(db)),
         excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
     )
     return RevenuePaidSummaryResponse(total_amount=total)
@@ -228,7 +231,7 @@ def get_department_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
-        exclude_internal=get_app_settings(db).exclude_internal_orders,
+        exclusion=order_exclusion(get_app_settings(db)),
         excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
@@ -248,7 +251,7 @@ def get_payment_department_summary(
         date_from=date_from,
         date_to=date_to,
         departments=_split_departments(departments),
-        exclude_internal=get_app_settings(db).exclude_internal_orders,
+        exclusion=order_exclusion(get_app_settings(db)),
     )
     return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
 
@@ -270,7 +273,7 @@ def get_status_summary(
         date_from=date_from,
         date_to=date_to,
         departments=_split_departments(departments),
-        exclude_internal=get_app_settings(db).exclude_internal_orders,
+        exclusion=order_exclusion(get_app_settings(db)),
     )
     return StatusSummaryResponse(items=[StatusSummaryItem(**row) for row in rows])
 
@@ -300,7 +303,7 @@ def get_trend_summary(
         date_to=date_to,
         departments=_split_departments(departments),
         revenue_statuses=revenue_statuses or None,
-        exclude_internal=get_app_settings(db).exclude_internal_orders,
+        exclusion=order_exclusion(get_app_settings(db)),
         excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
         granularity=granularity,
     )
@@ -329,7 +332,7 @@ def get_payment_trend_summary(
         date_from=date_from,
         date_to=date_to,
         departments=_split_departments(departments),
-        exclude_internal=get_app_settings(db).exclude_internal_orders,
+        exclusion=order_exclusion(get_app_settings(db)),
         granularity=granularity,
     )
     return PaymentTrendResponse(

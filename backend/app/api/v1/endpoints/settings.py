@@ -29,7 +29,7 @@ def write_settings(
         db,
         insurance_repair_type=payload.insurance_repair_type,
         exclude_internal_insurance=payload.exclude_internal_insurance,
-        exclude_internal_orders=payload.exclude_internal_orders,
+        order_exclusion_mode=payload.order_exclusion_mode,
         hide_internal_orders=payload.hide_internal_orders,
         warranty_repair_types=payload.warranty_repair_types,
         virtual_repair_types=payload.virtual_repair_types,

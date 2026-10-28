@@ -25,7 +25,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -61,6 +61,24 @@ class CashEntry(Base):
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # "Личная карта" (product ask, 2026-10-29): a Приход НАЛ / Расход НАЛ that went
+    # through a person's own card, not through the drawer. The person is an employee
+    # of the directory with the specialty "Мастер приёмщик" - by default the one linked
+    # to the user who made the entry (users.employee_id), another only for a role with
+    # "Корректировка кассы". The card balance of a person is these entries: in - out.
+    # Never set on "Приход КАРТА".
+    personal_card: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    card_holder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Name snapshot, same reason as created_by_name.
+    card_holder_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Optional link to a work order: picked from the workshop's recent ones
     # (work_order_id set, work_order_number copied from it) or typed by hand

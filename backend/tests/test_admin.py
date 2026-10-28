@@ -295,3 +295,77 @@ def test_audit_log_starts_empty(client, auth_headers) -> None:
     response = client.get(AUDIT_LOG_URL, headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == []
+
+
+# ---- user <-> employee link --------------------------------------------------
+
+
+def _employee(db_session, name: str, specialty: str = "Мастер приёмщик"):
+    from app.models.employee import Employee
+
+    employee = Employee(full_name=name, specialty=specialty)
+    db_session.add(employee)
+    db_session.commit()
+    return employee
+
+
+def test_user_can_be_linked_to_an_employee(client, db_session, auth_headers) -> None:
+    employee = _employee(db_session, "Иванов Иван")
+
+    created = _create_user(client, auth_headers, login="u1", employee_id=str(employee.id))
+
+    assert created.status_code == 201
+    assert created.json()["employee_id"] == str(employee.id)
+    listed = client.get(USERS_URL, headers=auth_headers).json()
+    assert [u["employee_id"] for u in listed] == [str(employee.id)]
+
+
+def test_an_employee_cannot_be_linked_to_two_users(client, db_session, auth_headers) -> None:
+    employee = _employee(db_session, "Иванов Иван")
+    _create_user(
+        client, auth_headers, login="first", full_name="Первый", employee_id=str(employee.id)
+    )
+
+    second = _create_user(
+        client, auth_headers, login="second", full_name="Второй", employee_id=str(employee.id)
+    )
+
+    assert second.status_code == 409
+    assert "Иванов Иван" in second.json()["detail"]
+    assert "Первый" in second.json()["detail"]
+
+
+def test_user_update_keeps_own_employee_but_cannot_take_anothers(
+    client, db_session, auth_headers
+) -> None:
+    mine = _employee(db_session, "Мой Сотрудник")
+    taken = _employee(db_session, "Чужой Сотрудник")
+    user = _create_user(
+        client, auth_headers, login="a", full_name="А", employee_id=str(mine.id)
+    ).json()
+    _create_user(client, auth_headers, login="b", full_name="Б", employee_id=str(taken.id))
+
+    def put(employee_id):
+        return client.put(
+            f"{USERS_URL}/{user['id']}",
+            headers=auth_headers,
+            json={
+                "full_name": "А",
+                "login": "a",
+                "role": "Сотрудник",
+                "theme": "light",
+                "employee_id": employee_id,
+            },
+        )
+
+    assert put(str(mine.id)).status_code == 200  # saving the same link again is fine
+    assert put(str(taken.id)).status_code == 409  # someone else's is not
+    assert put(None).json()["employee_id"] is None  # the link can be removed
+
+
+def test_user_link_rejects_unknown_employee(client, auth_headers) -> None:
+    import uuid
+
+    response = _create_user(client, auth_headers, login="x", employee_id=str(uuid.uuid4()))
+
+    assert response.status_code == 409

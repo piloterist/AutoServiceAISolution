@@ -38,6 +38,7 @@ from app.models.cash_entry import (
     CashEntry,
 )
 from app.models.department import Department
+from app.models.employee import SPECIALTY_SERVICE_ADVISOR, Employee
 from app.models.role_tab_visibility import RoleTabVisibility
 from app.models.schedule_audit_log import ACTION_CREATE, ACTION_DELETE, ACTION_UPDATE
 from app.models.user import User
@@ -189,6 +190,8 @@ def get_context(db: Session, user_id: uuid.UUID | None) -> dict:
 
     lock_from, lock_to = lock_period(db)
     return {
+        "current_employee_id": user.employee_id if user is not None else None,
+        "card_holders": get_card_holders(db),
         "workshops": workshops,
         "default_workshop_id": default_id,
         "all_departments": access.all_departments,
@@ -197,6 +200,49 @@ def get_context(db: Session, user_id: uuid.UUID | None) -> dict:
         "lock_from": lock_from,
         "lock_to": lock_to,
     }
+
+
+def get_card_holders(db: Session) -> list[dict]:
+    """The people a personal card can be tied to: employees of the directory with
+    the specialty "Мастер приёмщик" (product ask, 2026-10-29)."""
+    employees = db.scalars(
+        select(Employee)
+        .where(Employee.specialty == SPECIALTY_SERVICE_ADVISOR)
+        .order_by(Employee.full_name)
+    )
+    return [{"id": employee.id, "name": employee.full_name} for employee in employees]
+
+
+SCOPES = ("all", "cash", "personal")
+
+
+def _scope_conditions(scope: str, card_holder_id: uuid.UUID | None) -> list:
+    """Which entries belong to the shown part of the book: all of them, the cash
+    ones (without personal cards), the personal-card ones, or one person's card."""
+    if card_holder_id is not None:
+        return [CashEntry.personal_card.is_(True), CashEntry.card_holder_id == card_holder_id]
+    if scope == "cash":
+        return [CashEntry.personal_card.is_(False)]
+    if scope == "personal":
+        return [CashEntry.personal_card.is_(True)]
+    return []
+
+
+def card_balance_today(db: Session, access: CashAccess, holder_id: uuid.UUID) -> Decimal:
+    """A person's personal-card balance up to today (Moscow): their marked cash in
+    minus cash out, over every desk the caller may see."""
+    rows = db.execute(
+        select(CashEntry.kind, func.coalesce(func.sum(CashEntry.amount), 0))
+        .where(
+            CashEntry.workshop_id.in_(access.workshop_ids),
+            CashEntry.personal_card.is_(True),
+            CashEntry.card_holder_id == holder_id,
+            CashEntry.entry_date <= today_msk(),
+        )
+        .group_by(CashEntry.kind)
+    ).all()
+    totals = {kind: Decimal(total) for kind, total in rows}
+    return _money(totals.get(KIND_CASH_IN, Decimal(0)) - totals.get(KIND_CASH_OUT, Decimal(0)))
 
 
 def _sum(db: Session, workshop_id: uuid.UUID, kind: str, *conditions) -> Decimal:
@@ -214,17 +260,24 @@ def get_book(
     workshop_id: uuid.UUID,
     date_from: date,
     date_to: date,
+    scope: str = "all",
+    card_holder_id: uuid.UUID | None = None,
 ) -> dict:
     """The cash book for [date_from, date_to]: the balance at the start (all
     cash in minus cash out before date_from), the period's entries and
-    totals, and the balance at the end."""
+    totals, and the balance at the end. `scope` narrows it to the cash entries
+    (no personal cards), the personal-card ones, or - with `card_holder_id` - one
+    person's card (balances then count only those entries)."""
     _require(access, workshop_id)
     if date_to < date_from:
         raise CashInvalid("Дата «по» не может быть раньше даты «с»")
+    if scope not in SCOPES:
+        raise CashInvalid(f"Неизвестный режим кассы: {scope}")
+    scope_conditions = _scope_conditions(scope, card_holder_id)
 
     before = CashEntry.entry_date < date_from
-    opening = _sum(db, workshop_id, KIND_CASH_IN, before) - _sum(
-        db, workshop_id, KIND_CASH_OUT, before
+    opening = _sum(db, workshop_id, KIND_CASH_IN, before, *scope_conditions) - _sum(
+        db, workshop_id, KIND_CASH_OUT, before, *scope_conditions
     )
 
     entries = list(
@@ -234,6 +287,7 @@ def get_book(
                 CashEntry.workshop_id == workshop_id,
                 CashEntry.entry_date >= date_from,
                 CashEntry.entry_date <= date_to,
+                *scope_conditions,
             )
             .order_by(CashEntry.entry_date, CashEntry.created_at)
         )
@@ -265,6 +319,11 @@ def get_book(
         ],
         "lock_from": lock_from,
         "lock_to": lock_to,
+        "scope": scope,
+        "card_holder_id": card_holder_id,
+        "card_balance_today": (
+            card_balance_today(db, access, card_holder_id) if card_holder_id is not None else None
+        ),
     }
 
 
@@ -277,6 +336,9 @@ _ENTRY_FIELDS = (
     "comment",
     "work_order_id",
     "work_order_number",
+    "personal_card",
+    "card_holder_id",
+    "card_holder_name",
     "created_by_name",
     "created_at",
     "updated_by_name",
@@ -369,6 +431,7 @@ def _audit_values(entry: CashEntry, workshop_label: str | None = None) -> dict:
         "amount": str(entry.amount),
         "comment": entry.comment,
         "work_order_number": entry.work_order_number,
+        "card_holder": entry.card_holder_name if entry.personal_card else None,
     }
     if workshop_label is not None:
         values["workshop"] = workshop_label
@@ -402,6 +465,48 @@ def _validate_kind(kind: str) -> None:
         raise CashInvalid(f"Неизвестный раздел кассы: {kind}")
 
 
+def _resolve_card_holder(
+    db: Session,
+    access: CashAccess,
+    *,
+    kind: str,
+    personal_card: bool,
+    requested_id: uuid.UUID | None,
+    existing_id: uuid.UUID | None,
+    actor_user_id: uuid.UUID | None,
+) -> tuple[bool, uuid.UUID | None, str | None]:
+    """(personal_card, holder employee id, holder name) to store. The holder
+    defaults to the one already on the entry, else to the employee linked to whoever
+    makes it (users.employee_id); naming someone else (or changing the holder)
+    needs "Корректировка кассы". Only an employee with the specialty
+    "Мастер приёмщик" can hold a card (an unchanged old holder is left alone)."""
+    if not personal_card:
+        return False, None, None
+    if kind == KIND_CARD_IN:
+        raise CashInvalid("Личная карта указывается только у прихода и расхода НАЛ")
+    actor = db.get(User, actor_user_id) if actor_user_id else None
+    own_id = actor.employee_id if actor is not None else None
+    holder_id = requested_id or existing_id or own_id
+    if holder_id is None:
+        raise CashInvalid(
+            "Выберите сотрудника для личной карты (ваш пользователь не связан с сотрудником)"
+        )
+    own_first_pick = existing_id is None and holder_id == own_id
+    if holder_id != existing_id and not own_first_pick and not access.can_correct:
+        raise CashForbidden(
+            "Менять сотрудника личной карты может только пользователь с правом "
+            "«Корректировка кассы»"
+        )
+    holder = db.get(Employee, holder_id)
+    if holder is None:
+        raise CashInvalid("Сотрудник не найден")
+    if holder.specialty != SPECIALTY_SERVICE_ADVISOR and holder_id != existing_id:
+        raise CashInvalid(
+            "Личная карта возможна только у сотрудников со специальностью «Мастер приёмщик»"
+        )
+    return True, holder.id, holder.full_name
+
+
 def create_entry(
     db: Session,
     access: CashAccess,
@@ -415,6 +520,8 @@ def create_entry(
     work_order_number: str | None,
     actor_user_id: uuid.UUID | None,
     actor_name: str,
+    personal_card: bool = False,
+    card_holder_id: uuid.UUID | None = None,
 ) -> CashEntry:
     _require(access, workshop_id)
     _ensure_may_edit(access, entry_date)
@@ -424,6 +531,15 @@ def create_entry(
         raise CashInvalid("Сумма должна быть больше нуля")
     _ensure_unlocked(db, entry_date)
     resolved_id, resolved_number = _resolve_work_order(db, work_order_id, work_order_number)
+    is_card, holder_id, holder_name = _resolve_card_holder(
+        db,
+        access,
+        kind=kind,
+        personal_card=personal_card,
+        requested_id=card_holder_id,
+        existing_id=None,
+        actor_user_id=actor_user_id,
+    )
 
     entry = CashEntry(
         workshop_id=workshop_id,
@@ -433,6 +549,9 @@ def create_entry(
         comment=_clean(comment),
         work_order_id=resolved_id,
         work_order_number=resolved_number,
+        personal_card=is_card,
+        card_holder_id=holder_id,
+        card_holder_name=holder_name,
         created_by_id=actor_user_id,
         created_by_name=actor_name,
     )
@@ -497,6 +616,8 @@ def update_entry(
     work_order_number: str | None,
     actor_user_id: uuid.UUID | None,
     actor_name: str,
+    personal_card: bool = False,
+    card_holder_id: uuid.UUID | None = None,
 ) -> CashEntry | None:
     """Changes any field of an entry. A zero amount deletes it (returns None).
     Both the old and the new date must be outside the locked period."""
@@ -514,12 +635,24 @@ def update_entry(
 
     before = _audit_values(entry)
     resolved_id, resolved_number = _resolve_work_order(db, work_order_id, work_order_number)
+    is_card, holder_id, holder_name = _resolve_card_holder(
+        db,
+        access,
+        kind=kind,
+        personal_card=personal_card,
+        requested_id=card_holder_id,
+        existing_id=entry.card_holder_id if entry.personal_card else None,
+        actor_user_id=actor_user_id,
+    )
     entry.entry_date = entry_date
     entry.kind = kind
     entry.amount = amount
     entry.comment = _clean(comment)
     entry.work_order_id = resolved_id
     entry.work_order_number = resolved_number
+    entry.personal_card = is_card
+    entry.card_holder_id = holder_id
+    entry.card_holder_name = holder_name
     after = _audit_values(entry)
 
     changes = {

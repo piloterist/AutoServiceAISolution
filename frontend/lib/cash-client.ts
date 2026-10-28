@@ -7,6 +7,7 @@ import type {
   CashBook,
   CashEntry,
   CashEntryWrite,
+  CashScope,
   CashSearchHit,
   CashWorkOrder,
   AuditLogEntry,
@@ -28,12 +29,16 @@ export function getCashBookClient(params: {
   workshopId: string;
   dateFrom: string;
   dateTo: string;
+  scope?: CashScope;
+  cardHolderId?: string;
 }): Promise<CashBook> {
   const query = new URLSearchParams({
     workshop_id: params.workshopId,
     date_from: params.dateFrom,
     date_to: params.dateTo,
   });
+  if (params.scope && params.scope !== "all") query.set("scope", params.scope);
+  if (params.cardHolderId) query.set("card_holder_id", params.cardHolderId);
   return proxyFetch<CashBook>(`/api/cash/book?${query}`);
 }
 

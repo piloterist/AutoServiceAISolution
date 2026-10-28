@@ -30,7 +30,7 @@ def update_app_settings(
     *,
     insurance_repair_type: str | None,
     exclude_internal_insurance: bool,
-    exclude_internal_orders: bool,
+    order_exclusion_mode: str,
     hide_internal_orders: bool,
     warranty_repair_types: list[str],
     fivesystems_api_enabled: bool,
@@ -45,7 +45,7 @@ def update_app_settings(
     settings = get_app_settings(db)
     settings.insurance_repair_type = insurance_repair_type
     settings.exclude_internal_insurance = exclude_internal_insurance
-    settings.exclude_internal_orders = exclude_internal_orders
+    settings.order_exclusion_mode = order_exclusion_mode
     settings.hide_internal_orders = hide_internal_orders
     settings.warranty_repair_types = warranty_repair_types or None
     settings.virtual_repair_types = virtual_repair_types or None

@@ -108,6 +108,7 @@ class UserOut(BaseModel):
     department_name: str | None
     workshop_id: uuid.UUID | None
     default_repair_type: str | None
+    employee_id: uuid.UUID | None
 
     model_config = {"from_attributes": True}
 
@@ -121,6 +122,8 @@ class UserCreate(BaseModel):
     department_id: uuid.UUID | None = None
     workshop_id: uuid.UUID | None = None
     default_repair_type: str | None = None
+    # The employee of the directory this login is (each employee only once).
+    employee_id: uuid.UUID | None = None
 
     def validate_role(self) -> None:
         if self.role not in ROLES:
@@ -144,6 +147,8 @@ class UserUpdate(BaseModel):
     department_id: uuid.UUID | None = None
     workshop_id: uuid.UUID | None = None
     default_repair_type: str | None = None
+    # The employee of the directory this login is (each employee only once).
+    employee_id: uuid.UUID | None = None
 
     def validate_role(self) -> None:
         if self.role not in ROLES:

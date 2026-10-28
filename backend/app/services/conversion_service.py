@@ -45,6 +45,10 @@ from app.services import (
     telephony_settings_service,
     telephony_stats_service,
 )
+from app.services.order_exclusion import (
+    exclusion_filters,
+    order_exclusion,
+)
 from app.services.telephony_stats_service import LineCallEvent
 
 # Russia has used a flat UTC+3 with no DST since 2014 (same constant, same
@@ -752,8 +756,7 @@ def _period_work_order_ids(
         WorkOrder.created_date
         < datetime.combine(end_day + timedelta(days=1), datetime.min.time(), tzinfo=_MSK),
     ]
-    if settings_service.get_app_settings(db).exclude_internal_orders:
-        total_filters.append(WorkOrder.is_internal.is_(False))
+    total_filters.extend(exclusion_filters(order_exclusion(settings_service.get_app_settings(db))))
     warranty = settings_service.get_app_settings(db).warranty_repair_types
     if warranty:
         total_filters.append(

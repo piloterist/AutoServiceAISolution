@@ -1277,12 +1277,20 @@ VIN_A = "WVWZZZ1JZXW000001"
 VIN_B = "WVWZZZ1JZXW000002"
 
 
-def _wo_record(number, *, vin=None, repair_type=None, organization=None, payer=None) -> dict:
+def _wo_record(
+    number,
+    *,
+    vin=None,
+    repair_type=None,
+    organization=None,
+    payer=None,
+    date="2026-09-18T06:00:00",
+) -> dict:
     """One work order record, for exercising is_internal recomputation -
     see services/internal_order_rules.py."""
     return {
         "number": number,
-        "date": "2026-09-18T06:00:00",
+        "date": date,
         "customer": "Test Customer",
         "payer": payer,
         "car": "VW TIGUAN",
@@ -1315,7 +1323,13 @@ def test_internal_flag_true_for_allowed_org_with_external_sibling(
         "internal-1",
         [
             _wo_record("EXT-1", vin=VIN_A, repair_type="Страховой"),
-            _wo_record("INT-1", vin=VIN_A, repair_type="ТО", organization="ПАН-МОТОРС, ООО"),
+            _wo_record(
+                "INT-1",
+                vin=VIN_A,
+                repair_type="ТО",
+                organization="ПАН-МОТОРС, ООО",
+                payer="ПАН-МОТОРС, ООО",
+            ),
         ],
     )
 
@@ -1351,7 +1365,7 @@ def test_internal_flag_false_for_a_disallowed_organization(
     assert _get_work_order(db_session, "INT-3").is_internal is False
 
 
-def test_internal_flag_pan_stanislav_requires_a_non_physical_payer(
+def test_internal_flag_requires_one_of_the_three_allowed_payers(
     client, db_session, auth_headers
 ) -> None:
     _import_records(
@@ -1374,11 +1388,29 @@ def test_internal_flag_pan_stanislav_requires_a_non_physical_payer(
                 organization="ИП ПАН СТАНИСЛАВ ВЯЧЕСЛАВОВИЧ",
                 payer="ООО Ромашка",
             ),
+            _wo_record(
+                "INT-4C",
+                vin=VIN_A,
+                repair_type="ТО",
+                organization="ИП ПАН СТАНИСЛАВ ВЯЧЕСЛАВОВИЧ",
+                payer="ИП Пан Оксана Игоревна",
+            ),
+            _wo_record(
+                "INT-4D",
+                vin=VIN_A,
+                repair_type="ТО",
+                organization="ИП ПАН СТАНИСЛАВ ВЯЧЕСЛАВОВИЧ",
+                payer=None,
+                date="2026-09-01T06:00:00",  # the first order of the car: nothing to follow
+            ),
         ],
     )
 
-    assert _get_work_order(db_session, "INT-4A").is_internal is False
-    assert _get_work_order(db_session, "INT-4B").is_internal is True
+    # Only ПАН-МОТОРС ООО / ИП Пан Станислав / ИП Пан Оксана may pay.
+    assert _get_work_order(db_session, "INT-4A").is_internal is False  # a person
+    assert _get_work_order(db_session, "INT-4B").is_internal is False  # another company
+    assert _get_work_order(db_session, "INT-4C").is_internal is True
+    assert _get_work_order(db_session, "INT-4D").is_internal is False  # no payer
 
 
 def test_internal_flag_ignored_without_a_valid_vin(client, db_session, auth_headers) -> None:
@@ -1405,7 +1437,15 @@ def test_internal_flag_recomputed_when_external_sibling_arrives_later(
         client,
         auth_headers,
         "internal-6a",
-        [_wo_record("INT-6", vin=VIN_A, repair_type="ТО", organization="ПАН-МОТОРС, ООО")],
+        [
+            _wo_record(
+                "INT-6",
+                vin=VIN_A,
+                repair_type="ТО",
+                organization="ПАН-МОТОРС, ООО",
+                payer="ПАН-МОТОРС, ООО",
+            )
+        ],
     )
     assert _get_work_order(db_session, "INT-6").is_internal is False
 
@@ -1426,8 +1466,20 @@ def test_internal_flag_does_not_affect_a_different_car(client, db_session, auth_
         "internal-7",
         [
             _wo_record("EXT-7", vin=VIN_A, repair_type="Страховой"),
-            _wo_record("INT-7", vin=VIN_A, repair_type="ТО", organization="ПАН-МОТОРС, ООО"),
-            _wo_record("OTHER-7", vin=VIN_B, repair_type="ТО", organization="ПАН-МОТОРС, ООО"),
+            _wo_record(
+                "INT-7",
+                vin=VIN_A,
+                repair_type="ТО",
+                organization="ПАН-МОТОРС, ООО",
+                payer="ПАН-МОТОРС, ООО",
+            ),
+            _wo_record(
+                "OTHER-7",
+                vin=VIN_B,
+                repair_type="ТО",
+                organization="ПАН-МОТОРС, ООО",
+                payer="ПАН-МОТОРС, ООО",
+            ),
         ],
     )
 

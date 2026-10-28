@@ -133,7 +133,7 @@ class WorkOrder(Base):
     # Computed by recompute_internal_flags (see services/import_service.py
     # and services/internal_order_rules.py) after every import - never set
     # directly from the 1C export. Indexed: dashboard queries filter on it
-    # when AppSettings.exclude_internal_orders is on.
+    # when AppSettings.order_exclusion_mode is "internal".
     is_internal: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false", index=True
     )

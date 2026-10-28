@@ -189,6 +189,31 @@ def list_users(db: Session) -> list[tuple[User, str | None]]:
     return [_user_with_department_name(db, u) for u in users]
 
 
+class EmployeeLinkError(Exception):
+    """The chosen employee does not exist or is already linked to another user."""
+
+
+def _check_employee_link(
+    db: Session, employee_id: uuid.UUID | None, user_id: uuid.UUID | None
+) -> None:
+    """An employee may be linked to one user only - refuse a second one with a message
+    naming who has it (the DB unique constraint is the last line of defence)."""
+    if employee_id is None:
+        return
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        raise EmployeeLinkError("Сотрудник не найден")
+    other = db.scalar(
+        select(User).where(User.employee_id == employee_id, User.id != user_id)
+        if user_id is not None
+        else select(User).where(User.employee_id == employee_id)
+    )
+    if other is not None:
+        raise EmployeeLinkError(
+            f"Сотрудник «{employee.full_name}» уже привязан к пользователю «{other.full_name}»"
+        )
+
+
 def create_user(
     db: Session,
     *,
@@ -200,7 +225,9 @@ def create_user(
     department_id: uuid.UUID | None,
     workshop_id: uuid.UUID | None,
     default_repair_type: str | None = None,
+    employee_id: uuid.UUID | None = None,
 ) -> tuple[User, str | None]:
+    _check_employee_link(db, employee_id, None)
     user = User(
         full_name=full_name.strip(),
         login=login.strip(),
@@ -210,6 +237,7 @@ def create_user(
         department_id=department_id,
         workshop_id=workshop_id,
         default_repair_type=default_repair_type,
+        employee_id=employee_id,
     )
     db.add(user)
     db.commit()
@@ -229,10 +257,12 @@ def update_user(
     department_id: uuid.UUID | None,
     workshop_id: uuid.UUID | None,
     default_repair_type: str | None = None,
+    employee_id: uuid.UUID | None = None,
 ) -> tuple[User, str | None] | None:
     user = db.get(User, user_id)
     if user is None:
         return None
+    _check_employee_link(db, employee_id, user_id)
     user.full_name = full_name.strip()
     user.login = login.strip()
     if password:
@@ -242,6 +272,7 @@ def update_user(
     user.department_id = department_id
     user.workshop_id = workshop_id
     user.default_repair_type = default_repair_type
+    user.employee_id = employee_id
     db.commit()
     db.refresh(user)
     return _user_with_department_name(db, user)

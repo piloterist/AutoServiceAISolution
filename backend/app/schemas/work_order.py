@@ -39,7 +39,7 @@ class WorkOrderListItem(BaseModel):
     organization: str | None
     # Computed at import time from the car's VIN + org/payer rules - see
     # services/internal_order_rules.py. Shown and filterable on the list;
-    # AppSettings.exclude_internal_orders can additionally exclude these
+    # AppSettings.order_exclusion_mode ("internal") can additionally exclude these
     # from dashboard aggregates entirely (see work_order_query_service.py).
     is_internal: bool
     amount: Decimal

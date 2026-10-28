@@ -3,7 +3,7 @@
 // they may not see answers 403.
 import { NextRequest, NextResponse } from "next/server";
 
-import { getCashBook } from "@/lib/backend-api";
+import { getCashBook, type CashScope } from "@/lib/backend-api";
 import { cashErrorResponse } from "@/lib/cash-errors";
 import { getCurrentUser } from "@/lib/session";
 
@@ -21,7 +21,13 @@ export async function GET(request: NextRequest) {
   try {
     return NextResponse.json(
       await getCashBook(
-        { workshopId, dateFrom, dateTo: params.get("date_to") ?? dateFrom },
+        {
+          workshopId,
+          dateFrom,
+          dateTo: params.get("date_to") ?? dateFrom,
+          scope: (params.get("scope") as CashScope | null) ?? undefined,
+          cardHolderId: params.get("card_holder_id") ?? undefined,
+        },
         { id: user.id, fullName: user.fullName },
       ),
     );

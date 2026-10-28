@@ -16,6 +16,13 @@ class CashWorkshopOut(BaseModel):
     workshop_type: str
 
 
+class CashCardHolderOut(BaseModel):
+    """An employee who can hold a personal card (specialty "Мастер приёмщик")."""
+
+    id: uuid.UUID
+    name: str
+
+
 class CashContextResponse(BaseModel):
     # Only the cash desks the acting user may see - never the rest.
     workshops: list[CashWorkshopOut]
@@ -28,6 +35,11 @@ class CashContextResponse(BaseModel):
     today: date
     lock_from: date | None
     lock_to: date | None
+    # The employee linked to the acting user (the default card holder of a new
+    # entry; None when the user is not linked) and the people a personal card can be
+    # tied to.
+    current_employee_id: uuid.UUID | None
+    card_holders: list[CashCardHolderOut]
 
 
 class CashEntryOut(BaseModel):
@@ -39,6 +51,9 @@ class CashEntryOut(BaseModel):
     comment: str | None
     work_order_id: uuid.UUID | None
     work_order_number: str | None
+    personal_card: bool
+    card_holder_id: uuid.UUID | None
+    card_holder_name: str | None
     created_by_name: str
     created_at: datetime
     updated_by_name: str | None
@@ -67,6 +82,13 @@ class CashBookResponse(BaseModel):
     entries: list[CashEntryOut]
     lock_from: date | None
     lock_to: date | None
+    # Which part of the book this is: "all" / "cash" (without personal cards) /
+    # "personal" (personal cards only); with card_holder_id: that person's card.
+    scope: str
+    card_holder_id: uuid.UUID | None
+    # Only with card_holder_id: the card balance as of today over every desk the
+    # caller may see (independent of the shown period).
+    card_balance_today: Decimal | None
 
 
 class CashEntryResult(BaseModel):
@@ -87,6 +109,10 @@ class CashEntryWrite(BaseModel):
     comment: str | None = None
     work_order_id: uuid.UUID | None = None
     work_order_number: str | None = Field(default=None, max_length=100)
+    # Only for Приход НАЛ / Расход НАЛ. The holder defaults to whoever makes the
+    # entry; picking someone else needs "Корректировка кассы".
+    personal_card: bool = False
+    card_holder_id: uuid.UUID | None = None
 
 
 class CashWorkOrderOut(BaseModel):

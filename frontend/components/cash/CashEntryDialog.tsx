@@ -4,7 +4,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { CashHistoryModal } from "@/components/cash/CashHistoryModal";
 import { AdminModal } from "@/components/settings/AdminModal";
-import type { AuditLogEntry, CashEntry, CashKind, CashWorkOrder } from "@/lib/backend-api";
+import type {
+  AuditLogEntry,
+  CashCardHolder,
+  CashEntry,
+  CashKind,
+  CashWorkOrder,
+} from "@/lib/backend-api";
 import {
   createCashEntryClient,
   getCashEntryHistoryClient,
@@ -121,6 +127,9 @@ export function CashEntryDialog({
   lockFrom,
   lockTo,
   restricted,
+  cardHolders,
+  currentEmployeeId,
+  canCorrect,
   onClose,
   onSaved,
 }: {
@@ -132,6 +141,11 @@ export function CashEntryDialog({
   lockTo: string | null;
   // No "Корректировка кассы" right and the entry's day is not today.
   restricted: boolean;
+  // The employees a personal card can be tied to, the one linked to the acting user
+  // (the default) and whether the user may pick another ("Корректировка кассы").
+  cardHolders: CashCardHolder[];
+  currentEmployeeId: string | null;
+  canCorrect: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -143,6 +157,13 @@ export function CashEntryDialog({
   const [workOrderId, setWorkOrderId] = useState<string | null>(entry?.work_order_id ?? null);
   const [comment, setComment] = useState(entry?.comment ?? "");
   const [amountText, setAmountText] = useState(entry ? formatMoney(entry.amount).replace(/ /g, " ") : "");
+  // "Личная карта" - only for Приход НАЛ / Расход НАЛ.
+  const cardAllowed = kind !== "card_in";
+  const [personalCard, setPersonalCard] = useState(entry?.personal_card ?? false);
+  const [holderId, setHolderId] = useState(
+    entry?.card_holder_id ??
+      (currentEmployeeId && cardHolders.some((h) => h.id === currentEmployeeId) ? currentEmployeeId : ""),
+  );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState<AuditLogEntry[] | null>(null);
@@ -170,6 +191,8 @@ export function CashEntryDialog({
       comment: comment.trim() || null,
       work_order_id: workOrderId,
       work_order_number: workOrderText.trim() || null,
+      personal_card: cardAllowed && personalCard,
+      card_holder_id: cardAllowed && personalCard ? holderId || null : null,
     };
     setSaving(true);
     try {
@@ -231,6 +254,49 @@ export function CashEntryDialog({
               onChange={(event) => setComment(event.target.value)}
             />
           </div>
+
+          {cardAllowed && (
+            <div className="admin-form-field">
+              <div className="cash-card-row">
+                <label className="settings-checkbox cash-card-check">
+                  <input
+                    type="checkbox"
+                    checked={personalCard}
+                    disabled={readOnly}
+                    onChange={(event) => setPersonalCard(event.target.checked)}
+                  />
+                  Личная карта
+                </label>
+                <label htmlFor="cash-card-holder" className="cash-card-label">
+                  Сотрудник
+                </label>
+                <select
+                  id="cash-card-holder"
+                  className="cash-card-select"
+                  value={holderId}
+                  disabled={readOnly || !personalCard || !canCorrect}
+                  onChange={(event) => setHolderId(event.target.value)}
+                >
+                  <option value="">—</option>
+                  {cardHolders.map((holder) => (
+                    <option key={holder.id} value={holder.id}>
+                      {holder.name}
+                    </option>
+                  ))}
+                  {entry?.card_holder_id && !cardHolders.some((h) => h.id === entry.card_holder_id) && (
+                    <option value={entry.card_holder_id}>{entry.card_holder_name}</option>
+                  )}
+                </select>
+              </div>
+              {personalCard && !canCorrect && (
+                <span className="settings-description">
+                  {holderId
+                    ? "Сотрудника может менять только пользователь с правом «Корректировка кассы»."
+                    : "Ваш пользователь не связан с сотрудником-мастером: попросите кассира внести запись."}
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="admin-form-field">
             <label htmlFor="cash-amount">Сумма, ₽</label>

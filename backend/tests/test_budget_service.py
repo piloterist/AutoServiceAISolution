@@ -210,7 +210,7 @@ def test_fact_revenue_is_two_rows_insurance_and_current_only(
 
     app_settings = get_app_settings(db_session)
     app_settings.insurance_repair_type = "Страховой"
-    app_settings.exclude_internal_orders = True
+    app_settings.order_exclusion_mode = "internal"
     app_settings.warranty_repair_types = ["Гарантийный"]
     app_settings.virtual_repair_types = ["Виртуальный"]
     closed = datetime(2026, 9, 15, tzinfo=UTC)

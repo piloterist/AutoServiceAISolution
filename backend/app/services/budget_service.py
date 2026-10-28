@@ -33,6 +33,9 @@ from app.services.cockpit_service import (
     _payments,
     period_bounds,
 )
+from app.services.order_exclusion import (
+    order_exclusion,
+)
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
 # "Расходы" is no longer typed in here: it is the sum of the cost items entered on
@@ -77,7 +80,7 @@ def get_budget_year(
     settings = get_settings()
     app_settings = get_app_settings(db)
     revenue_statuses = settings.revenue_statuses_list
-    exclude_internal = app_settings.exclude_internal_orders
+    exclusion = order_exclusion(app_settings)
 
     workshops = db.execute(
         select(Workshop, Department.name)
@@ -107,7 +110,7 @@ def get_budget_year(
                 period_start=period_start,
                 period_end=period_end,
                 revenue_statuses=revenue_statuses,
-                exclude_internal=exclude_internal,
+                exclusion=exclusion,
                 excluded_repair_types=excluded_types,
             )
             fact_insurance = _closed_revenue(db, only_repair_types=insurance_types, **common)
@@ -124,7 +127,7 @@ def get_budget_year(
                 source_departments=source_departments,
                 period_start=period_start,
                 period_end=period_end,
-                exclude_internal=exclude_internal,
+                exclusion=exclusion,
             )
             entry = entries.get((workshop.id, month))
             plan_revenue = (entry.plan_revenue if entry else None) or Decimal("0")

@@ -31,11 +31,7 @@ from app.schemas.import_work_order import (
     ImportWorkOrderRecord,
     ImportWorkOrdersRequest,
 )
-from app.services.internal_order_rules import (
-    internal_order_allowed,
-    is_external_repair_type,
-    normalize_vin,
-)
+from app.services.internal_order_rules import classify_car_group, normalize_vin
 
 logger = structlog.get_logger(__name__)
 
@@ -459,7 +455,9 @@ def _recompute_internal_flags(db: Session, car_keys: set[str | None]) -> None:
             table.c.repair_type,
             table.c.organization,
             table.c.payer_name,
-        ).where(table.c.car_key.in_(keys))
+            table.c.document_date,
+            table.c.external_number,
+        ).where(table.c.car_key.in_(keys), table.c.doc_type == "work_order")
     ).all()
 
     by_car_key: dict[str, list] = {}
@@ -470,14 +468,8 @@ def _recompute_internal_flags(db: Session, car_keys: set[str | None]) -> None:
     non_internal_ids: list[uuid.UUID] = []
 
     for group in by_car_key.values():
-        has_external_sibling = any(is_external_repair_type(row.repair_type) for row in group)
-        for row in group:
-            is_internal = (
-                has_external_sibling
-                and not is_external_repair_type(row.repair_type)
-                and internal_order_allowed(row.organization, row.payer_name)
-            )
-            (internal_ids if is_internal else non_internal_ids).append(row.id)
+        for row_id, is_internal in classify_car_group(group).items():
+            (internal_ids if is_internal else non_internal_ids).append(row_id)
 
     if internal_ids:
         db.execute(update(table).where(table.c.id.in_(internal_ids)).values(is_internal=True))

@@ -35,12 +35,13 @@ class AppSettings(Base):
     )
 
     # "Специфика PanMotors" group - a separate feature from the two fields
-    # above (which drive the older insurance-reporting exclusion). This pair
-    # instead gates WorkOrder.is_internal (see
-    # services/internal_order_rules.py), a car/VIN-and-org/payer-based
-    # detection, not an order-number/repair-type-based one.
-    exclude_internal_orders: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="false"
+    # above (which drive the older insurance-reporting exclusion): what the
+    # dashboard-style figures leave out - "none" / "internal" (WorkOrder.is_internal,
+    # see services/internal_order_rules.py) / "external" (the insurance repair
+    # type), see services/order_exclusion.py. (The old boolean column
+    # exclude_internal_orders still exists in the table, unused - see the migration.)
+    order_exclusion_mode: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="none", server_default="none"
     )
     # Not wired to any filtering logic yet - deliberately inert (see
     # SettingsForm.tsx's "в разработке" caption). Still persisted like any

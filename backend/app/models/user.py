@@ -64,6 +64,15 @@ class User(Base):
     workshop_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workshops.id", ondelete="SET NULL"), nullable=True
     )
+    # The employee of the directory (Settings -> Сотрудники) this login belongs to.
+    # At most one user per employee (unique) - the cash book uses it to know whose
+    # personal card an entry is by default.
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("employees.id", ondelete="SET NULL"),
+        nullable=True,
+        unique=True,
+    )
     # Optional - one of planner_constants.REPAIR_TYPE_FILTERS. When set,
     # opening the Кузовной Planner defaults its "Вид ремонта" filter to
     # this value instead of "Все" (product spec, 2026-09-30: "если у

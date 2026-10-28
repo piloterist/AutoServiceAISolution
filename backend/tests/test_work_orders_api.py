@@ -1302,13 +1302,19 @@ SETTINGS_URL = "/api/v1/settings"
 
 
 def _set_exclude_internal_orders(client, auth_headers, value: bool) -> None:
+    _set_order_exclusion(client, auth_headers, "internal" if value else "none")
+
+
+def _set_order_exclusion(
+    client, auth_headers, mode: str, insurance_repair_type: str | None = None
+) -> None:
     client.put(
         SETTINGS_URL,
         headers=auth_headers,
         json={
-            "insurance_repair_type": None,
+            "insurance_repair_type": insurance_repair_type,
             "exclude_internal_insurance": False,
-            "exclude_internal_orders": value,
+            "order_exclusion_mode": mode,
         },
     )
 
@@ -1373,6 +1379,56 @@ def test_monthly_summary_excludes_internal_when_setting_is_on(
     items = {item["month"]: item for item in response.json()["items"]}
     assert items["2026-06"]["work_order_count"] == 1
     assert items["2026-06"]["total_amount"] == "100.00"
+
+
+def _external_vs_insurance_vs_internal(db_session) -> None:
+    """Three closed June orders: a normal one, an internal one, an insurance one."""
+    for number, amount, extra in (
+        ("WO-EXT", "100.00", dict(repair_type="Текущий", is_internal=False)),
+        ("WO-INT", "500.00", dict(repair_type="Текущий", is_internal=True)),
+        ("WO-INS", "7000.00", dict(repair_type="Страховой", is_internal=False)),
+    ):
+        db_session.add(
+            _make_work_order(
+                external_number=number,
+                document_date=datetime(2026, 6, 5),
+                closed_date=datetime(2026, 6, 5),
+                amount=Decimal(amount),
+                **extra,
+            )
+        )
+    db_session.commit()
+
+
+def _june(client, auth_headers) -> dict:
+    items = {
+        item["month"]: item
+        for item in client.get(SUMMARY_URL, headers=auth_headers).json()["items"]
+    }
+    return items["2026-06"]
+
+
+def test_monthly_summary_exclusion_modes(client, db_session, auth_headers) -> None:
+    _external_vs_insurance_vs_internal(db_session)
+
+    _set_order_exclusion(client, auth_headers, "none")
+    assert _june(client, auth_headers)["total_amount"] == "7600.00"  # nothing excluded
+
+    _set_order_exclusion(client, auth_headers, "internal")
+    assert _june(client, auth_headers)["total_amount"] == "7100.00"  # without WO-INT
+
+    # "Внешние": the insurance repair type is left out (internal ones stay).
+    _set_order_exclusion(client, auth_headers, "external", insurance_repair_type="Страховой")
+    june = _june(client, auth_headers)
+    assert (june["work_order_count"], june["total_amount"]) == (2, "600.00")
+
+
+def test_external_mode_excludes_nothing_until_the_insurance_type_is_set(
+    client, db_session, auth_headers
+) -> None:
+    _external_vs_insurance_vs_internal(db_session)
+    _set_order_exclusion(client, auth_headers, "external", insurance_repair_type=None)
+    assert _june(client, auth_headers)["total_amount"] == "7600.00"
 
 
 def test_monthly_summary_includes_internal_when_setting_is_off(

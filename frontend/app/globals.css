@@ -940,6 +940,17 @@ table.admin-data-table td {
   gap: 0.75rem 1rem;
 }
 
+/* Wide forms with many short fields (Пользователи): three columns, one on a phone. */
+.admin-form-grid--3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 800px) {
+  .admin-form-grid--3 {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Labeled sub-group inside an admin form (e.g. Цеха's "Планирование") -
    a plain heading, not another .card, since it's still one form. */
 .admin-form-section-title {
@@ -1914,8 +1925,11 @@ table.admin-data-table td.audit-changes-cell {
   left: 50%;
   transform: translateX(-50%);
   margin-bottom: 0.5rem;
+  /* Inverted chip: the page text colour as the background, the page background
+     as the text - readable in both themes (a fixed white text vanished on the
+     light chip of the dark theme). */
   background: var(--text);
-  color: #fff;
+  color: var(--bg);
   padding: 0.5rem 0.7rem;
   border-radius: 6px;
   font-size: 0.8rem;
@@ -1928,7 +1942,7 @@ table.admin-data-table td.audit-changes-cell {
 }
 
 .chart-tooltip-muted {
-  color: rgba(255, 255, 255, 0.7);
+  opacity: 0.7;
   font-size: 0.75rem;
 }
 
@@ -5864,7 +5878,7 @@ main:has(.cockpit-page) {
 .cash-sidebar {
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: 0.4rem;
   margin-top: 0;
   position: sticky;
   top: 1rem;
@@ -5874,6 +5888,11 @@ main:has(.cockpit-page) {
 
 .cash-sidebar .planner-title {
   margin: 0;
+}
+
+/* The sidebar's own gap spaces its blocks; the shared tab strip adds nothing on top. */
+.cash-sidebar .planner-workshop-type-tabs {
+  margin-bottom: 0;
 }
 
 .cash-dept-switch {
@@ -5887,8 +5906,8 @@ main:has(.cockpit-page) {
 .cash-period {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding-top: 0.9rem;
+  gap: 0.4rem;
+  padding-top: 0.5rem;
   border-top: 1px solid var(--border);
 }
 
@@ -6217,6 +6236,7 @@ main:has(.cockpit-page) {
 
 .cash-column-head {
   font-size: 1.3rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .cash-column-head h3 {
@@ -6295,15 +6315,110 @@ main:has(.cockpit-page) {
   min-height: 1.4em;
   display: flex;
   gap: 0.6rem;
-  font-size: 1.15rem;
+  font-size: 1.2rem;
 }
 
 .cash-entry-date {
   color: var(--text-muted);
 }
 
+.cash-entry-card {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+/* Left column filters (Касса, Личная карта): the label above, the drop-down over the
+   whole column. */
+.cash-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin: 0;
+}
+
+.cash-filter label {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.cash-filter-select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.cash-filter-select:disabled {
+  background: var(--surface2);
+  color: var(--text-muted);
+}
+
+/* Small enough for the longest full name (ФИО in full) to fit the column. */
+.cash-filter-select--holder {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.4rem 0.3rem;
+  text-overflow: ellipsis;
+}
+
+/* Dialog row: the "Личная карта" tick and the employee, one line. */
+.cash-card-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.cash-card-check {
+  flex: none;
+  white-space: nowrap;
+}
+
+.cash-card-label {
+  flex: none;
+}
+
+.cash-card-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.1rem;
+}
+
+/* Greyed out and not selectable until "Личная карта" is ticked. */
+.cash-card-select:disabled {
+  background: var(--surface2);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.cash-card-banner {
+  margin: 0 0 0.8rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  font-size: 1.1rem;
+}
+
+.cash-card-banner-note {
+  margin-left: 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 .cash-entry-wo {
-  font-weight: 700;
+  /* Plain, like the comment under it. */
+  font-weight: 400;
 }
 
 .cash-entry-comment {
@@ -6799,11 +6914,18 @@ main:has(.cockpit-page) {
 }
 
 /* Касса: кнопка «В Excel» под периодом */
+.cash-period-reset {
+  margin-top: 0;
+}
+
+/* Same size and font as "Показать" (.cash-period-apply is added to it too). */
 .cash-period-excel {
   display: block;
-  margin-top: 8px;
+  margin-top: 0;
   text-align: center;
   text-decoration: none;
+  font-weight: 600;
+  box-sizing: border-box;
 }
 
 .cash-period-excel--off {

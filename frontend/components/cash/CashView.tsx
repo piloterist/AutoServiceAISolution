@@ -5,7 +5,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { CashCalendar } from "@/components/cash/CashCalendar";
 import { CashEntryDialog, KIND_LABELS } from "@/components/cash/CashEntryDialog";
 import { DateInput } from "@/components/DateInput";
-import type { CashBook, CashContext, CashEntry, CashKind, CashSearchHit } from "@/lib/backend-api";
+import type {
+  CashBook,
+  CashContext,
+  CashEntry,
+  CashKind,
+  CashScope,
+  CashSearchHit,
+} from "@/lib/backend-api";
 import { getCashBookClient, searchCashEntriesClient } from "@/lib/cash-client";
 import { formatDay, formatMoney, todayMsk } from "@/lib/money";
 
@@ -40,6 +47,12 @@ export function CashView({ context }: { context: CashContext }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
+  // "Касса" filter (whole book / cash only / personal cards only) and, below the
+  // period, one employee's personal card ("" = none). A chosen employee shows that
+  // card, whatever the filter says.
+  const [scope, setScope] = useState<CashScope>("all");
+  const [cardHolderId, setCardHolderId] = useState("");
+  const cardHolder = context.card_holders.find((h) => h.id === cardHolderId) ?? null;
   const [lock, setLock] = useState({ from: context.lock_from, to: context.lock_to });
   // Search by work-order number: every hit of the desk, earliest first; the
   // arrows walk through them, the page jumps to the hit's day.
@@ -63,7 +76,13 @@ export function CashView({ context }: { context: CashContext }) {
     setLoading(true);
     setError(null);
     try {
-      const result = await getCashBookClient({ workshopId, dateFrom: from, dateTo: to });
+      const result = await getCashBookClient({
+        workshopId,
+        dateFrom: from,
+        dateTo: to,
+        scope,
+        cardHolderId: cardHolderId || undefined,
+      });
       setBook(result);
       setLock({ from: result.lock_from, to: result.lock_to });
     } catch (err) {
@@ -72,7 +91,7 @@ export function CashView({ context }: { context: CashContext }) {
     } finally {
       setLoading(false);
     }
-  }, [workshopId, from, to]);
+  }, [workshopId, from, to, scope, cardHolderId]);
 
   useEffect(() => {
     void load();
@@ -144,6 +163,11 @@ export function CashView({ context }: { context: CashContext }) {
     setTo(draftTo);
   };
   const periodChanged = draftFrom !== from || draftTo !== to;
+  const resetFilters = () => {
+    selectDay(today);
+    setCardHolderId("");
+    setScope("all");
+  };
 
   const selectDepartment = (departmentId: string) => {
     const candidates = context.workshops.filter((w) => w.department_id === departmentId);
@@ -207,6 +231,39 @@ export function CashView({ context }: { context: CashContext }) {
           ))}
         </div>
 
+        <div className="cash-filter">
+          <label htmlFor="cash-scope">Касса</label>
+          <select
+            id="cash-scope"
+            className="cash-filter-select"
+            value={cardHolderId ? "personal" : scope}
+            disabled={Boolean(cardHolderId)}
+            onChange={(event) => setScope(event.target.value as CashScope)}
+          >
+            <option value="all">Вся касса</option>
+            <option value="cash">Наличка</option>
+            <option value="personal">Личные карты</option>
+          </select>
+        </div>
+
+        <div className="cash-filter">
+          <label htmlFor="cash-card-holder">Личная карта</label>
+          <select
+            id="cash-card-holder"
+            className="cash-filter-select cash-filter-select--holder"
+            value={cardHolderId}
+            onChange={(event) => setCardHolderId(event.target.value)}
+            title="Личная карта сотрудника: движение и остаток"
+          >
+            <option value="">— сотрудник —</option>
+            {context.card_holders.map((holder) => (
+              <option key={holder.id} value={holder.id}>
+                {holder.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <CashCalendar
           from={from}
           to={to}
@@ -234,17 +291,21 @@ export function CashView({ context }: { context: CashContext }) {
           >
             Показать
           </button>
+          {/* Back to today, no employee card, the whole book. */}
+          <button type="button" className="admin-btn cash-period-apply cash-period-reset" onClick={resetFilters}>
+            Сбросить
+          </button>
           {/* A plain link: the file is built by the server and just opens/downloads - nothing is saved by us. */}
           {workshopId && draftFrom && draftTo && draftFrom <= draftTo ? (
             <a
-              className="admin-btn cash-period-excel"
+              className="admin-btn cash-period-apply cash-period-excel"
               href={`/api/cash/export?workshop_id=${workshopId}&date_from=${draftFrom}&date_to=${draftTo}`}
               title="Все операции кассы за указанный период — файл Excel"
             >
               В Excel
             </a>
           ) : (
-            <span className="admin-btn cash-period-excel cash-period-excel--off" aria-disabled="true">
+            <span className="admin-btn cash-period-apply cash-period-excel cash-period-excel--off" aria-disabled="true">
               В Excel
             </span>
           )}
@@ -311,6 +372,16 @@ export function CashView({ context }: { context: CashContext }) {
           </div>
         </div>
 
+        {cardHolder && (
+          <div className="cash-card-banner">
+            Личная карта: <strong>{cardHolder.name}</strong> — остаток на сегодня:{" "}
+            <strong>{book?.card_balance_today != null ? money(book.card_balance_today) : "—"}</strong>
+            <span className="cash-card-banner-note">
+              (по записям всех доступных вам касс; ниже — движение за выбранный период)
+            </span>
+          </div>
+        )}
+
         <div className="cash-summary">
           <div className="cash-balance cash-balance--opening">
             <span className="cash-balance-label">Остаток на начало</span>
@@ -351,7 +422,6 @@ export function CashView({ context }: { context: CashContext }) {
               <section key={column.kind} className={`cash-column cash-column--${column.kind}`}>
                 <header className="cash-column-head">
                   <h3>{column.title}</h3>
-                  <strong>{money(totalOf(column.kind))}</strong>
                 </header>
                 {entries.length === 0 ? (
                   <p className="cash-column-empty">Нет записей</p>
@@ -375,6 +445,11 @@ export function CashView({ context }: { context: CashContext }) {
                             <span className="cash-entry-head">
                               {!singleDay && <span className="cash-entry-date">{formatDay(entry.entry_date)}</span>}
                               <span className="cash-entry-wo">{entry.work_order_number ?? ""}</span>
+                              {entry.personal_card && (
+                                <span className="cash-entry-card" title="Личная карта">
+                                  💳 {entry.card_holder_name}
+                                </span>
+                              )}
                             </span>
                             <span className="cash-entry-comment" title={entry.comment ?? undefined}>
                               {entry.comment ?? ""}
@@ -411,6 +486,9 @@ export function CashView({ context }: { context: CashContext }) {
           }
           lockFrom={lock.from}
           lockTo={lock.to}
+          cardHolders={context.card_holders}
+          currentEmployeeId={context.current_employee_id}
+          canCorrect={context.can_correct}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);

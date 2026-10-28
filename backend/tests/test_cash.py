@@ -917,3 +917,252 @@ def test_excel_export_of_a_foreign_desk_is_forbidden(
     )
 
     assert response.status_code == 403
+
+
+# ---- personal card ------------------------------------------------------------
+
+
+from app.models.employee import Employee  # noqa: E402
+
+
+def _employee(db: Session, name: str, specialty: str = "Мастер приёмщик") -> Employee:
+    employee = Employee(full_name=name, specialty=specialty)
+    db.add(employee)
+    db.flush()
+    return employee
+
+
+@pytest.fixture()
+def cards(db_session: Session, world: dict) -> dict:
+    """Two master-advisor employees, a master user linked to the first (no
+    "Корректировка кассы"), and the cashier (with it) linked to nobody."""
+    ivanov = _employee(db_session, "Иванов Иван")
+    petrov = _employee(db_session, "Петров Пётр")
+    clerk = _employee(db_session, "Кладовщик Кирилл", specialty="Механик")
+    master = _user(
+        db_session,
+        role="Мастер приёмщик",
+        full_name="Иванов Иван",
+        workshop_id=world["body"].id,
+        department_id=world["kahovka"].id,
+        employee_id=ivanov.id,
+    )
+    db_session.commit()
+    return {"ivanov": ivanov, "petrov": petrov, "clerk": clerk, "master": master}
+
+
+def _add_card(db, world, user, kind, amount, *, holder=None, day=DAY, card=True):
+    return cash_service.create_entry(
+        db,
+        _access(db, user),
+        workshop_id=world["body"].id,
+        entry_date=day,
+        kind=kind,
+        amount=Decimal(amount),
+        comment=None,
+        work_order_id=None,
+        work_order_number=None,
+        actor_user_id=user.id,
+        actor_name=user.full_name,
+        personal_card=card,
+        card_holder_id=holder.id if holder else None,
+    )
+
+
+def test_personal_card_defaults_to_the_employee_linked_to_the_user(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    today = cash_service.today_msk()
+
+    entry = _add_card(db_session, world, cards["master"], KIND_CASH_IN, "500", day=today)
+
+    assert entry.personal_card is True
+    assert entry.card_holder_id == cards["ivanov"].id
+    assert entry.card_holder_name == "Иванов Иван"
+
+
+def test_without_correction_the_holder_cannot_be_another_employee(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    with pytest.raises(CashForbidden):
+        _add_card(
+            db_session,
+            world,
+            cards["master"],
+            KIND_CASH_OUT,
+            "100",
+            holder=cards["petrov"],
+            day=cash_service.today_msk(),
+        )
+
+
+def test_a_role_with_correction_can_pick_another_master(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    entry = _add_card(
+        db_session, world, world["cashier"], KIND_CASH_OUT, "100", holder=cards["petrov"]
+    )
+
+    assert entry.card_holder_id == cards["petrov"].id
+
+
+def test_only_master_advisors_can_hold_a_card(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    with pytest.raises(CashInvalid):
+        _add_card(db_session, world, world["cashier"], KIND_CASH_IN, "100", holder=cards["clerk"])
+
+
+def test_personal_card_is_not_for_the_card_payment_section(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    with pytest.raises(CashInvalid):
+        _add_card(db_session, world, world["cashier"], KIND_CARD_IN, "100", holder=cards["ivanov"])
+
+
+def test_a_user_not_linked_to_an_employee_must_pick_one(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    with pytest.raises(CashInvalid):
+        _add_card(db_session, world, world["cashier"], KIND_CASH_IN, "100")  # cashier: no employee
+
+
+def test_updating_the_holder_needs_correction(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    today = cash_service.today_msk()
+    entry = _add_card(db_session, world, cards["master"], KIND_CASH_IN, "500", day=today)
+
+    def update(user, holder):
+        return cash_service.update_entry(
+            db_session,
+            _access(db_session, user),
+            entry.id,
+            entry_date=today,
+            kind=KIND_CASH_IN,
+            amount=Decimal("500"),
+            comment=None,
+            work_order_id=None,
+            work_order_number=None,
+            actor_user_id=user.id,
+            actor_name=user.full_name,
+            personal_card=True,
+            card_holder_id=holder.id if holder else None,
+        )
+
+    with pytest.raises(CashForbidden):
+        update(cards["master"], cards["petrov"])
+    assert update(cards["master"], None).card_holder_id == cards["ivanov"].id  # unchanged is fine
+    assert update(world["cashier"], cards["petrov"]).card_holder_id == cards["petrov"].id
+
+
+def test_turning_the_card_flag_off_clears_the_holder(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    entry = _add_card(
+        db_session, world, world["cashier"], KIND_CASH_IN, "500", holder=cards["ivanov"]
+    )
+
+    updated = cash_service.update_entry(
+        db_session,
+        _access(db_session, world["cashier"]),
+        entry.id,
+        entry_date=DAY,
+        kind=KIND_CASH_IN,
+        amount=Decimal("500"),
+        comment=None,
+        work_order_id=None,
+        work_order_number=None,
+        actor_user_id=world["cashier"].id,
+        actor_name="Кассир Кассиров",
+        personal_card=False,
+    )
+
+    assert (updated.personal_card, updated.card_holder_id, updated.card_holder_name) == (
+        False,
+        None,
+        None,
+    )
+
+
+def _card_world(db_session: Session, world: dict, cards: dict) -> None:
+    # cash: +1000 / -100; Иванов's card: +500 / -200; Петров's card: +50
+    _add(db_session, world, KIND_CASH_IN, "1000")
+    _add(db_session, world, KIND_CASH_OUT, "100")
+    _add_card(db_session, world, world["cashier"], KIND_CASH_IN, "500", holder=cards["ivanov"])
+    _add_card(db_session, world, world["cashier"], KIND_CASH_OUT, "200", holder=cards["ivanov"])
+    _add_card(db_session, world, world["cashier"], KIND_CASH_IN, "50", holder=cards["petrov"])
+    # a day before: Иванов +70 on the card, +30 in the drawer
+    _add_card(
+        db_session,
+        world,
+        world["cashier"],
+        KIND_CASH_IN,
+        "70",
+        holder=cards["ivanov"],
+        day=DAY - timedelta(days=1),
+    )
+    _add(db_session, world, KIND_CASH_IN, "30", DAY - timedelta(days=1))
+
+
+def test_book_scopes_split_the_cash_from_the_personal_cards(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    _card_world(db_session, world, cards)
+    access = _access(db_session, world["cashier"])
+
+    def book(**kw):
+        return cash_service.get_book(db_session, access, world["body"].id, DAY, DAY, **kw)
+
+    everything = book()
+    assert (everything["opening"], everything["closing"]) == (Decimal("100.00"), Decimal("1350.00"))
+
+    cash = book(scope="cash")  # without personal cards
+    assert (cash["opening"], cash["closing"]) == (Decimal("30.00"), Decimal("930.00"))
+    assert all(not e["personal_card"] for e in cash["entries"])
+
+    personal = book(scope="personal")
+    assert (personal["opening"], personal["closing"]) == (Decimal("70.00"), Decimal("420.00"))
+    assert len(personal["entries"]) == 3
+
+
+def test_book_of_one_persons_card_and_the_balance_today(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    _card_world(db_session, world, cards)
+    # a future entry is not part of "today"
+    _add_card(
+        db_session,
+        world,
+        world["cashier"],
+        KIND_CASH_IN,
+        "9999",
+        holder=cards["ivanov"],
+        day=cash_service.today_msk() + timedelta(days=1),
+    )
+    access = _access(db_session, world["cashier"])
+
+    book = cash_service.get_book(
+        db_session, access, world["body"].id, DAY, DAY, "all", cards["ivanov"].id
+    )
+
+    assert [e["card_holder_name"] for e in book["entries"]] == ["Иванов Иван", "Иванов Иван"]
+    assert (book["opening"], book["closing"]) == (Decimal("70.00"), Decimal("370.00"))
+    assert book["card_balance_today"] == Decimal("370.00")  # 70 + 500 - 200, no future entry
+
+
+def test_unknown_scope_is_rejected(db_session: Session, world: dict) -> None:
+    with pytest.raises(CashInvalid):
+        cash_service.get_book(
+            db_session, _access(db_session, world["cashier"]), world["body"].id, DAY, DAY, "x"
+        )
+
+
+def test_context_lists_the_master_employees_and_the_linked_one(
+    db_session: Session, world: dict, cards: dict
+) -> None:
+    context = cash_service.get_context(db_session, cards["master"].id)
+
+    assert [h["name"] for h in context["card_holders"]] == ["Иванов Иван", "Петров Пётр"]
+    assert context["current_employee_id"] == cards["ivanov"].id
+    assert cash_service.get_context(db_session, world["cashier"].id)["current_employee_id"] is None

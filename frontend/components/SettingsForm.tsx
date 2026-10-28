@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
-import type { AppSettings, AutoMatchResult } from "@/lib/backend-api";
+import type { AppSettings, AutoMatchResult, OrderExclusionMode } from "@/lib/backend-api";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -24,12 +24,12 @@ export function SettingsForm({
     initialSettings.exclude_internal_insurance,
   );
   // "Специфика PanMotors" - a separate feature from the two above (which
-  // drive the older insurance-reporting exclusion): gates
-  // WorkOrder.is_internal, a car/VIN-and-org/payer-based detection (see
-  // backend services/internal_order_rules.py), not an order-number/
-  // repair-type-based one.
-  const [excludeInternalOrders, setExcludeInternalOrders] = useState(
-    initialSettings.exclude_internal_orders,
+  // drive the older insurance-reporting exclusion): what the dashboard-style
+  // figures leave out - nothing / the internal orders (WorkOrder.is_internal, a
+  // car/VIN-and-org/payer-based detection, see backend services/
+  // internal_order_rules.py) / the insurance ones (see order_exclusion.py).
+  const [orderExclusionMode, setOrderExclusionMode] = useState<OrderExclusionMode>(
+    initialSettings.order_exclusion_mode,
   );
   const [hideInternalOrders, setHideInternalOrders] = useState(
     initialSettings.hide_internal_orders,
@@ -99,7 +99,7 @@ export function SettingsForm({
         body: JSON.stringify({
           insurance_repair_type: insuranceRepairType || null,
           exclude_internal_insurance: excludeInternal,
-          exclude_internal_orders: excludeInternalOrders,
+          order_exclusion_mode: orderExclusionMode,
           hide_internal_orders: hideInternalOrders,
           warranty_repair_types: warrantyRepairTypes,
           virtual_repair_types: virtualRepairTypes,
@@ -181,14 +181,25 @@ export function SettingsForm({
       <div className="settings-subgroup">
         <h3 className="settings-subgroup-title">Специфика PanMotors</h3>
 
-        <label className="settings-checkbox">
-          <input
-            type="checkbox"
-            checked={excludeInternalOrders}
-            onChange={(event) => setExcludeInternalOrders(event.target.checked)}
-          />
-          Исключить внутренние
-        </label>
+        <div className="settings-field">
+          <label htmlFor="order-exclusion-mode">Исключить</label>
+          <select
+            id="order-exclusion-mode"
+            value={orderExclusionMode}
+            onChange={(event) => setOrderExclusionMode(event.target.value as OrderExclusionMode)}
+          >
+            <option value="none">Без исключений</option>
+            <option value="internal">Внутренние</option>
+            <option value="external">Внешние</option>
+          </select>
+          <p className="settings-description">
+            Влияет на выручку, оплаты, дебиторскую задолженность и бюджеты (дашборд, Финансы,
+            Бюджеты). «Без исключений» — учитываются все заказ-наряды; «Внутренние» — не учитываются
+            внутренние заказ-наряды; «Внешние» — не учитываются заказ-наряды с видом ремонта «Вид
+            ремонта для страховых» (выбирается выше; пока он не выбран, ничего не исключается). На
+            список заказ-нарядов настройка не влияет.
+          </p>
+        </div>
 
         <label className="settings-checkbox">
           <input
@@ -238,9 +249,9 @@ export function SettingsForm({
           заказ-наряда проходят правило, заданное для этой организации (для одних организаций
           внутренний заказ-наряд допускается всегда, для других — только если плательщик не
           физическое лицо). Заказ-наряды без распознанного VIN никогда не считаются внутренними.
-          Галка «Исключить внутренние» выше влияет только на показатели дашборда (плашки,
-          диаграммы) — как будто таких заказ-нарядов не существует; на список заказ-нарядов не
-          влияет, там есть отдельный фильтр «Внутренний».
+          Режим «Внутренние» в настройке «Исключить» выше исключает такие заказ-наряды из
+          показателей — как будто их не существует; на список заказ-нарядов это не влияет, там есть
+          отдельный фильтр «Внутренний».
         </p>
       </div>
 

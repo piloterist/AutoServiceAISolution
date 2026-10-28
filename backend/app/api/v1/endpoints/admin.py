@@ -220,6 +220,7 @@ def _user_out(user, department_name: str | None) -> UserOut:
         department_name=department_name,
         workshop_id=user.workshop_id,
         default_repair_type=user.default_repair_type,
+        employee_id=user.employee_id,
     )
 
 
@@ -247,7 +248,11 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)) -> UserOut:
             department_id=payload.department_id,
             workshop_id=payload.workshop_id,
             default_repair_type=payload.default_repair_type,
+            employee_id=payload.employee_id,
         )
+    except admin_service.EmployeeLinkError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except Exception as exc:  # unique login violation
         db.rollback()
         raise HTTPException(
@@ -276,7 +281,11 @@ def update_user(user_id: uuid.UUID, payload: UserUpdate, db: Session = Depends(g
             department_id=payload.department_id,
             workshop_id=payload.workshop_id,
             default_repair_type=payload.default_repair_type,
+            employee_id=payload.employee_id,
         )
+    except admin_service.EmployeeLinkError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except Exception as exc:
         db.rollback()
         raise HTTPException(

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import { usersApi } from "@/lib/admin-client";
 import { USER_ROLES, USER_THEMES } from "@/lib/admin-constants";
-import type { OrgDepartment, OrgUser, Workshop } from "@/lib/backend-api";
+import type { Employee, OrgDepartment, OrgUser, Workshop } from "@/lib/backend-api";
 import { REPAIR_TYPE_FILTERS } from "@/lib/planner-constants";
 
 import { AdminModal } from "./AdminModal";
@@ -18,6 +18,7 @@ type FormState = {
   department_id: string; // "" = не выбрано
   workshop_id: string;
   default_repair_type: string; // "" = не задано
+  employee_id: string; // "" = не привязан
 };
 
 function emptyForm(): FormState {
@@ -30,6 +31,7 @@ function emptyForm(): FormState {
     department_id: "",
     workshop_id: "",
     default_repair_type: "",
+    employee_id: "",
   };
 }
 
@@ -43,6 +45,7 @@ function toForm(user: OrgUser): FormState {
     department_id: user.department_id ?? "",
     workshop_id: user.workshop_id ?? "",
     default_repair_type: user.default_repair_type ?? "",
+    employee_id: user.employee_id ?? "",
   };
 }
 
@@ -50,10 +53,12 @@ export function UsersTab({
   initialUsers,
   departments,
   workshops,
+  employees,
 }: {
   initialUsers: OrgUser[];
   departments: OrgDepartment[];
   workshops: Workshop[];
+  employees: Employee[];
 }) {
   const [users, setUsers] = useState(initialUsers);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -68,10 +73,24 @@ export function UsersTab({
     setSelectedId((prev) => (prev === user.id ? null : user.id));
   };
 
+  const employeeNames = useMemo(() => new Map(employees.map((e) => [e.id, e.full_name])), [employees]);
+
   const availableWorkshops = useMemo(
     () => (form.department_id ? workshops.filter((w) => w.department_id === form.department_id) : workshops),
     [workshops, form.department_id],
   );
+
+  // An employee can belong to one user only: those already linked to ANOTHER user
+  // are not offered (the server refuses them too).
+  const availableEmployees = useMemo(() => {
+    const editingId = editing && editing !== "new" ? editing.id : null;
+    const taken = new Set(
+      users.filter((u) => u.employee_id && u.id !== editingId).map((u) => u.employee_id as string),
+    );
+    return employees
+      .filter((e) => !taken.has(e.id))
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  }, [employees, users, editing]);
 
   const openNew = () => {
     setForm(emptyForm());
@@ -103,6 +122,7 @@ export function UsersTab({
           department_id: form.department_id || null,
           workshop_id: form.workshop_id || null,
           default_repair_type: form.default_repair_type || null,
+          employee_id: form.employee_id || null,
         });
         setUsers((prev) => [...prev, created].sort((a, b) => a.full_name.localeCompare(b.full_name)));
       } else if (editing) {
@@ -115,6 +135,7 @@ export function UsersTab({
           department_id: form.department_id || null,
           workshop_id: form.workshop_id || null,
           default_repair_type: form.default_repair_type || null,
+          employee_id: form.employee_id || null,
         });
         setUsers((prev) =>
           prev.map((u) => (u.id === updated.id ? updated : u)).sort((a, b) => a.full_name.localeCompare(b.full_name)),
@@ -171,6 +192,7 @@ export function UsersTab({
             <th>Роль</th>
             <th>Тема</th>
             <th>Подразделение</th>
+            <th>Сотрудник</th>
           </tr>
         </thead>
         <tbody>
@@ -185,11 +207,18 @@ export function UsersTab({
               <td>{user.role}</td>
               <td>{USER_THEMES.find((t) => t.value === user.theme)?.label ?? user.theme}</td>
               <td>{user.department_name ?? "—"}</td>
+              <td>
+                {user.employee_id ? (
+                  (employeeNames.get(user.employee_id) ?? "—")
+                ) : (
+                  <span className="admin-hint">не привязан</span>
+                )}
+              </td>
             </tr>
           ))}
           {users.length === 0 && (
             <tr>
-              <td colSpan={5} className="admin-empty-row">
+              <td colSpan={6} className="admin-empty-row">
                 Пользователей пока нет
               </td>
             </tr>
@@ -201,8 +230,9 @@ export function UsersTab({
         open={editing !== null}
         title={editing === "new" ? "Новый пользователь" : "Изменить пользователя"}
         onClose={close}
+        wide
       >
-        <div className="admin-form-grid">
+        <div className="admin-form-grid admin-form-grid--3">
           <div className="admin-form-field">
             <label htmlFor="user-full-name">ФИО</label>
             <input
@@ -310,6 +340,24 @@ export function UsersTab({
               {REPAIR_TYPE_FILTERS.map((type) => (
                 <option key={type} value={type}>
                   {type}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="admin-form-field">
+            <label htmlFor="user-employee">
+              Сотрудник <span className="admin-hint">(из справочника «Сотрудники», один сотрудник — один пользователь)</span>
+            </label>
+            <select
+              id="user-employee"
+              value={form.employee_id}
+              onChange={(e) => setForm((prev) => ({ ...prev, employee_id: e.target.value }))}
+            >
+              <option value="">— не привязан —</option>
+              {availableEmployees.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.full_name} — {e.specialty}
                 </option>
               ))}
             </select>

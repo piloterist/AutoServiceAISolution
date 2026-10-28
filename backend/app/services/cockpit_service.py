@@ -57,6 +57,12 @@ from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
 from app.services.internal_order_rules import is_physical_person
+from app.services.order_exclusion import (
+    OrderExclusion,
+    exclusion_active,
+    exclusion_filters,
+    order_exclusion,
+)
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
 # Russia has used a flat UTC+3 with no DST since 2014 - same fixed-offset
@@ -191,7 +197,7 @@ def _closed_revenue_filters(
     period_start: datetime,
     period_end: datetime,
     revenue_statuses: list[str],
-    exclude_internal: bool,
+    exclusion: OrderExclusion | None,
     excluded_repair_types: list[str] | None = None,
     only_repair_types: list[str] | None = None,
 ) -> list:
@@ -208,8 +214,7 @@ def _closed_revenue_filters(
         filters.append(WorkOrder.department.in_(source_departments))
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
-    if exclude_internal:
-        filters.append(WorkOrder.is_internal.is_(False))
+    filters.extend(exclusion_filters(exclusion))
     if only_repair_types is not None:
         # Budget's split rows: exactly these repair types (an empty list = none).
         filters.append(WorkOrder.repair_type.in_(only_repair_types))
@@ -252,7 +257,7 @@ def _has_unattributed_revenue(
     period_start: datetime,
     period_end: datetime,
     revenue_statuses: list[str],
-    exclude_internal: bool,
+    exclusion: OrderExclusion | None,
 ) -> bool:
     """Whether any revenue-eligible work order in the whole-company total
     has a `department` value with no Workshop mapping at all - the
@@ -267,8 +272,7 @@ def _has_unattributed_revenue(
     ]
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
-    if exclude_internal:
-        filters.append(WorkOrder.is_internal.is_(False))
+    filters.extend(exclusion_filters(exclusion))
     count = db.execute(select(func.count()).select_from(WorkOrder).where(*filters)).scalar_one()
     return count > 0
 
@@ -314,19 +318,18 @@ def _payments(
     source_departments: list[str] | None,
     period_start: datetime,
     period_end: datetime,
-    exclude_internal: bool,
+    exclusion: OrderExclusion | None,
 ) -> Decimal:
     filters = [
         WorkOrderPaymentEvent.paid_at >= period_start,
         WorkOrderPaymentEvent.paid_at < period_end,
     ]
     query = select(func.sum(WorkOrderPaymentEvent.amount))
-    if source_departments is not None or exclude_internal:
+    if source_departments is not None or exclusion_active(exclusion):
         query = query.join(WorkOrder, WorkOrder.id == WorkOrderPaymentEvent.work_order_id)
         if source_departments is not None:
             filters.append(WorkOrder.department.in_(source_departments))
-        if exclude_internal:
-            filters.append(WorkOrder.is_internal.is_(False))
+        filters.extend(exclusion_filters(exclusion))
     total = db.execute(query.where(*filters)).scalar_one()
     return total or Decimal("0")
 
@@ -356,7 +359,7 @@ def _receivables(
     *,
     source_departments: list[str] | None,
     revenue_statuses: list[str],
-    exclude_internal: bool,
+    exclusion: OrderExclusion | None,
     warranty_repair_types: list[str] | None = None,
 ) -> Decimal:
     """ДЗ (дебиторская задолженность) - a running total, not scoped to a
@@ -397,8 +400,7 @@ def _receivables(
         filters.append(WorkOrder.department.in_(source_departments))
     if revenue_statuses:
         filters.append(WorkOrder.status.in_(revenue_statuses))
-    if exclude_internal:
-        filters.append(WorkOrder.is_internal.is_(False))
+    filters.extend(exclusion_filters(exclusion))
     if warranty_repair_types:
         filters.append(
             or_(
@@ -415,7 +417,7 @@ def _nzp_body(
     *,
     workshop_id: uuid.UUID | None,
     period_end_date_msk: date,
-    exclude_internal: bool,
+    exclusion: OrderExclusion | None,
 ) -> Decimal:
     """Кузовной НЗП: work orders linked to a BodyCar with a "Сборка-
     Полировка" or "Выдача" этап planned to end on/before period_end (in
@@ -441,8 +443,7 @@ def _nzp_body(
         )
 
     filters = [WorkOrder.id.in_(qualifying_work_order_ids), WorkOrder.closed_date.is_(None)]
-    if exclude_internal:
-        filters.append(WorkOrder.is_internal.is_(False))
+    filters.extend(exclusion_filters(exclusion))
     total = db.execute(select(func.sum(WorkOrder.amount)).where(*filters)).scalar_one()
     return total or Decimal("0")
 
@@ -525,7 +526,7 @@ def get_snapshot(
     settings = get_settings()
     app_settings = get_app_settings(db)
     revenue_statuses = settings.revenue_statuses_list
-    exclude_internal = app_settings.exclude_internal_orders
+    exclusion = order_exclusion(app_settings)
 
     workshop_label = None
     if workshop_id is not None:
@@ -543,7 +544,7 @@ def get_snapshot(
         period_start=period_start,
         period_end=period_end,
         revenue_statuses=revenue_statuses,
-        exclude_internal=exclude_internal,
+        exclusion=exclusion,
         excluded_repair_types=revenue_excluded_repair_types(app_settings),
     )
     payments = _payments(
@@ -551,14 +552,14 @@ def get_snapshot(
         source_departments=source_departments,
         period_start=period_start,
         period_end=period_end,
-        exclude_internal=exclude_internal,
+        exclusion=exclusion,
     )
 
     receivables = _receivables(
         db,
         source_departments=source_departments,
         revenue_statuses=revenue_statuses,
-        exclude_internal=exclude_internal,
+        exclusion=exclusion,
         warranty_repair_types=app_settings.warranty_repair_types,
     )
 
@@ -578,7 +579,7 @@ def get_snapshot(
             db,
             workshop_id=workshop_id,
             period_end_date_msk=period_end_date_msk,
-            exclude_internal=exclude_internal,
+            exclusion=exclusion,
         )
 
     effective_revenue = revenue + (nzp_total or Decimal("0"))
@@ -605,7 +606,7 @@ def get_snapshot(
             period_start=period_start,
             period_end=period_end,
             revenue_statuses=revenue_statuses,
-            exclude_internal=exclude_internal,
+            exclusion=exclusion,
         )
 
     # Company-wide health-check, not scoped to the selected цех/period - same

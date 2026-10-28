@@ -102,7 +102,12 @@ export function SettingsTabs({
       {tab === "general" && <SettingsForm initialSettings={appSettings} repairTypes={repairTypes} />}
       {tab === "users" && (
         <>
-          <UsersTab initialUsers={users} departments={departments} workshops={workshops} />
+          <UsersTab
+            initialUsers={users}
+            departments={departments}
+            workshops={workshops}
+            employees={employees}
+          />
           <RoleTabVisibilityCard initialRows={roleTabVisibility} />
         </>
       )}

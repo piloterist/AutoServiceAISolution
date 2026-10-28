@@ -190,27 +190,60 @@ def is_external_repair_type(repair_type: str | None) -> bool:
     return repair_type == EXTERNAL_REPAIR_TYPE
 
 
+# Who may pay for an internal work order (product ask, 2026-10-28): only these
+# three, whichever organization the order was raised under. An empty payer does
+# not qualify either.
+INTERNAL_PAYERS = (ORG_PAN_MOTORS, ORG_PAN_STANISLAV, ORG_PAN_OKSANA)
+
+# The organizations an internal work order may be raised under.
+INTERNAL_ORGANIZATIONS = (ORG_PAN_STANISLAV, ORG_PAN_OKSANA, ORG_PAN_MOTORS, ORG_SOKOLOVA)
+
+
 def internal_order_allowed(organization: str | None, payer: str | None) -> bool:
     """Whether a non-external work order on an "insurance car" (see
-    recompute_internal_flags) actually counts as "внутренний", based on
-    which PanMotors legal entity it was raised under and who pays. Any
-    organization not in this fixed set never allows an internal order.
+    recompute_internal_flags) actually counts as "внутренний": it must be raised
+    under one of the PanMotors legal entities (INTERNAL_ORGANIZATIONS) AND be paid by
+    one of INTERNAL_PAYERS. Any other organization or payer never makes it internal.
     """
-    org = norm_org(organization)
+    return norm_org(organization) in INTERNAL_ORGANIZATIONS and norm_org(payer) in INTERNAL_PAYERS
 
-    if org == ORG_PAN_STANISLAV:
-        return not is_physical_person(payer)
-    if org == ORG_PAN_OKSANA:
-        return True
-    if org == ORG_PAN_MOTORS:
-        return True
-    if org == ORG_SOKOLOVA:
-        if not payer or not str(payer).strip():
-            return True
-        # Deliberately an exact whitelist, not "not a physical person" -
-        # that broader check let any unrelated company (e.g. a genuine
-        # third-party customer paying for their own repair) count as
-        # internal just for being a legal entity, which is what flagged
-        # СЛ00000310 (payer "ООО Дело Техники") incorrectly.
-        return norm_org(payer) in (ORG_PAN_OKSANA, ORG_PAN_MOTORS, ORG_PAN_STANISLAV)
-    return False
+
+def classify_car_group(rows: list) -> dict:
+    """Decides is_internal for every work order of ONE car (same car_key).
+
+    `rows` need id, document_date, external_number, repair_type, organization,
+    payer_name; returns {id: bool}. A non-external order on a car that has an
+    external (страховой) order is internal when:
+
+    - the payer is filled: organization + payer pass internal_order_allowed;
+    - the payer is empty (typically a warranty order, which has no payer of its
+      own; product ask, 2026-10-28): it follows the car's history, so the car
+      stays "ours" only while the previous order was ours:
+        * the latest earlier NON-external order decides - internal when ITS payer
+          is one of INTERNAL_PAYERS (a private client or another company there
+          means the car already belongs to a client);
+        * no such order, but exactly one earlier (external) order - internal;
+        * no earlier orders, or several earlier ones that are all external - not.
+    """
+    ordered = sorted(
+        rows, key=lambda r: (r.document_date is None, r.document_date, r.external_number)
+    )
+    has_external = any(is_external_repair_type(r.repair_type) for r in ordered)
+    result: dict = {}
+    for index, row in enumerate(ordered):
+        if not has_external or is_external_repair_type(row.repair_type):
+            result[row.id] = False
+        elif norm_org(row.payer_name):
+            result[row.id] = internal_order_allowed(row.organization, row.payer_name)
+        else:
+            earlier = ordered[:index]
+            earlier_own = [r for r in earlier if not is_external_repair_type(r.repair_type)]
+            if earlier_own:
+                result[row.id] = internal_order_allowed(
+                    row.organization, earlier_own[-1].payer_name
+                )
+            elif len(earlier) == 1:
+                result[row.id] = norm_org(row.organization) in INTERNAL_ORGANIZATIONS
+            else:
+                result[row.id] = False
+    return result

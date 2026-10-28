@@ -39,7 +39,7 @@ export type WorkOrderListItem = {
   organization: string | null;
   // Computed at import time from the car's VIN + org/payer rules (see
   // backend services/internal_order_rules.py) - "Специфика PanMotors".
-  // Shown and filterable on the list; AppSettings.exclude_internal_orders
+  // Shown and filterable on the list; AppSettings.order_exclusion_mode ("internal")
   // can additionally exclude these from dashboard aggregates entirely.
   is_internal: boolean;
   amount: string;
@@ -116,6 +116,8 @@ export type RepairTypeListResponse = {
   repair_types: string[];
 };
 
+export type OrderExclusionMode = "none" | "internal" | "external";
+
 export type AppSettings = {
   // Касса: the locked period (both inclusive, "YYYY-MM-DD") - no cash entry
   // can be created, changed or deleted on those days. Both set or both null.
@@ -127,9 +129,9 @@ export type AppSettings = {
   // below (see "Специфика PanMotors" fields).
   insurance_repair_type: string | null;
   exclude_internal_insurance: boolean;
-  // "Специфика PanMotors" group - gates WorkOrderListItem.is_internal on
-  // the dashboard only (see backend services/internal_order_rules.py).
-  exclude_internal_orders: boolean;
+  // "Специфика PanMotors" group - what the dashboard-style figures leave out:
+  // nothing / the internal orders / the insurance ones (backend services/order_exclusion.py).
+  order_exclusion_mode: OrderExclusionMode;
   // Not wired to any filtering logic yet - deliberately inert (see
   // SettingsForm.tsx).
   hide_internal_orders: boolean;
@@ -865,6 +867,8 @@ export type OrgUser = {
   department_name: string | null;
   workshop_id: string | null;
   default_repair_type: string | null;
+  // The employee of the directory this login is (each employee only once).
+  employee_id: string | null;
 };
 
 export type OrgUserCreate = {
@@ -876,6 +880,7 @@ export type OrgUserCreate = {
   department_id: string | null;
   workshop_id: string | null;
   default_repair_type: string | null;
+  employee_id: string | null;
 };
 
 export type OrgUserUpdate = {
@@ -887,6 +892,7 @@ export type OrgUserUpdate = {
   department_id: string | null;
   workshop_id: string | null;
   default_repair_type: string | null;
+  employee_id: string | null;
 };
 
 export function getOrgUsers(): Promise<OrgUser[]> {
@@ -1896,6 +1902,10 @@ export type CashWorkshop = {
   workshop_type: string;
 };
 
+export type CashCardHolder = { id: string; name: string };
+
+export type CashScope = "all" | "cash" | "personal";
+
 export type CashContext = {
   workshops: CashWorkshop[];
   default_workshop_id: string | null;
@@ -1905,6 +1915,10 @@ export type CashContext = {
   today: string;
   lock_from: string | null;
   lock_to: string | null;
+  // The employee linked to the acting user (default card holder; null = not linked)
+  // and the employees a personal card can be tied to (specialty Мастер приёмщик).
+  current_employee_id: string | null;
+  card_holders: CashCardHolder[];
 };
 
 export type CashSearchHit = {
@@ -1923,6 +1937,10 @@ export type CashEntry = {
   comment: string | null;
   work_order_id: string | null;
   work_order_number: string | null;
+  // "Личная карта": a Приход/Расход НАЛ that went through an employee's own card.
+  personal_card: boolean;
+  card_holder_id: string | null;
+  card_holder_name: string | null;
   created_by_name: string;
   created_at: string;
   updated_by_name: string | null;
@@ -1941,6 +1959,10 @@ export type CashBook = {
   entries: CashEntry[];
   lock_from: string | null;
   lock_to: string | null;
+  scope: CashScope;
+  card_holder_id: string | null;
+  // Only with card_holder_id: that card's balance as of today (all visible desks).
+  card_balance_today: string | null;
 };
 
 export type CashEntryWrite = {
@@ -1952,6 +1974,10 @@ export type CashEntryWrite = {
   comment: string | null;
   work_order_id: string | null;
   work_order_number: string | null;
+  // Only for Приход НАЛ / Расход НАЛ; the holder defaults to the employee linked to
+  // the acting user, another one needs "Корректировка кассы".
+  personal_card: boolean;
+  card_holder_id: string | null;
 };
 
 export type CashWorkOrder = {
@@ -1970,12 +1996,24 @@ export function getCashContext(actor: CashActor): Promise<CashContext> {
 }
 
 export function getCashBook(
-  params: { workshopId: string; dateFrom: string; dateTo: string },
+  params: {
+    workshopId: string;
+    dateFrom: string;
+    dateTo: string;
+    scope?: CashScope;
+    cardHolderId?: string;
+  },
   actor: CashActor,
 ): Promise<CashBook> {
   return backendGet<CashBook>(
     "/api/v1/cash/book",
-    { workshop_id: params.workshopId, date_from: params.dateFrom, date_to: params.dateTo },
+    {
+      workshop_id: params.workshopId,
+      date_from: params.dateFrom,
+      date_to: params.dateTo,
+      ...(params.scope ? { scope: params.scope } : {}),
+      ...(params.cardHolderId ? { card_holder_id: params.cardHolderId } : {}),
+    },
     actorHeaders(actor),
   );
 }

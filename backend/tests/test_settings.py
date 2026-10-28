@@ -13,7 +13,7 @@ def test_get_settings_returns_defaults_on_first_access(client, auth_headers) -> 
     body = response.json()
     assert body["insurance_repair_type"] is None
     assert body["exclude_internal_insurance"] is False
-    assert body["exclude_internal_orders"] is False
+    assert body["order_exclusion_mode"] == "none"
     assert body["hide_internal_orders"] is False
     assert body["warranty_repair_types"] == []
     assert body["fivesystems_api_enabled"] is False
@@ -28,7 +28,7 @@ def test_put_settings_persists_values(client, auth_headers) -> None:
         json={
             "insurance_repair_type": "Гарантийный ремонт",
             "exclude_internal_insurance": True,
-            "exclude_internal_orders": True,
+            "order_exclusion_mode": "internal",
             "hide_internal_orders": True,
             "fivesystems_api_enabled": True,
             "daily_logout_time": "22:00",
@@ -39,7 +39,7 @@ def test_put_settings_persists_values(client, auth_headers) -> None:
     body = response.json()
     assert body["insurance_repair_type"] == "Гарантийный ремонт"
     assert body["exclude_internal_insurance"] is True
-    assert body["exclude_internal_orders"] is True
+    assert body["order_exclusion_mode"] == "internal"
     assert body["hide_internal_orders"] is True
     assert body["fivesystems_api_enabled"] is True
     assert body["daily_logout_time"] == "22:00"
@@ -107,7 +107,7 @@ def test_put_settings_can_clear_warranty_repair_types(client, auth_headers) -> N
 def test_put_settings_pm_fields_are_independent_of_the_insurance_fields(
     client, auth_headers
 ) -> None:
-    """ "Специфика PanMotors" (exclude_internal_orders/hide_internal_orders)
+    """ "Специфика PanMotors" (order_exclusion_mode/hide_internal_orders)
     is a separate feature from the older insurance_repair_type/
     exclude_internal_insurance pair - saving one must not touch the other."""
     client.put(
@@ -116,7 +116,7 @@ def test_put_settings_pm_fields_are_independent_of_the_insurance_fields(
         json={
             "insurance_repair_type": "Гарантийный ремонт",
             "exclude_internal_insurance": True,
-            "exclude_internal_orders": False,
+            "order_exclusion_mode": "none",
             "hide_internal_orders": False,
         },
     )
@@ -127,7 +127,7 @@ def test_put_settings_pm_fields_are_independent_of_the_insurance_fields(
         json={
             "insurance_repair_type": "Гарантийный ремонт",
             "exclude_internal_insurance": True,
-            "exclude_internal_orders": True,
+            "order_exclusion_mode": "internal",
             "hide_internal_orders": True,
         },
     )
@@ -136,7 +136,7 @@ def test_put_settings_pm_fields_are_independent_of_the_insurance_fields(
     body = response.json()
     assert body["insurance_repair_type"] == "Гарантийный ремонт"
     assert body["exclude_internal_insurance"] is True
-    assert body["exclude_internal_orders"] is True
+    assert body["order_exclusion_mode"] == "internal"
     assert body["hide_internal_orders"] is True
 
 
@@ -153,3 +153,16 @@ def test_put_settings_persists_virtual_repair_types(client, auth_headers) -> Non
         "Виртуальный",
         "Тест",
     ]
+
+
+def test_order_exclusion_mode_accepts_only_the_three_values(client, auth_headers) -> None:
+    for mode in ("none", "internal", "external"):
+        response = client.put(
+            SETTINGS_URL, headers=auth_headers, json={"order_exclusion_mode": mode}
+        )
+        assert response.status_code == 200
+        assert response.json()["order_exclusion_mode"] == mode
+        assert client.get(SETTINGS_URL, headers=auth_headers).json()["order_exclusion_mode"] == mode
+
+    bad = client.put(SETTINGS_URL, headers=auth_headers, json={"order_exclusion_mode": "all"})
+    assert bad.status_code == 422

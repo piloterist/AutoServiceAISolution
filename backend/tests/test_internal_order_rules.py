@@ -5,11 +5,15 @@ Faithful port of CarServiceOrderAnalitics' insurance_analytics.py rules
 tests pin down the exact edge cases that logic depends on.
 """
 
+from datetime import datetime
+from types import SimpleNamespace
+
 from app.services.internal_order_rules import (
     ORG_PAN_MOTORS,
     ORG_PAN_OKSANA,
     ORG_PAN_STANISLAV,
     ORG_SOKOLOVA,
+    classify_car_group,
     internal_order_allowed,
     is_external_repair_type,
     is_physical_person,
@@ -138,62 +142,105 @@ def test_is_physical_person_true_for_real_name_stored_entirely_in_caps() -> None
     assert is_physical_person("ЮРИЙ") is True
 
 
-def test_internal_order_allowed_pan_stanislav_requires_non_physical_payer() -> None:
-    assert internal_order_allowed(ORG_PAN_STANISLAV, "ООО Ромашка") is True
-    assert internal_order_allowed(ORG_PAN_STANISLAV, "Иванов Иван Иванович") is False
-    # Empty payer counts as "not a physical person" for this org.
-    assert internal_order_allowed(ORG_PAN_STANISLAV, None) is True
-    assert internal_order_allowed(ORG_PAN_STANISLAV, "") is True
+PAYERS = (ORG_PAN_MOTORS, ORG_PAN_STANISLAV, ORG_PAN_OKSANA)
 
 
-def test_internal_order_allowed_pan_oksana_always_true() -> None:
-    assert internal_order_allowed(ORG_PAN_OKSANA, "Иванов Иван Иванович") is True
-    assert internal_order_allowed(ORG_PAN_OKSANA, None) is True
+def test_internal_order_allowed_for_every_organization_with_an_allowed_payer() -> None:
+    for organization in (ORG_PAN_STANISLAV, ORG_PAN_OKSANA, ORG_PAN_MOTORS, ORG_SOKOLOVA):
+        for payer in PAYERS:
+            assert internal_order_allowed(organization, payer) is True, (organization, payer)
 
 
-def test_internal_order_allowed_pan_motors_always_true() -> None:
-    assert internal_order_allowed(ORG_PAN_MOTORS, "Иванов Иван Иванович") is True
-    assert internal_order_allowed(ORG_PAN_MOTORS, None) is True
-
-
-def test_internal_order_allowed_sokolova_empty_payer() -> None:
-    assert internal_order_allowed(ORG_SOKOLOVA, None) is True
-    assert internal_order_allowed(ORG_SOKOLOVA, "   ") is True
-
-
-def test_internal_order_allowed_sokolova_payer_is_pan_oksana() -> None:
-    assert internal_order_allowed(ORG_SOKOLOVA, ORG_PAN_OKSANA) is True
-    assert internal_order_allowed(ORG_SOKOLOVA, "  ип пан оксана игоревна  ") is True
-
-
-def test_internal_order_allowed_sokolova_payer_is_pan_motors() -> None:
-    assert internal_order_allowed(ORG_SOKOLOVA, ORG_PAN_MOTORS) is True
-    assert internal_order_allowed(ORG_SOKOLOVA, "  пан-моторс,   ооо  ") is True
-
-
-def test_internal_order_allowed_sokolova_payer_is_pan_stanislav() -> None:
-    assert internal_order_allowed(ORG_SOKOLOVA, ORG_PAN_STANISLAV) is True
-
-
-def test_internal_order_allowed_sokolova_unrelated_company_rejected() -> None:
-    """Deliberately an exact whitelist, not "any non-physical-person
-    payer" - a genuine third-party customer paying for their own repair
-    (e.g. "ООО Дело Техники", from the СЛ00000310 case) must NOT count as
-    internal just for being a company."""
-    assert internal_order_allowed(ORG_SOKOLOVA, "ООО Ромашка") is False
-    assert internal_order_allowed(ORG_SOKOLOVA, "ООО Дело Техники") is False
-
-
-def test_internal_order_allowed_sokolova_physical_payer_rejected() -> None:
-    assert internal_order_allowed(ORG_SOKOLOVA, "Иванов Иван Иванович") is False
+def test_internal_order_allowed_payer_must_be_one_of_the_three() -> None:
+    """Product ask, 2026-10-28: only ПАН-МОТОРС ООО, ИП Пан Станислав Вячеславович and
+    ИП Пан Оксана Игоревна may pay for an internal order - a company, a person or an
+    empty payer never qualifies, under any organization."""
+    for organization in (ORG_PAN_STANISLAV, ORG_PAN_OKSANA, ORG_PAN_MOTORS, ORG_SOKOLOVA):
+        for payer in ("ООО Ромашка", "ООО Дело Техники", "Иванов Иван Иванович", None, "", "   "):
+            assert internal_order_allowed(organization, payer) is False, (organization, payer)
 
 
 def test_internal_order_allowed_unknown_organization_never_allowed() -> None:
-    assert internal_order_allowed("ИП Совершенно Другое Лицо", None) is False
-    assert internal_order_allowed("ИП Совершенно Другое Лицо", "ООО Ромашка") is False
-    assert internal_order_allowed(None, None) is False
+    for payer in (*PAYERS, None, "ООО Ромашка"):
+        assert internal_order_allowed("ИП Совершенно Другое Лицо", payer) is False
+    assert internal_order_allowed(None, ORG_PAN_MOTORS) is False
 
 
-def test_internal_order_allowed_org_normalization() -> None:
-    # Extra whitespace/case in the organization name must still match.
-    assert internal_order_allowed("  пан-моторс,   ооо  ", None) is True
+def test_internal_order_allowed_normalizes_organization_and_payer() -> None:
+    assert internal_order_allowed("  пан-моторс,   ооо  ", "  ип пан оксана игоревна  ") is True
+    assert internal_order_allowed(ORG_SOKOLOVA, "  пан-моторс,   ооо  ") is True
+
+
+# --- classify_car_group: an empty payer (warranty) follows the car's history ---
+
+OURS = "ПАН-МОТОРС, ООО"
+SOKOLOVA = "ИП Соколова Марина Эмильевна"
+
+
+def _row(number, day, repair_type, payer, organization=SOKOLOVA):
+    return SimpleNamespace(
+        id=number,
+        external_number=number,
+        document_date=datetime(2026, 5, day),
+        repair_type=repair_type,
+        organization=organization,
+        payer_name=payer,
+    )
+
+
+def test_warranty_follows_the_latest_earlier_non_external_order() -> None:
+    ours = classify_car_group(
+        [
+            _row("EXT", 1, "Страховой", "СПАО Ингосстрах"),
+            _row("OWN", 2, "Текущий", OURS),
+            _row("W", 3, "Гарантийный", ""),
+        ]
+    )
+    assert ours["W"] is True and ours["OWN"] is True and ours["EXT"] is False
+
+    client = classify_car_group(
+        [
+            _row("EXT", 1, "Страховой", "СПАО Ингосстрах"),
+            _row("OWN", 2, "Текущий", OURS),
+            _row("CLIENT", 3, "Текущий", "Антюшин Святослав Сергеевич"),
+            _row("W", 4, "Гарантийный", ""),
+        ]
+    )
+    assert client["W"] is False and client["CLIENT"] is False
+
+
+def test_warranty_after_a_single_external_order_is_internal() -> None:
+    result = classify_car_group(
+        [_row("EXT", 1, "Страховой", "СПАО Ингосстрах"), _row("W", 2, "Гарантийный", "")]
+    )
+    assert result["W"] is True
+
+
+def test_warranty_without_earlier_orders_or_after_several_external_ones_is_not_internal() -> None:
+    first = classify_car_group([_row("EXT", 5, "Страховой", "X"), _row("W", 1, "Гарантийный", "")])
+    assert first["W"] is False
+    several = classify_car_group(
+        [
+            _row("E1", 1, "Страховой", "X"),
+            _row("E2", 2, "Страховой", "X"),
+            _row("W", 3, "Гарантийный", ""),
+        ]
+    )
+    assert several["W"] is False
+
+
+def test_warranty_on_a_car_without_external_orders_is_not_internal() -> None:
+    result = classify_car_group([_row("OWN", 1, "Текущий", OURS), _row("W", 2, "Гарантийный", "")])
+    assert result == {"OWN": False, "W": False}
+
+
+def test_filled_payer_keeps_the_plain_rule() -> None:
+    result = classify_car_group(
+        [
+            _row("EXT", 1, "Страховой", "X"),
+            _row("A", 2, "Текущий", OURS),
+            _row("B", 3, "Текущий", "Иванов Иван"),
+            _row("C", 4, "Текущий", OURS, organization="ООО Левая"),
+        ]
+    )
+    assert (result["A"], result["B"], result["C"]) == (True, False, False)

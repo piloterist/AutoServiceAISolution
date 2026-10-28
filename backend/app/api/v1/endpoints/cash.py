@@ -73,15 +73,20 @@ def book(
     workshop_id: uuid.UUID,
     date_from: date,
     date_to: date | None = None,
+    scope: str = "all",
+    card_holder_id: uuid.UUID | None = None,
     who: tuple[uuid.UUID | None, str] = Depends(actor),
     db: Session = Depends(get_db),
 ) -> CashBookResponse:
     """Opening/closing cash balance, totals and entries of one cash desk for
-    [date_from, date_to] (a single day when date_to is omitted)."""
+    [date_from, date_to] (a single day when date_to is omitted). `scope`: all /
+    cash / personal; `card_holder_id`: one person's personal card."""
     access = cash_service.get_access(db, who[0])
     try:
         return CashBookResponse.model_validate(
-            cash_service.get_book(db, access, workshop_id, date_from, date_to or date_from)
+            cash_service.get_book(
+                db, access, workshop_id, date_from, date_to or date_from, scope, card_holder_id
+            )
         )
     except CashError as exc:
         raise _http_error(exc) from exc
@@ -167,6 +172,8 @@ def create_entry(
             work_order_number=payload.work_order_number,
             actor_user_id=who[0],
             actor_name=who[1],
+            personal_card=payload.personal_card,
+            card_holder_id=payload.card_holder_id,
         )
     except CashError as exc:
         raise _http_error(exc) from exc
@@ -195,6 +202,8 @@ def update_entry(
             work_order_number=payload.work_order_number,
             actor_user_id=who[0],
             actor_name=who[1],
+            personal_card=payload.personal_card,
+            card_holder_id=payload.card_holder_id,
         )
     except CashError as exc:
         raise _http_error(exc) from exc
