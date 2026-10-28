@@ -22,7 +22,7 @@ Pan-Motors_web.md).
 from __future__ import annotations
 
 import uuid
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import httpx
 import structlog
@@ -37,7 +37,7 @@ FETCH_TIMEOUT_SECONDS = 15.0
 
 
 def _filename_from_url(url: str) -> str:
-    return urlparse(url).path.rsplit("/", 1)[-1] or "photo.jpg"
+    return unquote(urlparse(url).path.rsplit("/", 1)[-1]) or "photo.jpg"
 
 
 def photo_disk_path(lead_id: uuid.UUID, filename: str) -> str:

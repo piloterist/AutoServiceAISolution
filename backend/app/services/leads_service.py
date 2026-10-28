@@ -32,6 +32,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from urllib.parse import quote, urlparse
 
 import structlog
 from sqlalchemy import select
@@ -135,7 +136,51 @@ def _extract_photos(payload: dict[str, Any]) -> list[str] | None:
     names = [name for name in files.split(";") if name.strip()]
     if not names:
         return None
-    return [f"https://pan-motors.ru/tmp_files/{folder}/{name}" for name in names]
+    # The real upload folder is tmp_files/files-<folder>/ (see Pan-Motors_web.md).
+    return [
+        f"https://pan-motors.ru/tmp_files/files-{folder}/{quote(name.strip())}" for name in names
+    ]
+
+
+MAX_PHOTO_URLS = 10
+
+
+def _site_photo_urls(payload: dict[str, Any]) -> list[str]:
+    """`photo_urls`: links to copies of the photos the site keeps for us (see
+    Pan-Motors_web.md) - we download them right after answering the site.
+
+    Only plain https links into the site's tmp_files area are taken (never an IP
+    address or localhost), so the intake token can't be used to make us fetch
+    arbitrary internal addresses."""
+    entries = payload.get("photo_urls")
+    if not isinstance(entries, list):
+        return []
+    urls: list[str] = []
+    for entry in entries[:MAX_PHOTO_URLS]:
+        if not isinstance(entry, str):
+            continue
+        parsed = urlparse(entry.strip())
+        host = parsed.hostname or ""
+        if (
+            parsed.scheme != "https"
+            or "." not in host
+            or host.replace(".", "").isdigit()
+            or ":" in host
+            or not parsed.path.startswith("/tmp_files/")
+        ):
+            logger.warning("lead_photo_url_rejected", url=entry[:200])
+            continue
+        urls.append(parsed.geturl())
+    return urls
+
+
+def photo_urls_to_archive(payload: dict[str, Any]) -> list[str]:
+    """What to download in the background after the lead is stored: the site's own
+    `photo_urls`, else (older callers) the links built from `files`/`folder`.
+    Nothing when the photos came inline (`photos_data`) - those are archived at once."""
+    if _extract_inline_photos(payload):
+        return []
+    return _site_photo_urls(payload) or (_extract_photos(payload) or [])
 
 
 def _extract_inline_photos(payload: dict[str, Any]) -> list[tuple[str, bytes]]:
@@ -196,24 +241,22 @@ def create_lead(db: Session, payload: dict[str, Any]) -> WebsiteLead:
     # Yandex.Disk below, so keeping a second copy in raw_payload would just
     # bloat this JSONB column for nothing.
     stored_payload = {
-        k: v for k, v in payload.items() if k not in ("recaptcha_response", "photos_data")
+        k: v
+        for k, v in payload.items()
+        if k not in ("recaptcha_response", "photos_data", "photo_urls")
     }
 
-    # The site's own /tmp_files/<folder>/<name> links are a short-lived
-    # upload scratch area, not durable storage - archive onto our own
-    # Yandex.Disk (see lead_photos_service) and store OUR serving paths
-    # instead, so the photo survives that folder being cleaned up.
+    # Photos sent inline are archived to our own Yandex.Disk right here (see
+    # lead_photos_service). Photos given as links are downloaded afterwards, in the
+    # background (archive_lead_photos_from_urls), so the site's form never waits.
     lead_id = uuid.uuid4()
     disk_token = telephony_settings_service.get_telephony_settings(db).yandex_disk_token
     inline_photos = _extract_inline_photos(payload)
-    if inline_photos:
-        photos = lead_photos_service.archive_photo_bytes(inline_photos, lead_id, disk_token) or None
-    else:
-        # Fallback for a payload that doesn't send photos_data yet (or
-        # never will, e.g. an older/unrelated caller) - see this function's
-        # own docstring on why this path alone isn't reliable any more.
-        source_photo_urls = _extract_photos(payload) or []
-        photos = lead_photos_service.archive_photos(source_photo_urls, lead_id, disk_token) or None
+    photos = (
+        lead_photos_service.archive_photo_bytes(inline_photos, lead_id, disk_token) or None
+        if inline_photos
+        else None
+    )
 
     lead = WebsiteLead(
         id=lead_id,
@@ -227,6 +270,27 @@ def create_lead(db: Session, payload: dict[str, Any]) -> WebsiteLead:
     db.commit()
     db.refresh(lead)
     return lead
+
+
+def archive_lead_photos_from_urls(bind: Any, lead_id: uuid.UUID, urls: list[str]) -> None:
+    """Background job after the intake answer: download the photo links, archive them
+    to Yandex.Disk and attach our serving paths to the lead. Runs on its own DB
+    session (the request's one is already closed) and never raises."""
+    try:
+        with Session(bind=bind) as db:
+            lead = db.get(WebsiteLead, lead_id)
+            if lead is None:
+                return
+            disk_token = telephony_settings_service.get_telephony_settings(db).yandex_disk_token
+            paths = lead_photos_service.archive_photos(urls, lead_id, disk_token)
+            logger.info(
+                "lead_photos_archived", lead_id=str(lead_id), asked=len(urls), archived=len(paths)
+            )
+            if paths:
+                lead.photos = [*(lead.photos or []), *paths]
+                db.commit()
+    except Exception as exc:  # noqa: BLE001 - a photo problem must never surface anywhere
+        logger.error("lead_photos_background_failed", lead_id=str(lead_id), error=str(exc))
 
 
 # ---- Список / статус -----------------------------------------------------

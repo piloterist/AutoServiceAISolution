@@ -13,7 +13,16 @@ import mimetypes
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    Header,
+    HTTPException,
+    Response,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
@@ -90,6 +99,7 @@ def _lead_out(item: leads_service.LeadWithStatus) -> WebsiteLeadOut:
 
 @router.post("/intake", status_code=status.HTTP_201_CREATED)
 def intake_lead(
+    background_tasks: BackgroundTasks,
     payload: dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
@@ -122,6 +132,13 @@ def intake_lead(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+
+    # Photo links (copies kept by the site) are downloaded after the answer is sent.
+    photo_urls = leads_service.photo_urls_to_archive(payload)
+    if photo_urls:
+        background_tasks.add_task(
+            leads_service.archive_lead_photos_from_urls, db.get_bind(), lead.id, photo_urls
+        )
 
     return {"id": str(lead.id)}
 

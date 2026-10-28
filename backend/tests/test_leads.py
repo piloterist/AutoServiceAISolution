@@ -166,7 +166,7 @@ def test_intake_archives_photos_when_disk_token_configured(
     settings.yandex_disk_token = "a-disk-token"
     db_session.commit()
 
-    photo_url = "https://pan-motors.ru/tmp_files/555/img1.jpg"
+    photo_url = "https://pan-motors.ru/tmp_files/files-555/img1.jpg"
     upload_href = "https://uploader.disk.yandex.net/fake"
     # TestClient itself is httpx-backed, so patching httpx.Client.get/.put
     # at the class level also intercepts the test's OWN requests to the
@@ -273,6 +273,104 @@ def test_intake_archives_inline_photo_bytes_when_present(
     lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
     assert lead["photos"] == [f"/api/leads/{lead_id}/photos/img1.jpg"]
     assert "photos_data" not in lead["raw_payload"]
+
+
+def _fake_site_and_disk(monkeypatch, served: dict[str, bytes]) -> None:  # noqa: ANN001
+    """The site's photo links (`served`: url -> bytes) and Yandex.Disk, both faked."""
+    import httpx
+
+    from app.services.yandex_disk_client import API_BASE
+
+    upload_href = "https://uploader.disk.yandex.net/fake-copy"
+    original_get = httpx.Client.get
+    original_put = httpx.Client.put
+
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        url_str = str(url)
+        if url_str in served:
+            return httpx.Response(
+                200,
+                content=served[url_str],
+                headers={"content-type": "image/jpeg"},
+                request=httpx.Request("GET", url_str),
+            )
+        if url_str == f"{API_BASE}/resources/upload":
+            return httpx.Response(
+                200, json={"href": upload_href}, request=httpx.Request("GET", url_str)
+            )
+        return original_get(self, url, **kwargs)
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        url_str = str(url)
+        if url_str == upload_href or url_str.startswith(f"{API_BASE}/resources"):
+            return httpx.Response(201, request=httpx.Request("PUT", url_str))
+        return original_put(self, url, **kwargs)
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+
+
+def test_intake_downloads_the_site_photo_links_after_answering(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    """The site (no PHP-FPM) keeps copies of the photos and sends only their links
+    (`photo_urls`); we answer at once and download them in the background. Names with
+    spaces / Cyrillic arrive percent-encoded."""
+    from app.services.telephony_settings_service import get_telephony_settings
+
+    _enable_intake(db_session)
+    get_telephony_settings(db_session).yandex_disk_token = "a-disk-token"
+    db_session.commit()
+    base = "https://pan-motors.ru/tmp_files/crm_photos/0123abcd"
+    _fake_site_and_disk(
+        monkeypatch,
+        {f"{base}/img1.jpg": b"one", f"{base}/%D0%A4%D0%BE%D1%82%D0%BE%202.jpg": b"two"},
+    )
+
+    response = client.post(
+        INTAKE_URL,
+        json={
+            "user_phone": "+7 (900) 000-00-11",
+            "files": "img1.jpg;Фото 2.jpg;",
+            "folder": "999",
+            "photo_urls": [f"{base}/img1.jpg", f"{base}/%D0%A4%D0%BE%D1%82%D0%BE%202.jpg"],
+        },
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+    assert response.status_code == 201
+    lead_id = response.json()["id"]
+
+    lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+    assert lead["photos"] == [
+        f"/api/leads/{lead_id}/photos/img1.jpg",
+        f"/api/leads/{lead_id}/photos/Фото 2.jpg",
+    ]
+    assert "photo_urls" not in lead["raw_payload"]
+
+
+def test_intake_ignores_photo_links_outside_the_sites_tmp_files(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    from app.services.telephony_settings_service import get_telephony_settings
+
+    _enable_intake(db_session)
+    get_telephony_settings(db_session).yandex_disk_token = "a-disk-token"
+    db_session.commit()
+    bad = [
+        "http://pan-motors.ru/tmp_files/x/a.jpg",  # not https
+        "https://127.0.0.1/tmp_files/x/a.jpg",  # an IP address
+        "https://localhost/tmp_files/x/a.jpg",  # no dot in the host
+        "https://pan-motors.ru/wp-config.php",  # outside tmp_files
+    ]
+    _fake_site_and_disk(monkeypatch, {url: b"x" for url in bad})
+
+    response = client.post(
+        INTAKE_URL,
+        json={"user_phone": "+7 (900) 000-00-12", "photo_urls": bad},
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+    assert response.status_code == 201  # the lead itself is never refused over a link
+    assert client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]["photos"] is None
 
 
 def test_intake_prefers_inline_photo_bytes_over_tmp_files_link(
