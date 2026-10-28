@@ -1916,7 +1916,7 @@ export type CashContext = {
   lock_from: string | null;
   lock_to: string | null;
   // The employee linked to the acting user (default card holder; null = not linked)
-  // and the employees a personal card can be tied to (specialty Мастер приёмщик).
+  // and the employees a personal card can be tied to (any employee of the directory).
   current_employee_id: string | null;
   card_holders: CashCardHolder[];
 };

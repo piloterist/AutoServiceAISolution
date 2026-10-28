@@ -38,7 +38,7 @@ from app.models.cash_entry import (
     CashEntry,
 )
 from app.models.department import Department
-from app.models.employee import SPECIALTY_SERVICE_ADVISOR, Employee
+from app.models.employee import Employee
 from app.models.role_tab_visibility import RoleTabVisibility
 from app.models.schedule_audit_log import ACTION_CREATE, ACTION_DELETE, ACTION_UPDATE
 from app.models.user import User
@@ -203,13 +203,9 @@ def get_context(db: Session, user_id: uuid.UUID | None) -> dict:
 
 
 def get_card_holders(db: Session) -> list[dict]:
-    """The people a personal card can be tied to: employees of the directory with
-    the specialty "Мастер приёмщик" (product ask, 2026-10-29)."""
-    employees = db.scalars(
-        select(Employee)
-        .where(Employee.specialty == SPECIALTY_SERVICE_ADVISOR)
-        .order_by(Employee.full_name)
-    )
+    """The people a personal card can be tied to: every employee of the directory
+    (product ask, 2026-10-29: no limit by specialty)."""
+    employees = db.scalars(select(Employee).order_by(Employee.full_name))
     return [{"id": employee.id, "name": employee.full_name} for employee in employees]
 
 
@@ -478,8 +474,7 @@ def _resolve_card_holder(
     """(personal_card, holder employee id, holder name) to store. The holder
     defaults to the one already on the entry, else to the employee linked to whoever
     makes it (users.employee_id); naming someone else (or changing the holder)
-    needs "Корректировка кассы". Only an employee with the specialty
-    "Мастер приёмщик" can hold a card (an unchanged old holder is left alone)."""
+    needs "Корректировка кассы". Any employee of the directory can hold a card."""
     if not personal_card:
         return False, None, None
     if kind == KIND_CARD_IN:
@@ -500,10 +495,6 @@ def _resolve_card_holder(
     holder = db.get(Employee, holder_id)
     if holder is None:
         raise CashInvalid("Сотрудник не найден")
-    if holder.specialty != SPECIALTY_SERVICE_ADVISOR and holder_id != existing_id:
-        raise CashInvalid(
-            "Личная карта возможна только у сотрудников со специальностью «Мастер приёмщик»"
-        )
     return True, holder.id, holder.full_name
 
 

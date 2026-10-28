@@ -1006,11 +1006,11 @@ def test_a_role_with_correction_can_pick_another_master(
     assert entry.card_holder_id == cards["petrov"].id
 
 
-def test_only_master_advisors_can_hold_a_card(
-    db_session: Session, world: dict, cards: dict
-) -> None:
-    with pytest.raises(CashInvalid):
-        _add_card(db_session, world, world["cashier"], KIND_CASH_IN, "100", holder=cards["clerk"])
+def test_any_employee_can_hold_a_card(db_session: Session, world: dict, cards: dict) -> None:
+    entry = _add_card(
+        db_session, world, world["cashier"], KIND_CASH_IN, "100", holder=cards["clerk"]
+    )
+    assert entry.card_holder_id == cards["clerk"].id
 
 
 def test_personal_card_is_not_for_the_card_payment_section(
@@ -1163,6 +1163,10 @@ def test_context_lists_the_master_employees_and_the_linked_one(
 ) -> None:
     context = cash_service.get_context(db_session, cards["master"].id)
 
-    assert [h["name"] for h in context["card_holders"]] == ["Иванов Иван", "Петров Пётр"]
+    assert [h["name"] for h in context["card_holders"]] == [
+        "Иванов Иван",
+        "Кладовщик Кирилл",
+        "Петров Пётр",
+    ]
     assert context["current_employee_id"] == cards["ivanov"].id
     assert cash_service.get_context(db_session, world["cashier"].id)["current_employee_id"] is None
