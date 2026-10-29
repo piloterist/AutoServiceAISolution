@@ -112,7 +112,7 @@ function figuresFor(variant: "new" | "existing" | "sources", s: ConversionSummar
           cohort: "new",
         },
         {
-          label: "Дошли до заказ-наряда",
+          label: "Заявки + Заказ-наряды",
           hint: "Новые клиенты (уникальные номера), по которым после разговора по теме создан хотя бы один заказ-наряд или заявка на ремонт; от «Новых клиентов» это и есть процент конверсии",
           value: s.converted_new_clients,
           cohort: "new_converted",
@@ -157,7 +157,7 @@ function figuresFor(variant: "new" | "existing" | "sources", s: ConversionSummar
         cohort: "existing_counted",
       },
       {
-        label: "Дошли до заказ-наряда",
+        label: "Заявки + Заказ-наряды",
         hint: "Существующие клиенты (уникальные номера), по которым после разговора по теме создан хотя бы один заказ-наряд или заявка на ремонт; от «Существующих клиентов» это и есть процент конверсии",
         value: s.converted_existing_clients,
         cohort: "existing_converted",

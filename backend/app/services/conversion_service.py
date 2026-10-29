@@ -190,8 +190,12 @@ def list_conversion(
     phone_sources = telephony_settings_service.list_phone_sources(db)
     events = telephony_stats_service.list_conversion_calls(db, start_day, end_day, phone_sources)
     workshop_ids = workshop_ids_for_departments(db, departments)
+    classification = classify_phones(db, start_day, end_day, departments, include_requests)
     if workshop_ids is not None:
-        events = [e for e in events if e.workshop_id in workshop_ids]
+        # The numbers counted here only through another line's call keep all their calls
+        # (the same rule as the figures, see classify_phones).
+        other_line = {phone for phone, info in classification.phones.items() if info.other_line}
+        events = [e for e in events if e.workshop_id in workshop_ids or e.client in other_line]
     phones = {e.client for e in events if e.client}
     warranty = set(settings_service.get_app_settings(db).warranty_repair_types or [])
     work_orders = _work_orders_by_phone(db, phones, warranty)
@@ -230,7 +234,6 @@ def list_conversion(
             )
         group.calls.append(event)
 
-    classification = classify_phones(db, start_day, end_day, departments, include_requests)
     for group in groups.values():
         info = classification.phones.get(group.client)
         if info is not None:
@@ -484,6 +487,10 @@ class PhoneInfo:
     # work orders; they make the number "converted" too.
     repair_requests: int = 0
     repair_request_ids: list[uuid.UUID] = field(default_factory=list)
+    # With a department filter: the target call went to ANOTHER workshop's line, and the
+    # number belongs to the department only because that call led to its order - the
+    # calls list shows these numbers' calls of every line too (list_conversion).
+    other_line: bool = False
 
 
 @dataclass
@@ -732,6 +739,7 @@ def classify_phones(
             unanswered=unanswered,
             repair_requests=len(led_to_requests),
             repair_request_ids=led_to_requests,
+            other_line=phone in attributed,
         )
 
     return Classification(

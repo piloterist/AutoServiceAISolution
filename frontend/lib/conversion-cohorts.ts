@@ -22,11 +22,11 @@ export const COHORTS: { key: Cohort; label: string }[] = [
   { key: "target", label: "Целевые звонки (тема определена или разговор дольше 20 секунд)" },
   { key: "new_all", label: "Новые клиенты — все номера" },
   { key: "new", label: "Новые клиенты — разговор по теме" },
-  { key: "new_converted", label: "Новые клиенты — дошли до заказ-наряда" },
+  { key: "new_converted", label: "Новые клиенты — заявки + заказ-наряды" },
   { key: "new_unanswered", label: "Новые клиенты — остались без ответа" },
   { key: "existing_all", label: "Существующие клиенты — все номера" },
   { key: "existing_counted", label: "Существующие клиенты — разговор по теме" },
-  { key: "existing_converted", label: "Существующие клиенты — дошли до заказ-наряда" },
+  { key: "existing_converted", label: "Существующие клиенты — заявки + заказ-наряды" },
   { key: "existing_unanswered", label: "Существующие клиенты — остались без ответа" },
 ];
 

@@ -1361,6 +1361,47 @@ def test_a_call_to_another_workshops_line_belongs_to_the_workshop_that_got_the_o
     assert everything.converted_new_clients == 1
 
 
+def test_calls_list_shows_the_other_line_calls_of_a_number_counted_through_its_order(
+    db_session: Session,
+) -> None:
+    body, mech = _two_workshops(db_session)
+    _call(
+        db_session,
+        external_id="x1",
+        hour_msk=10,
+        client="9990000001",
+        talk_sec=40,
+        topic_tag=TOPIC,
+        workshop_id=body.id,
+    )
+    db_session.add(
+        _wo(
+            "MECH-WO",
+            datetime(2026, 10, 10, 15, 0, tzinfo=UTC),
+            phone="+7 999 000 00 01",
+            department="Слесарный цех",
+        )
+    )
+    # Another number that called the body line and led to no mechanical order.
+    _call(
+        db_session,
+        external_id="y",
+        client="9990000002",
+        talk_sec=40,
+        topic_tag=TOPIC,
+        workshop_id=body.id,
+    )
+    db_session.commit()
+
+    groups = conversion_service.list_conversion(db_session, DAY, DAY, ["Слесарный цех"])
+
+    # The figure counts the first number here, so the list shows it (with its order) -
+    # and only it.
+    assert [g.client for g in groups] == ["9990000001"]
+    assert groups[0].work_order_number == "MECH-WO"
+    assert groups[0].conversion_row is True
+
+
 # ---- Заказ-наряды после звонка / без звонка ------------------------------------------
 
 

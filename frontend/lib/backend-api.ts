@@ -1520,7 +1520,7 @@ export type ConversionGroup = {
   // Missed and not reached by the end of the period.
   phone_unanswered: boolean;
   // The phone's first group that led to a counted work order - one row per
-  // converted number ("Дошли до заказ-наряда").
+  // converted number ("Заявки + Заказ-наряды").
   conversion_row: boolean;
   // The repair request (Заявка на ремонт) created after the group's first call - found
   // like the work order; a phone may have both.
