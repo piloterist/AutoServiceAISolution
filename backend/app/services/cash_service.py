@@ -473,8 +473,8 @@ def _resolve_card_holder(
 ) -> tuple[bool, uuid.UUID | None, str | None]:
     """(personal_card, holder employee id, holder name) to store. The holder
     defaults to the one already on the entry, else to the employee linked to whoever
-    makes it (users.employee_id); naming someone else (or changing the holder)
-    needs "Корректировка кассы". Any employee of the directory can hold a card."""
+    makes it (users.employee_id); anyone can name any employee of the directory
+    (product ask, 2026-11-01: no "Корректировка кассы" check on the holder)."""
     if not personal_card:
         return False, None, None
     if kind == KIND_CARD_IN:
@@ -485,12 +485,6 @@ def _resolve_card_holder(
     if holder_id is None:
         raise CashInvalid(
             "Выберите сотрудника для личной карты (ваш пользователь не связан с сотрудником)"
-        )
-    own_first_pick = existing_id is None and holder_id == own_id
-    if holder_id != existing_id and not own_first_pick and not access.can_correct:
-        raise CashForbidden(
-            "Менять сотрудника личной карты может только пользователь с правом "
-            "«Корректировка кассы»"
         )
     holder = db.get(Employee, holder_id)
     if holder is None:

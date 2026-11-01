@@ -274,7 +274,7 @@ export function CashEntryDialog({
                   id="cash-card-holder"
                   className="cash-card-select"
                   value={holderId}
-                  disabled={readOnly || !personalCard || !canCorrect}
+                  disabled={readOnly || !personalCard}
                   onChange={(event) => setHolderId(event.target.value)}
                 >
                   <option value="">—</option>
@@ -288,11 +288,9 @@ export function CashEntryDialog({
                   )}
                 </select>
               </div>
-              {personalCard && !canCorrect && (
+              {personalCard && !holderId && (
                 <span className="settings-description">
-                  {holderId
-                    ? "Сотрудника может менять только пользователь с правом «Корректировка кассы»."
-                    : "Ваш пользователь не связан с сотрудником-мастером: попросите кассира внести запись."}
+                  Ваш пользователь не связан с сотрудником: выберите сотрудника из списка.
                 </span>
               )}
             </div>

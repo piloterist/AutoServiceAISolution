@@ -981,19 +981,19 @@ def test_personal_card_defaults_to_the_employee_linked_to_the_user(
     assert entry.card_holder_name == "Иванов Иван"
 
 
-def test_without_correction_the_holder_cannot_be_another_employee(
+def test_anyone_can_name_another_employee_as_the_holder(
     db_session: Session, world: dict, cards: dict
 ) -> None:
-    with pytest.raises(CashForbidden):
-        _add_card(
-            db_session,
-            world,
-            cards["master"],
-            KIND_CASH_OUT,
-            "100",
-            holder=cards["petrov"],
-            day=cash_service.today_msk(),
-        )
+    entry = _add_card(
+        db_session,
+        world,
+        cards["master"],  # no "Корректировка кассы"
+        KIND_CASH_OUT,
+        "100",
+        holder=cards["petrov"],
+        day=cash_service.today_msk(),
+    )
+    assert entry.card_holder_id == cards["petrov"].id
 
 
 def test_a_role_with_correction_can_pick_another_master(
@@ -1027,9 +1027,7 @@ def test_a_user_not_linked_to_an_employee_must_pick_one(
         _add_card(db_session, world, world["cashier"], KIND_CASH_IN, "100")  # cashier: no employee
 
 
-def test_updating_the_holder_needs_correction(
-    db_session: Session, world: dict, cards: dict
-) -> None:
+def test_anyone_can_change_the_holder(db_session: Session, world: dict, cards: dict) -> None:
     today = cash_service.today_msk()
     entry = _add_card(db_session, world, cards["master"], KIND_CASH_IN, "500", day=today)
 
@@ -1050,10 +1048,9 @@ def test_updating_the_holder_needs_correction(
             card_holder_id=holder.id if holder else None,
         )
 
-    with pytest.raises(CashForbidden):
-        update(cards["master"], cards["petrov"])
-    assert update(cards["master"], None).card_holder_id == cards["ivanov"].id  # unchanged is fine
-    assert update(world["cashier"], cards["petrov"]).card_holder_id == cards["petrov"].id
+    assert update(cards["master"], None).card_holder_id == cards["ivanov"].id  # unchanged
+    assert update(cards["master"], cards["petrov"]).card_holder_id == cards["petrov"].id
+    assert update(world["cashier"], cards["ivanov"]).card_holder_id == cards["ivanov"].id
 
 
 def test_turning_the_card_flag_off_clears_the_holder(
