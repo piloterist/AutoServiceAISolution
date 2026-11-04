@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -577,7 +577,15 @@ def test_department_summary_lists_departments_without_revenue_as_zero(
             external_number="WO-OLD",
             department="Солнцево",
             amount=Decimal("50.00"),
-            closed_date=datetime(2026, 1, 5),
+            closed_date=datetime.now() - timedelta(days=40),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-ANCIENT",
+            department="Старый цех",
+            amount=Decimal("50.00"),
+            closed_date=datetime.now() - timedelta(days=400),
         )
     )
     db_session.commit()
@@ -589,6 +597,7 @@ def test_department_summary_lists_departments_without_revenue_as_zero(
     assert items["Солнцево"]["total_amount"] == "0"
     assert items["Солнцево"]["work_order_count"] == 0
     assert items["Кузовной цех"]["total_amount"] == "300.00"
+    assert "Старый цех" not in items  # выручки не было больше 3 месяцев
 
     # с выбранным фильтром нулевые строки других подразделений не добавляются
     filtered = client.get(

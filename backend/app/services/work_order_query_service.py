@@ -644,6 +644,27 @@ def list_departments(db: Session) -> list[str]:
     return [row[0] for row in rows]
 
 
+def list_recent_revenue_departments(db: Session, *, months: int = 3) -> list[str]:
+    """Подразделения, по которым за последние `months` месяцев были закрытые
+    заказ-наряды (closed_date) - чтобы нулевые строки в «Выручке по
+    подразделениям» не засорялись давно неактивными значениями."""
+    now = datetime.now()
+    total = now.year * 12 + (now.month - 1) - months
+    since = now.replace(year=total // 12, month=total % 12 + 1, day=1)
+    rows = db.execute(
+        select(WorkOrder.department)
+        .where(
+            WorkOrder.department.is_not(None),
+            WorkOrder.department != "",
+            WorkOrder.closed_date.is_not(None),
+            WorkOrder.closed_date >= since,
+        )
+        .distinct()
+        .order_by(WorkOrder.department)
+    ).all()
+    return [row[0] for row in rows]
+
+
 def list_repair_types(db: Session) -> list[str]:
     """Distinct repair_type (ЗаказНаряд.ВидРемонта) values actually present
     in the data - same reasoning as list_departments. Feeds the Settings

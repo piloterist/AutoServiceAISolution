@@ -62,6 +62,7 @@ from app.services.work_order_query_service import (
     list_part_lines,
     list_payment_events,
     list_payment_history,
+    list_recent_revenue_departments,
     list_repair_types,
     list_status_history,
     list_work_orders,
@@ -226,7 +227,7 @@ def _department_response(
     present = {row["department"] for row in rows}
     zero_rows = [
         {"department": name, "work_order_count": 0, "total_amount": Decimal("0")}
-        for name in list_departments(db)
+        for name in list_recent_revenue_departments(db)
         if name not in present and (not selected or name in selected)
     ]
     return DepartmentSummaryResponse(
