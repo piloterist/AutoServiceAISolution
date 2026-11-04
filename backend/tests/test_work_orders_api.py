@@ -561,6 +561,44 @@ def test_department_summary_groups_and_sums(client, db_session, auth_headers) ->
     assert items["Малярный цех"]["total_amount"] == "100.00"
 
 
+def test_department_summary_lists_departments_without_revenue_as_zero(
+    client, auth_headers, db_session
+) -> None:
+    db_session.add(
+        _make_work_order(
+            external_number="WO-IN",
+            department="Кузовной цех",
+            amount=Decimal("300.00"),
+            closed_date=datetime(2026, 6, 5),
+        )
+    )
+    db_session.add(
+        _make_work_order(
+            external_number="WO-OLD",
+            department="Солнцево",
+            amount=Decimal("50.00"),
+            closed_date=datetime(2026, 1, 5),
+        )
+    )
+    db_session.commit()
+    params = {"date_from": "2026-06-01T00:00:00", "date_to": "2026-06-30T23:59:59"}
+
+    response = client.get(f"{LIST_URL}/summary/by-department", params=params, headers=auth_headers)
+
+    items = {item["department"]: item for item in response.json()["items"]}
+    assert items["Солнцево"]["total_amount"] == "0"
+    assert items["Солнцево"]["work_order_count"] == 0
+    assert items["Кузовной цех"]["total_amount"] == "300.00"
+
+    # с выбранным фильтром нулевые строки других подразделений не добавляются
+    filtered = client.get(
+        f"{LIST_URL}/summary/by-department",
+        params={**params, "departments": "Кузовной цех"},
+        headers=auth_headers,
+    )
+    assert [i["department"] for i in filtered.json()["items"]] == ["Кузовной цех"]
+
+
 def test_get_work_order_detail_requires_auth(client, db_session) -> None:
     work_order = _make_work_order(external_number="WO-DETAIL-AUTH")
     db_session.add(work_order)

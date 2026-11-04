@@ -354,9 +354,7 @@ def auto_match_planner_records(db: Session) -> AutoMatchStats:
 # ---- Слесарный (WorkshopJob) -----------------------------------------------
 
 
-def _validate_slot(
-    db: Session, workshop_id: uuid.UUID, data: WorkshopJobWrite, *, exclude_job_id: uuid.UUID | None
-) -> None:
+def _validate_slot(db: Session, workshop_id: uuid.UUID, data: WorkshopJobWrite) -> None:
     workshop = db.get(Workshop, workshop_id)
     if workshop is None:
         raise NotFoundError("Workshop not found")
@@ -368,17 +366,8 @@ def _validate_slot(
     if data.post_number > workshop.posts_count:
         raise SchedulingError("В этом цехе нет такого поста")
 
-    stmt = select(WorkshopJob).where(
-        WorkshopJob.workshop_id == workshop_id,
-        WorkshopJob.job_date == data.job_date,
-        WorkshopJob.post_number == data.post_number,
-        WorkshopJob.start_time < data.end_time,
-        WorkshopJob.end_time > data.start_time,
-    )
-    if exclude_job_id is not None:
-        stmt = stmt.where(WorkshopJob.id != exclude_job_id)
-    if db.scalars(stmt).first() is not None:
-        raise SchedulingError("На этом посту уже есть запись на выбранное время")
+    # Записи на одном посту в одно время МОГУТ пересекаться (записали одну машину, а приехала
+    # другая, поменяли очередность, отменили...): планировщик рисует их рядом, как календарь.
 
 
 def list_workshop_jobs(
@@ -417,7 +406,7 @@ def create_workshop_job(
     actor_user_id: uuid.UUID | None,
     actor_name: str,
 ) -> WorkshopJob:
-    _validate_slot(db, workshop_id, data, exclude_job_id=None)
+    _validate_slot(db, workshop_id, data)
     job = WorkshopJob(
         workshop_id=workshop_id,
         created_by_id=actor_user_id,
@@ -456,7 +445,7 @@ def update_workshop_job(
     job = db.get(WorkshopJob, job_id)
     if job is None:
         raise NotFoundError("Job not found")
-    _validate_slot(db, job.workshop_id, data, exclude_job_id=job_id)
+    _validate_slot(db, job.workshop_id, data)
 
     changes = {}
     for field in _JOB_LOGGED_FIELDS:

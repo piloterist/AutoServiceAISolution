@@ -2173,3 +2173,187 @@ export async function importExpensesFile(params: {
   }
   return res.json() as Promise<ExpensesImportReport>;
 }
+
+// Боксы (видеоконтроль въезда/выезда) - see backend app/services/bay_service.py.
+// Снимки лежат на Яндекс.Диске, браузер получает их только через наш бэкенд.
+export type BayState = "free" | "occupied" | "review";
+
+export type BayEvent = {
+  id: string;
+  event_type: string;
+  occurred_at: string;
+  plate: string | null;
+  ocr_confidence: string | null;
+  has_snapshot: boolean;
+  review_status: string;
+  source: string;
+  note: string | null;
+};
+
+export type BayCard = {
+  id: string;
+  workshop_id: string;
+  name: string;
+  camera_code: string | null;
+  enabled: boolean;
+  state: BayState;
+  plate: string | null;
+  occupied_since: string | null;
+  // Заказ-наряд, привязанный в момент въезда машины, которая сейчас в боксе.
+  work_order_id: string | null;
+  work_order_number: string | null;
+  // Рабочие часы цеха ("HH:MM:SS", дни 0=пн..6=вс): узел шлёт кадр бокса только в них.
+  work_start: string | null;
+  work_end: string | null;
+  work_days: number[];
+  // Связь с узлом на площадке: когда он выходил на связь, отдаёт ли камера видео, с какого момента.
+  node_seen_at: string | null;
+  camera_ok: boolean | null;
+  camera_ok_since: string | null;
+  // Когда снят последний кадр бокса (узел шлёт раз в минуту), иначе null.
+  latest_frame_at: string | null;
+  last_entry: BayEvent | null;
+  last_exit: BayEvent | null;
+};
+
+export type BaysResponse = { bays: BayCard[] };
+
+export type BayHistoryItem = {
+  id: string;
+  bay_id: string;
+  bay_name: string;
+  plate: string | null;
+  started_at: string;
+  ended_at: string | null;
+  duration_seconds: number;
+  review_status: string;
+  entry: BayEvent | null;
+  exit: BayEvent | null;
+  work_order_id: string | null;
+  work_order_number: string | null;
+};
+
+export type BayHistoryResponse = { items: BayHistoryItem[] };
+
+// Лист «Ошибки»: машина в боксе без заказ-наряда (см. backend services/bay_planner.py).
+export type BayIssue = {
+  id: string;
+  bay_id: string;
+  bay_name: string;
+  workshop_label: string;
+  kind: string;
+  plate: string | null;
+  message: string;
+  occurred_at: string;
+  entry_event_id: string | null;
+  resolved_at: string | null;
+  resolution: "auto" | "manual" | null;
+  resolved_by: string | null;
+  resolution_note: string | null;
+};
+export type BayIssuesResponse = { issues: BayIssue[] };
+
+export function getBayIssues(status: "all" | "open" | "resolved" = "all"): Promise<BayIssuesResponse> {
+  return backendGet<BayIssuesResponse>("/api/v1/bays/issues", { status });
+}
+
+export function getBayIssueSummary(): Promise<{ open_count: number }> {
+  return backendGet<{ open_count: number }>("/api/v1/bays/issues/summary");
+}
+
+export function resolveBayIssue(
+  id: string,
+  note: string | null,
+  actor: { id: string; fullName: string },
+): Promise<BayIssuesResponse> {
+  return backendPost<BayIssuesResponse>(`/api/v1/bays/issues/${id}/resolve`, { note }, actorHeaders(actor));
+}
+
+export type BayEventWrite = {
+  event_type: string;
+  plate?: string | null;
+  note?: string | null;
+  source?: "auto" | "manual";
+};
+
+export type BaySnapshotRequest = {
+  id: string;
+  bay_id: string;
+  status: "pending" | "done" | "failed";
+  requested_at: string;
+  completed_at: string | null;
+};
+
+export function getBays(workshopId?: string): Promise<BaysResponse> {
+  return backendGet<BaysResponse>("/api/v1/bays", { workshop_id: workshopId ?? "" });
+}
+
+export function getBayHistory(params: {
+  date_from: string;
+  date_to: string;
+  bay_id?: string;
+  workshop_id?: string;
+}): Promise<BayHistoryResponse> {
+  return backendGet<BayHistoryResponse>("/api/v1/bays/history", {
+    date_from: params.date_from,
+    date_to: params.date_to,
+    bay_id: params.bay_id ?? "",
+    workshop_id: params.workshop_id ?? "",
+  });
+}
+
+export function createBay(payload: {
+  workshop_id: string;
+  name: string;
+  camera_code?: string | null;
+}): Promise<BaysResponse> {
+  return backendPost<BaysResponse>("/api/v1/bays", payload);
+}
+
+export function createDefaultBays(workshopId: string): Promise<BaysResponse> {
+  return backendPost<BaysResponse>(`/api/v1/bays/defaults?workshop_id=${workshopId}`, {});
+}
+
+export function updateBay(
+  id: string,
+  payload: { name?: string; camera_code?: string | null; enabled?: boolean },
+): Promise<BaysResponse> {
+  return backendPatch<BaysResponse>(`/api/v1/bays/${id}`, payload);
+}
+
+export function deleteBay(id: string): Promise<void> {
+  return backendDelete(`/api/v1/bays/${id}`);
+}
+
+export function createBayEvent(bayId: string, payload: BayEventWrite): Promise<BayEvent> {
+  return backendPost<BayEvent>(`/api/v1/bays/${bayId}/events`, payload);
+}
+
+export function requestBaySnapshot(bayId: string): Promise<BaySnapshotRequest> {
+  return backendPost<BaySnapshotRequest>(`/api/v1/bays/${bayId}/snapshot-requests`, {});
+}
+
+export function getBaySnapshotRequest(requestId: string): Promise<BaySnapshotRequest> {
+  return backendGet<BaySnapshotRequest>(`/api/v1/bays/snapshot-requests/${requestId}`);
+}
+
+async function fetchBayImage(path: string): Promise<{ body: ArrayBuffer; contentType: string } | null> {
+  const res = await fetch(new URL(path, API_URL), {
+    headers: { Authorization: `Bearer ${backendToken()}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  return { body: await res.arrayBuffer(), contentType: res.headers.get("content-type") ?? "image/jpeg" };
+}
+
+export function fetchBayEventSnapshot(eventId: string) {
+  return fetchBayImage(`/api/v1/bays/events/${eventId}/snapshot`);
+}
+
+export function fetchBaySnapshotRequestImage(requestId: string) {
+  return fetchBayImage(`/api/v1/bays/snapshot-requests/${requestId}/image`);
+}
+
+export function fetchBayLatestFrame(bayId: string) {
+  return fetchBayImage(`/api/v1/bays/${bayId}/latest-frame`);
+}

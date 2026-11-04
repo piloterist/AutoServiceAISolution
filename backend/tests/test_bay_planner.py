@@ -1,0 +1,344 @@
+"""Видеоконтроль <-> планировщик: перевод записи в «В работе», автосоздание, продление,
+«Готова» после выезда, наложение записей и лист «Ошибки»."""
+
+import uuid
+from datetime import UTC, date, datetime, time
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models.bay import BayIssue, BayOccupancy
+from app.models.department import Department
+from app.models.slesarka_status import SlesarkaStatus
+from app.models.work_order import WorkOrder
+from app.models.workshop import Workshop
+from app.models.workshop_job import WorkshopJob
+from app.services import bay_planner
+
+DAY = date(2026, 11, 2)  # понедельник
+# Москва = UTC+3: 10:00 по цеху = 07:00 UTC
+PLAN_URL = "/api/v1/planner"
+
+
+def moment(hour: int, minute: int = 0, second: int = 0) -> datetime:
+    return datetime(2026, 11, 2, hour - 3, minute, second, tzinfo=UTC)
+
+
+@pytest.fixture()
+def workshop(db_session: Session) -> Workshop:
+    department = Department(name="Каховка")
+    db_session.add(department)
+    db_session.flush()
+    ws = Workshop(
+        department_id=department.id,
+        workshop_type="Слесарный",
+        posts_count=3,
+        start_time=time(8, 0),
+        end_time=time(20, 0),
+        working_days=[0, 1, 2, 3, 4],
+    )
+    db_session.add(ws)
+    db_session.commit()
+    return ws
+
+
+@pytest.fixture()
+def statuses(db_session: Session) -> dict[str, SlesarkaStatus]:
+    rows = {
+        name: SlesarkaStatus(name=name, color="#123456")
+        for name in ("Запись", "В работе", "Готова", "Отмена")
+    }
+    db_session.add_all(rows.values())
+    db_session.commit()
+    return rows
+
+
+@pytest.fixture()
+def bay_id(client: TestClient, auth_headers: dict, workshop: Workshop) -> str:
+    client.post(f"/api/v1/bays/defaults?workshop_id={workshop.id}", headers=auth_headers)
+    response = client.get(f"/api/v1/bays?workshop_id={workshop.id}", headers=auth_headers)
+    bays = response.json()["bays"]
+    return bays[1]["id"]  # «Бокс 2» = пост 2
+
+
+def _event(client, headers, bay, kind, plate=None, at=None):
+    body = {"event_type": kind, "plate": plate}
+    if at:
+        body["occurred_at"] = at.isoformat()
+    response = client.post(f"/api/v1/bays/{bay}/events", json=body, headers=headers)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def _job(db, workshop, status, start, end, plate=None, post=2, order=None) -> WorkshopJob:
+    job = WorkshopJob(
+        workshop_id=workshop.id,
+        job_date=DAY,
+        post_number=post,
+        start_time=start,
+        end_time=end,
+        plate=plate,
+        status_id=status.id,
+        work_order_id=order.id if order else None,
+    )
+    db.add(job)
+    db.commit()
+    return job
+
+
+def _order(db, number="ЗН-1", car="Skoda № А612СМ777 VIN X") -> WorkOrder:
+    order = WorkOrder(
+        external_number=number,
+        document_date=datetime(2026, 11, 1, tzinfo=UTC),
+        amount=0,
+        vehicle_description=car,
+        customer_name="Иванов",
+    )
+    db.add(order)
+    db.commit()
+    return order
+
+
+def _jobs(db: Session, workshop: Workshop) -> list[WorkshopJob]:
+    db.expire_all()
+    return list(
+        db.scalars(
+            select(WorkshopJob)
+            .where(WorkshopJob.workshop_id == workshop.id)
+            .order_by(WorkshopJob.start_time)
+        )
+    )
+
+
+def test_entry_moves_the_planned_job_to_work_by_the_first_six_characters(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    order = _order(db_session)
+    # в плане номер без региона
+    job = _job(db_session, workshop, statuses["Запись"], time(10), time(11), "А612СМ", order=order)
+
+    event = _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+
+    db_session.expire_all()
+    job = db_session.get(WorkshopJob, job.id)
+    assert job.status_id == statuses["В работе"].id
+    assert len(_jobs(db_session, workshop)) == 1  # новую не создавали
+    assert event["plate"] == "А612СМ777"
+    assert db_session.scalars(select(BayIssue)).all() == []  # заказ-наряд есть
+
+
+def test_a_car_that_came_early_still_finds_a_later_plan_of_the_day(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    order = _order(db_session)
+    job = _job(db_session, workshop, statuses["Запись"], time(15), time(16), "А612СМ", order=order)
+
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 0))
+
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, job.id).status_id == statuses["В работе"].id
+    assert len(_jobs(db_session, workshop)) == 1
+
+
+def test_other_post_or_other_plate_is_not_matched(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    order = _order(db_session)
+    other_post = _job(
+        db_session, workshop, statuses["Запись"], time(10), time(11), "А612СМ", post=1, order=order
+    )
+    other_plate = _job(db_session, workshop, statuses["Запись"], time(10), time(11), "В999ВВ")
+
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, other_post.id).status_id == statuses["Запись"].id
+    assert db_session.get(WorkshopJob, other_plate.id).status_id == statuses["Запись"].id
+    created = [
+        j for j in _jobs(db_session, workshop) if j.post_number == 2 and j.plate == "А612СМ777"
+    ]
+    assert len(created) == 1
+
+
+def test_no_plan_creates_a_thirty_minute_job_linked_to_the_work_order(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    order = _order(db_session)
+
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 12))
+
+    [job] = _jobs(db_session, workshop)
+    assert (job.post_number, job.start_time, job.end_time) == (2, time(10, 12), time(10, 42))
+    assert job.status_id == statuses["В работе"].id
+    assert job.work_order_id == order.id
+    assert job.client_name == "Иванов"
+    assert db_session.scalars(select(BayIssue)).all() == []
+
+
+def test_the_job_is_extended_while_the_car_stays_and_done_after_exit(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 0))
+    [job] = _jobs(db_session, workshop)
+    assert job.end_time == time(10, 30)
+
+    bay_planner.tick(db_session, moment(10, 20))  # ещё в пределах записи
+    assert _jobs(db_session, workshop)[0].end_time == time(10, 30)
+
+    bay_planner.tick(db_session, moment(10, 31))  # вышла за конец записи
+    assert _jobs(db_session, workshop)[0].end_time == time(11, 0)
+
+    bay_planner.tick(db_session, moment(11, 45, 10))
+    assert _jobs(db_session, workshop)[0].end_time == time(12, 0)
+
+    _event(client, auth_headers, bay_id, "exit_confirmed", at=moment(11, 50))
+    [job] = _jobs(db_session, workshop)
+    assert job.status_id == statuses["Готова"].id
+
+    bay_planner.tick(db_session, moment(13, 0))  # машины нет - не продлеваем
+    assert _jobs(db_session, workshop)[0].end_time == time(12, 0)
+
+
+def test_extension_stops_at_the_end_of_the_working_day(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(19, 40))
+    bay_planner.tick(db_session, moment(20, 5))
+    [job] = _jobs(db_session, workshop)
+    assert job.end_time == time(20, 0)
+
+
+def test_two_jobs_may_overlap_on_one_post(
+    client, auth_headers, db_session, workshop, statuses
+) -> None:
+    payload = {
+        "job_date": DAY.isoformat(),
+        "post_number": 1,
+        "start_time": "10:00:00",
+        "end_time": "11:00:00",
+    }
+    for _ in range(2):
+        response = client.post(
+            f"{PLAN_URL}/workshops/{workshop.id}/jobs", json=payload, headers=auth_headers
+        )
+        assert response.status_code == 201
+
+
+def test_a_planned_car_that_did_not_come_does_not_block_the_one_that_did(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    order = _order(db_session)
+    planned = _job(db_session, workshop, statuses["Запись"], time(10), time(11), "В999ВВ")
+
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+
+    jobs = _jobs(db_session, workshop)
+    assert len(jobs) == 2  # плановая осталась, для приехавшей создана своя
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, planned.id).status_id == statuses["Запись"].id
+    assert any(j.work_order_id == order.id for j in jobs)
+
+
+def test_a_car_without_a_work_order_creates_an_issue_that_can_be_resolved(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _event(client, auth_headers, bay_id, "entry_confirmed", "К555ММ77", moment(10, 0))
+
+    summary = client.get("/api/v1/bays/issues/summary", headers=auth_headers).json()
+    assert summary == {"open_count": 1}
+    [issue] = client.get("/api/v1/bays/issues?status=open", headers=auth_headers).json()["issues"]
+    assert issue["plate"] == "К555ММ77"
+    assert issue["bay_name"] == "Бокс 2"
+    assert "заказ-наряда" in issue["message"]
+
+    done = client.post(
+        f"/api/v1/bays/issues/{issue['id']}/resolve",
+        json={"note": "оформили"},
+        headers={**auth_headers, "X-Actor-Name": "%D0%98%D0%B2%D0%B0%D0%BD"},
+    )
+    assert done.status_code == 200
+    assert client.get("/api/v1/bays/issues/summary", headers=auth_headers).json() == {
+        "open_count": 0
+    }
+    [closed] = client.get("/api/v1/bays/issues?status=resolved", headers=auth_headers).json()[
+        "issues"
+    ]
+    assert (closed["resolution"], closed["resolved_by"], closed["resolution_note"]) == (
+        "manual",
+        "Иван",
+        "оформили",
+    )
+
+
+def test_the_issue_closes_itself_when_the_work_order_appears(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 0))
+    assert client.get("/api/v1/bays/issues/summary", headers=auth_headers).json()["open_count"] == 1
+
+    order = _order(db_session)  # заказ-наряд оформили позже
+    extended, resolved = bay_planner.tick(db_session, moment(10, 10))
+
+    assert resolved == 1
+    assert client.get("/api/v1/bays/issues/summary", headers=auth_headers).json()["open_count"] == 0
+    [issue] = client.get("/api/v1/bays/issues", headers=auth_headers).json()["issues"]
+    assert issue["resolution"] == "auto"
+    [job] = _jobs(db_session, workshop)
+    assert job.work_order_id == order.id  # заказ-наряд подтянулся и в запись плана
+
+
+def test_work_order_linked_in_the_planner_closes_the_issue(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _event(client, auth_headers, bay_id, "entry_confirmed", "К555ММ77", moment(10, 0))
+    [job] = _jobs(db_session, workshop)
+    other = _order(db_session, "ЗН-9", "Audi VIN Y")  # номер в заказе другой
+
+    job.work_order_id = other.id  # управляющий привязал заказ-наряд к записи вручную
+    db_session.commit()
+    _, resolved = bay_planner.tick(db_session, moment(10, 5))
+
+    assert resolved == 1
+    assert db_session.scalars(select(BayIssue).where(BayIssue.resolved_at.is_(None))).all() == []
+
+
+def test_an_issue_is_not_duplicated_and_unknown_issue_is_404(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _event(client, auth_headers, bay_id, "entry_confirmed", "К555ММ77", moment(10, 0))
+    bay_planner.tick(db_session, moment(10, 5))
+    assert len(db_session.scalars(select(BayIssue)).all()) == 1
+    missing = client.post(
+        f"/api/v1/bays/issues/{uuid.uuid4()}/resolve", json={}, headers=auth_headers
+    )
+    assert missing.status_code == 404
+
+
+def test_body_workshop_gets_issues_but_no_planner_records(
+    client, auth_headers, db_session, statuses
+) -> None:
+    department = Department(name="Солнцево")
+    db_session.add(department)
+    db_session.flush()
+    body = Workshop(
+        department_id=department.id,
+        workshop_type="Кузовной",
+        posts_count=2,
+        start_time=time(8),
+        end_time=time(20),
+        working_days=[0, 1, 2, 3, 4],
+    )
+    db_session.add(body)
+    db_session.commit()
+    client.post(f"/api/v1/bays/defaults?workshop_id={body.id}", headers=auth_headers)
+    bays = client.get(f"/api/v1/bays?workshop_id={body.id}", headers=auth_headers).json()["bays"]
+
+    _event(client, auth_headers, bays[0]["id"], "entry_confirmed", "К555ММ77", moment(10, 0))
+
+    assert db_session.scalars(select(WorkshopJob)).all() == []
+    assert len(db_session.scalars(select(BayIssue)).all()) == 1
+    assert db_session.scalars(select(BayOccupancy)).first().workshop_job_id is None

@@ -37,6 +37,8 @@ NAV_TAB_KEYS = (
     "/leads",
     "/budget",
     "/cash",
+    "/bays",
+    "/errors",
 )
 
 

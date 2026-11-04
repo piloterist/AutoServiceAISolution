@@ -6947,3 +6947,359 @@ main:has(.cockpit-page) {
   color: var(--text-muted);
   font-size: 0.8rem;
 }
+
+/* ---- Боксы (видеоконтроль въезда/выезда) ---- */
+.bays-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bays-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+.bays-toolbar .planner-title {
+  margin: 0;
+}
+.bays-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
+  gap: 12px;
+}
+.bay-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-left: 5px solid var(--border);
+}
+.bay-tile--occupied {
+  border-left-color: var(--down);
+}
+.bay-tile--free {
+  border-left-color: var(--ok);
+}
+.bay-tile--review {
+  border-left-color: var(--warn);
+}
+.bay-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.bay-head .bay-plate {
+  margin-left: auto;
+}
+.bay-light {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--border);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.15);
+}
+.bay-light--occupied {
+  background: var(--down);
+}
+.bay-light--free {
+  background: var(--ok);
+}
+.bay-light--review {
+  background: var(--warn);
+}
+.bay-name {
+  margin: 0;
+  font-size: 18px;
+}
+.bay-state {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.bay-plate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.bay-plate {
+  padding: 2px 12px;
+  border: 2px solid var(--text);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.bay-plate--empty {
+  border-color: var(--border);
+  color: var(--text-muted);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.bay-error {
+  color: var(--down);
+  font-size: 13px;
+}
+.bay-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+.bay-manual-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.bays-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.bay-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.85);
+  cursor: zoom-out;
+}
+.bay-lightbox img {
+  max-width: 96vw;
+  max-height: 88vh;
+  object-fit: contain;
+}
+.bay-lightbox-caption {
+  color: #fff;
+  font-size: 14px;
+}
+
+/* Кадры бокса: «Сейчас» крупно, «Въезд» и «Выезд» рядом - всё видно сразу */
+.bay-live-row {
+  position: relative;
+}
+.bay-viewer-get {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.bay-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.bay-pane {
+  margin: 0;
+  min-width: 0;
+}
+.bay-pane-label {
+  margin-bottom: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.bays-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.bay-viewer {
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface2);
+}
+.bay-viewer-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.bay-viewer-img img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.bay-viewer-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.bay-viewer-caption {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* История заездов бокса: широкие полосы от свежих к старым */
+.bay-hist-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.bay-hist-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.bay-hist-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.bay-hist-fact {
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 900px) {
+  .bay-hist-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .bay-hist-info {
+    grid-column: 1 / -1;
+  }
+}
+.bay-actions {
+  display: flex;
+  gap: 8px;
+}
+.bay-actions {
+  align-items: center;
+}
+.bay-link-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.bay-link-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.bay-link-status--ok .bay-link-dot {
+  background: var(--ok);
+}
+.bay-link-status--node .bay-link-dot {
+  background: var(--down);
+}
+.bay-link-status--camera .bay-link-dot {
+  background: var(--warn);
+}
+.bay-alert {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--down);
+  color: var(--down);
+}
+.bay-alert--camera {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+/* Вкладка «Ошибки»: красная, пока есть неисправленные ошибки видеоконтроля, иначе серая. */
+.nav-link--errors-open {
+  color: var(--down);
+  font-weight: 700;
+}
+.nav-link--errors-open:hover {
+  color: var(--down);
+}
+.nav-link--errors-clear {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+.nav-link.active.nav-link--errors-open,
+.nav-link.active.nav-link--errors-clear {
+  color: white;
+  opacity: 1;
+}
+.nav-link.active.nav-link--errors-open {
+  background: var(--down);
+}
+
+/* Лист «Ошибки» */
+.errors-hint,
+.errors-empty {
+  color: var(--text-muted);
+}
+.errors-fail {
+  color: var(--down);
+  font-weight: 600;
+}
+.errors-subtitle {
+  margin: 24px 0 8px;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+.errors-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.errors-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.errors-item--open {
+  border-color: var(--down);
+  border-left-width: 4px;
+}
+.errors-item--resolved {
+  opacity: 0.6;
+  filter: grayscale(1);
+}
+.errors-photo {
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  flex: none;
+}
+.errors-body {
+  flex: 1;
+  min-width: 0;
+}
+.errors-title {
+  font-weight: 700;
+}
+.errors-sub {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}

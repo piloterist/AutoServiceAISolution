@@ -3,6 +3,15 @@ autogenerate and for `Base.metadata.create_all()` in tests.
 """
 
 from app.models.app_settings import AppSettings
+from app.models.bay import (
+    Bay,
+    BayEvent,
+    BayIssue,
+    BayLatestFrame,
+    BayOccupancy,
+    BaySnapshotRequest,
+    CameraStatus,
+)
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
 from app.models.budget_entry import BudgetEntry
@@ -63,4 +72,11 @@ __all__ = [
     "LeadsSettings",
     "WebsiteLead",
     "BudgetEntry",
+    "Bay",
+    "BayEvent",
+    "BayIssue",
+    "BayLatestFrame",
+    "CameraStatus",
+    "BayOccupancy",
+    "BaySnapshotRequest",
 ]

@@ -1,0 +1,9 @@
+opencv-python-headless
+numpy
+python-dotenv
+keyring
+httpx
+onnxruntime
+open-image-models
+fast-plate-ocr==1.1.0
+tzdata

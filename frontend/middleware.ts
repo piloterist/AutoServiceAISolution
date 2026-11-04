@@ -16,6 +16,8 @@ function tabForPath(pathname: string): NavTabKey | null {
   if (pathname === "/api/planner" || pathname.startsWith("/api/planner/")) return "/planner";
   if (pathname === "/api/cash" || pathname.startsWith("/api/cash/")) return "/cash";
   if (pathname === "/api/expenses" || pathname.startsWith("/api/expenses/")) return "/budget";
+  if (pathname === "/api/bays" || pathname.startsWith("/api/bays/")) return "/bays";
+  if (pathname === "/api/errors" || pathname.startsWith("/api/errors/")) return "/errors";
   return null;
 }
 
@@ -101,8 +103,19 @@ export async function middleware(request: NextRequest) {
   // list/detail routes, which stay open to any role with that tab allowed -
   // only this one write action is restricted).
   const isWorkOrdersAdminApi = pathname.endsWith("/closed-without-payment");
+  // Боксы: просмотр, ручное событие и запрос кадра открыты любой роли с этой
+  // вкладкой; создавать/переименовывать/удалять боксы может только Админ.
+  const isBaysAdminApi =
+    pathname === "/api/bays/defaults" ||
+    (pathname === "/api/bays" && request.method === "POST") ||
+    (/^\/api\/bays\/[^/]+$/.test(pathname) &&
+      (request.method === "PATCH" || request.method === "DELETE"));
   const isAdminApi =
-    pathname.startsWith("/api/admin") || isTelephonyAdminApi || isLeadsAdminApi || isWorkOrdersAdminApi;
+    pathname.startsWith("/api/admin") ||
+    isTelephonyAdminApi ||
+    isLeadsAdminApi ||
+    isWorkOrdersAdminApi ||
+    isBaysAdminApi;
   const isAdminArea = pathname.startsWith("/settings") || isAdminApi;
 
   if (isAdminArea && user.role !== ROLE_ADMIN) {

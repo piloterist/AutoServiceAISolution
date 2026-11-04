@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     auth,
+    bays,
     budget,
     cash,
     cockpit,
@@ -32,3 +33,4 @@ api_router.include_router(budget.router)
 api_router.include_router(receivables.router)
 api_router.include_router(cash.router)
 api_router.include_router(finance.router)
+api_router.include_router(bays.router)

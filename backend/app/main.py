@@ -24,6 +24,7 @@ from app.core.errors import (
 )
 from app.core.logging import configure_logging
 from app.services import (
+    bay_planner_relay,
     call_transcription_relay,
     planner_match_relay,
     telephony_relay,
@@ -55,6 +56,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Same always-on/settings-gated shape - see services/planner_match_relay.py.
     planner_match_task = asyncio.create_task(planner_match_relay.run_relay_loop())
 
+    # Продление записей планировщика, пока машина в боксе, и автозакрытие ошибок видеоконтроля.
+    bay_planner_task = asyncio.create_task(bay_planner_relay.run_relay_loop())
+
     yield
 
     if background_task is not None:
@@ -62,6 +66,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     telephony_task.cancel()
     transcription_task.cancel()
     planner_match_task.cancel()
+    bay_planner_task.cancel()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)

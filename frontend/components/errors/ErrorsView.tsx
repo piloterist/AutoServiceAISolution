@@ -1,0 +1,135 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+
+import type { BayIssue } from "@/lib/backend-api";
+import { eventSnapshotUrl } from "@/lib/bays-client";
+import { ERRORS_CHANGED_EVENT } from "@/lib/errors-badge";
+
+const SHOP_TZ = "Europe/Moscow";
+const REFRESH_MS = 30_000;
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    timeZone: SHOP_TZ,
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function IssueHead({ issue }: { issue: BayIssue }) {
+  return (
+    <>
+      <div className="errors-title">
+        {issue.plate ?? "Номер не распознан"} · {issue.bay_name}
+      </div>
+      <div className="errors-sub">
+        {issue.workshop_label} · заехала {formatDateTime(issue.occurred_at)}
+      </div>
+    </>
+  );
+}
+
+/** Лист «Ошибки» (product ask, 2026-11-05): каждая машина в боксе должна быть с заказ-нарядом.
+ * Нет заказ-наряда - здесь появляется ошибка; управляющий оформляет заказ-наряд (ошибка
+ * закроется сама) или отмечает «Исправлено». Исправленные уходят вниз серыми. */
+export function ErrorsView({ initialIssues }: { initialIssues: BayIssue[] }) {
+  const [issues, setIssues] = useState(initialIssues);
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/errors", { cache: "no-store" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setIssues(((await res.json()) as { issues: BayIssue[] }).issues);
+      setError(null);
+    } catch {
+      setError("Не удалось обновить список");
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(reload, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [reload]);
+
+  const resolve = async (issue: BayIssue) => {
+    const note = window.prompt("Что сделано? (можно оставить пустым)", "");
+    if (note === null) return;
+    setBusyId(issue.id);
+    try {
+      const res = await fetch(`/api/errors/${issue.id}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note }),
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setIssues(((await res.json()) as { issues: BayIssue[] }).issues);
+      setError(null);
+      window.dispatchEvent(new Event(ERRORS_CHANGED_EVENT)); // вкладка «Ошибки» перекрасится сразу
+    } catch {
+      setError("Не удалось отметить ошибку исправленной");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const open = issues.filter((i) => !i.resolved_at);
+  const resolved = issues.filter((i) => i.resolved_at);
+
+  return (
+    <div className="card errors-page">
+      <h1 className="planner-title">Ошибки</h1>
+      <p className="errors-hint">
+        Машина стоит в боксе, а заказ-наряда по её номеру нет. Оформите заказ-наряд в 1С (ошибка закроется сама) или
+        нажмите «Исправлено».
+      </p>
+      {error && <p className="errors-fail">{error}</p>}
+
+      {open.length === 0 ? (
+        <p className="errors-empty">Неисправленных ошибок нет.</p>
+      ) : (
+        <ul className="errors-list">
+          {open.map((issue) => (
+            <li key={issue.id} className="errors-item errors-item--open">
+              {issue.entry_event_id && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="errors-photo" src={eventSnapshotUrl(issue.entry_event_id)} alt="Кадр въезда" loading="lazy" />
+              )}
+              <div className="errors-body">
+                <IssueHead issue={issue} />
+                <div>{issue.message}</div>
+              </div>
+              <button type="button" className="admin-btn" disabled={busyId === issue.id} onClick={() => resolve(issue)}>
+                Исправлено
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {resolved.length > 0 && (
+        <>
+          <h2 className="errors-subtitle">Исправленные</h2>
+          <ul className="errors-list">
+            {resolved.map((issue) => (
+              <li key={issue.id} className="errors-item errors-item--resolved">
+                <div className="errors-body">
+                  <IssueHead issue={issue} />
+                  <div className="errors-sub">
+                    Исправлена {issue.resolved_at ? formatDateTime(issue.resolved_at) : ""}
+                    {issue.resolution === "auto" ? " автоматически" : issue.resolved_by ? `: ${issue.resolved_by}` : ""}
+                    {issue.resolution_note ? ` — ${issue.resolution_note}` : ""}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}

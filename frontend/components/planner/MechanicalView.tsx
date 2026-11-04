@@ -57,6 +57,42 @@ type DragState = {
   previewEndMinutes: number;
 };
 
+/** Записи одного поста и дня могут пересекаться по времени (записали одну машину, а приехала другая,
+ * поменяли очередность, отменили...). Как в календаре Outlook: пересекающиеся записи делят ширину
+ * полосы поста поровну и стоят рядом. Возвращает для каждой записи её дорожку и число дорожек
+ * в её группе пересечений. */
+function computeLanes(jobs: WorkshopJob[]): Map<string, { lane: number; lanes: number }> {
+  const sorted = [...jobs].sort(
+    (a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time) || timeToMinutes(a.end_time) - timeToMinutes(b.end_time),
+  );
+  const result = new Map<string, { lane: number; lanes: number }>();
+  let group: { id: string; lane: number }[] = [];
+  let laneEnds: number[] = [];
+  let groupEnd = -1;
+  const flush = () => {
+    for (const item of group) result.set(item.id, { lane: item.lane, lanes: laneEnds.length });
+    group = [];
+    laneEnds = [];
+    groupEnd = -1;
+  };
+  for (const job of sorted) {
+    const start = timeToMinutes(job.start_time);
+    const end = timeToMinutes(job.end_time);
+    if (group.length > 0 && start >= groupEnd) flush();
+    let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(end);
+    } else {
+      laneEnds[lane] = end;
+    }
+    group.push({ id: job.id, lane });
+    groupEnd = Math.max(groupEnd, end);
+  }
+  flush();
+  return result;
+}
+
 function jobMatches(job: WorkshopJob, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
@@ -632,7 +668,11 @@ function MechanicalViewInner({
                     whole grid, the way FullCalendar/Google Calendar-style
                     "now" indicators do in a multi-column timeline. */}
                 {todayVisible && nowInHours && <div className="now-line" style={{ top: nowTop }} />}
-                {jobsFor(day, post).map((job) => {
+                {(() => {
+                  const dayJobs = jobsFor(day, post);
+                  const lanesById = computeLanes(dayJobs);
+                  return dayJobs.map((job) => {
+                  const { lane, lanes } = lanesById.get(job.id) ?? { lane: 0, lanes: 1 };
                   const status = job.status_id ? statusById.get(job.status_id) : undefined;
                   const isBeingResized = dragState?.hasMoved && dragState.job.id === job.id && dragState.kind !== "move";
                   const startMinutes = isBeingResized ? dragState.previewStartMinutes : timeToMinutes(job.start_time);
@@ -654,6 +694,13 @@ function MechanicalViewInner({
                       style={{
                         top,
                         height: Math.max(18, height),
+                        // Пересекающиеся записи стоят рядом, каждая шириной в долю полосы поста.
+                        ...(lanes > 1
+                          ? {
+                              left: `calc(${(lane / lanes) * 100}% + 2px)`,
+                              right: `calc(${((lanes - lane - 1) / lanes) * 100}% + 2px)`,
+                            }
+                          : {}),
                         // CC = 80% opaque (20% transparent) - the previous
                         // 33 suffix was ~20% opaque, so the card barely
                         // showed its status color at all.
@@ -688,7 +735,8 @@ function MechanicalViewInner({
                       />
                     </div>
                   );
-                })}
+                  });
+                })()}
               </div>
             )),
           )}

@@ -23,6 +23,8 @@ export const NAV_TABS = [
   { key: "/telephony", label: "Входящие лиды" },
   { key: "/budget", label: "Финансы" },
   { key: "/cash", label: "Касса" },
+  { key: "/bays", label: "Боксы" },
+  { key: "/errors", label: "Ошибки" },
 ] as const;
 
 export type NavTabKey = (typeof NAV_TABS)[number]["key"];

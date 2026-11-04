@@ -912,6 +912,10 @@ export function WorkOrdersTable({
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 46,
     overscan: 12,
+    // The measured heights are cached per key: by index (the default) a filter that
+    // drops rows (e.g. only work orders, no requests) handed the old rows' heights to
+    // different ones - gaps and overlapping text. By the order's id they follow the row.
+    getItemKey: (index) => filteredRows[index]?.item.id ?? index,
   });
 
   // Scrolls back to whatever row was last opened (see

@@ -242,7 +242,7 @@ def test_create_and_list_workshop_job(
     assert len(listed.json()) == 1
 
 
-def test_workshop_job_rejects_overlapping_slot(client, auth_headers, mechanical_workshop) -> None:
+def test_workshop_job_allows_overlapping_slot(client, auth_headers, mechanical_workshop) -> None:
     first = client.post(
         f"{PLANNER_URL}/workshops/{mechanical_workshop.id}/jobs",
         headers=auth_headers,
@@ -255,7 +255,8 @@ def test_workshop_job_rejects_overlapping_slot(client, auth_headers, mechanical_
         headers=auth_headers,
         json=_job_payload(start_time="10:00:00", end_time="12:00:00"),
     )
-    assert overlapping.status_code == 422
+    # Две записи на одно время допустимы (записали одну машину, приехала другая).
+    assert overlapping.status_code == 201
 
     adjacent = client.post(
         f"{PLANNER_URL}/workshops/{mechanical_workshop.id}/jobs",

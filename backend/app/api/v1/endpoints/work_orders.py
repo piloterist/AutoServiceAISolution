@@ -7,6 +7,7 @@ directly) must present API_TOKEN just like the 1C integration does.
 """
 
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -215,6 +216,24 @@ def get_revenue_paid_summary(
     return RevenuePaidSummaryResponse(total_amount=total)
 
 
+def _department_response(
+    db: Session, rows: list[dict], selected: list[str] | None
+) -> DepartmentSummaryResponse:
+    """Ряды с выручкой плюс нулевые строки для остальных подразделений: список не
+    зависит от того, была ли за период выручка, и по подразделению всегда можно
+    поставить фильтр страницы (конверсия, звонки). При выбранном фильтре - только
+    выбранные."""
+    present = {row["department"] for row in rows}
+    zero_rows = [
+        {"department": name, "work_order_count": 0, "total_amount": Decimal("0")}
+        for name in list_departments(db)
+        if name not in present and (not selected or name in selected)
+    ]
+    return DepartmentSummaryResponse(
+        items=[DepartmentSummaryItem(**row) for row in [*rows, *zero_rows]]
+    )
+
+
 @router.get("/work-orders/summary/by-department", response_model=DepartmentSummaryResponse)
 def get_department_summary(
     date_from: datetime | None = Query(
@@ -234,7 +253,7 @@ def get_department_summary(
         exclusion=order_exclusion(get_app_settings(db)),
         excluded_repair_types=revenue_excluded_repair_types(get_app_settings(db)),
     )
-    return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
+    return _department_response(db, rows, _split_departments(departments))
 
 
 @router.get("/work-orders/summary/payment-by-department", response_model=DepartmentSummaryResponse)
@@ -253,7 +272,7 @@ def get_payment_department_summary(
         departments=_split_departments(departments),
         exclusion=order_exclusion(get_app_settings(db)),
     )
-    return DepartmentSummaryResponse(items=[DepartmentSummaryItem(**row) for row in rows])
+    return _department_response(db, rows, _split_departments(departments))
 
 
 @router.get("/work-orders/summary/by-status", response_model=StatusSummaryResponse)
