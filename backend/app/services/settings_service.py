@@ -42,6 +42,16 @@ def update_app_settings(
     cash_lock_from: date | None = None,
     cash_lock_to: date | None = None,
     receivables_max_age_days: int | None = None,
+    request_control_enabled: bool = False,
+    request_first_call_days: int = 3,
+    request_second_call_days: int = 7,
+    request_min_talk_sec: int = 20,
+    request_popup_enabled: bool = True,
+    request_popup_interval_minutes: int = 30,
+    request_auto_disqualify_days: int = 30,
+    crm_task_warn_days: int = 1,
+    crm_task_overdue_days: int = 3,
+    crm_task_archive_days: int = 30,
 ) -> AppSettings:
     settings = get_app_settings(db)
     settings.insurance_repair_type = insurance_repair_type
@@ -58,6 +68,16 @@ def update_app_settings(
     settings.planner_search_exclude_closed_orders = planner_search_exclude_closed_orders
     settings.cash_lock_from = cash_lock_from
     settings.cash_lock_to = cash_lock_to
+    settings.request_control_enabled = request_control_enabled
+    settings.request_first_call_days = request_first_call_days
+    settings.request_second_call_days = request_second_call_days
+    settings.request_min_talk_sec = request_min_talk_sec
+    settings.request_popup_enabled = request_popup_enabled
+    settings.request_popup_interval_minutes = request_popup_interval_minutes
+    settings.request_auto_disqualify_days = request_auto_disqualify_days
+    settings.crm_task_warn_days = crm_task_warn_days
+    settings.crm_task_overdue_days = crm_task_overdue_days
+    settings.crm_task_archive_days = crm_task_archive_days
     db.commit()
     db.refresh(settings)
     return settings

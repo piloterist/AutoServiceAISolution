@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import type { BayIssue } from "@/lib/backend-api";
+import Link from "next/link";
+
+import type { BayIssue, OverdueRequest, OverdueRequestsResponse } from "@/lib/backend-api";
 import { eventSnapshotUrl } from "@/lib/bays-client";
 import { ERRORS_CHANGED_EVENT } from "@/lib/errors-badge";
 
@@ -17,6 +19,17 @@ function formatDateTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("ru-RU", { timeZone: SHOP_TZ, day: "2-digit", month: "2-digit" });
+}
+
+// "9991234567" -> "+7 999 123-45-67" (как в планировщике).
+function formatPhone(phone: string | null): string {
+  const digits = (phone ?? "").replace(/\D/g, "").slice(-10);
+  if (digits.length !== 10) return phone ?? "";
+  return `+7 ${digits.slice(0, 3)} ${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8, 10)}`;
 }
 
 function IssueHead({ issue }: { issue: BayIssue }) {
@@ -39,6 +52,32 @@ export function ErrorsView({ initialIssues }: { initialIssues: BayIssue[] }) {
   const [issues, setIssues] = useState(initialIssues);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Просроченные звонки по заявкам на ремонт (все цеха): не хранятся, а вычисляются, поэтому
+  // сами исчезают из списка, как только дозвонились, создан заказ-наряд или заявку дисквалифицировали.
+  const [requests, setRequests] = useState<OverdueRequest[]>([]);
+  const [requestsError, setRequestsError] = useState<string | null>(null);
+  // Контроль заявок выключен в настройках - раздела про просроченные заявки нет совсем.
+  // Пока ответа нет, раздел скрыт (чтобы не мигал у тех, у кого контроль выключен).
+  const [requestControlEnabled, setRequestControlEnabled] = useState(false);
+
+  const reloadRequests = useCallback(async () => {
+    try {
+      const res = await fetch("/api/repair-requests/overdue?scope=all", { cache: "no-store" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = (await res.json()) as OverdueRequestsResponse;
+      setRequestControlEnabled(data.enabled);
+      setRequests(data.items);
+      setRequestsError(null);
+    } catch {
+      setRequestsError("Не удалось обновить просроченные заявки");
+    }
+  }, []);
+
+  useEffect(() => {
+    void reloadRequests();
+    const timer = setInterval(reloadRequests, REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [reloadRequests]);
 
   const reload = useCallback(async () => {
     try {
@@ -89,6 +128,46 @@ export function ErrorsView({ initialIssues }: { initialIssues: BayIssue[] }) {
       </p>
       {error && <p className="errors-fail">{error}</p>}
 
+      {requestControlEnabled && (
+        <>
+          <h2 className="errors-subtitle">Заявки без звонка клиенту</h2>
+          <p className="errors-hint">
+            Первый или второй звонок по заявке на ремонт просрочен (сроки и правила - в Настройках, «Контроль заявок»).
+            Ошибка закроется сама, когда дозвонились, создан заказ-наряд или заявку дисквалифицировали.
+          </p>
+          {requestsError && <p className="errors-fail">{requestsError}</p>}
+          {requests.length === 0 ? (
+            <p className="errors-empty">Просроченных заявок нет.</p>
+          ) : (
+            <ul className="errors-list">
+              {requests.map((request) => (
+                <li key={request.id} className="errors-item errors-item--open">
+                  <div className="errors-body">
+                    <div className="errors-title">
+                      <Link className="errors-request-link" href={`/work-orders/${request.id}`}>
+                        {request.external_number}
+                      </Link>
+                      {request.customer_name ? ` — ${request.customer_name}` : ""}
+                    </div>
+                    <div className="errors-sub">
+                      {[formatPhone(request.phone), request.vehicle_description, request.department]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </div>
+                    <div>
+                      {request.overdue === "first" ? "Просрочен первый звонок" : "Просрочен второй звонок"}: срок был{" "}
+                      {formatDay(request.deadline)}, заявка от {formatDay(request.created_at)}, попыток{" "}
+                      {request.attempts_count}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      <h2 className="errors-subtitle">Машины в боксе без заказ-наряда</h2>
       {open.length === 0 ? (
         <p className="errors-empty">Неисправленных ошибок нет.</p>
       ) : (

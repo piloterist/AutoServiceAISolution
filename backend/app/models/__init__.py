@@ -19,11 +19,13 @@ from app.models.call_record import CallRecord
 from app.models.cash_entry import CashEntry
 from app.models.cost_expense import CostExpense
 from app.models.cost_item import CostItem
+from app.models.crm_task import CrmTask, CrmTaskAction, CrmTaskComment
 from app.models.department import Department
 from app.models.employee import Employee
 from app.models.import_batch import ImportBatch
 from app.models.leads_settings import LeadsSettings
 from app.models.phone_source import PhoneSource
+from app.models.repair_request_attempt import RepairRequestAttempt
 from app.models.role_tab_visibility import RoleTabVisibility
 from app.models.schedule_audit_log import ScheduleAuditLog
 from app.models.slesarka_status import SlesarkaStatus
@@ -79,4 +81,8 @@ __all__ = [
     "CameraStatus",
     "BayOccupancy",
     "BaySnapshotRequest",
+    "RepairRequestAttempt",
+    "CrmTask",
+    "CrmTaskComment",
+    "CrmTaskAction",
 ]

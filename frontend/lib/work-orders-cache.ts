@@ -17,7 +17,7 @@ import type { WorkOrderListItem } from "@/lib/backend-api";
 // this was invisible to the usual troubleshooting steps; bumping the key
 // here invalidates every existing cache outright on this deploy, instead
 // of relying on every affected session to clear site data manually.
-const CACHE_KEY = "work-orders-cache:v3";
+const CACHE_KEY = "work-orders-cache:v4";
 // Long enough to survive a normal dashboard-then-work-orders click, short
 // enough that a stale list can't linger unnoticed for the rest of a long
 // session after a new 1C export lands.
@@ -91,6 +91,7 @@ async function fetchAllWorkOrders(
     onlyRevenue?: boolean;
     workshopId?: string;
     includeRequests?: boolean;
+    onlyRequestIssues?: boolean;
   },
   onProgress?: (items: WorkOrderListItem[], total: number) => void,
 ): Promise<{ items: WorkOrderListItem[]; total: number }> {
@@ -106,6 +107,7 @@ async function fetchAllWorkOrders(
     if (params.onlyRevenue) query.set("only_revenue", "true");
     if (params.workshopId) query.set("workshop_id", params.workshopId);
     if (params.includeRequests) query.set("include_requests", "true");
+    if (params.onlyRequestIssues) query.set("only_request_issues", "true");
 
     const res = await fetch(`/api/work-orders?${query.toString()}`);
     if (!res.ok) throw new Error(`Не удалось загрузить заказ-наряды (${res.status})`);
@@ -185,6 +187,7 @@ export function loadWorkOrdersFiltered(
     onlyReceivables?: boolean;
     onlyRevenue?: boolean;
     workshopId?: string;
+    onlyRequestIssues?: boolean;
   },
   onProgress?: (items: WorkOrderListItem[], total: number) => void,
 ): Promise<{ items: WorkOrderListItem[]; total: number }> {

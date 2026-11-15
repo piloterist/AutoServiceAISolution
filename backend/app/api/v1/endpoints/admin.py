@@ -404,6 +404,7 @@ def create_role_tab_visibility(
             visible_tabs=payload.visible_tabs,
             all_departments=payload.all_departments,
             cash_correction=payload.cash_correction,
+            request_disqualify_unchecked=payload.request_disqualify_unchecked,
         )
     except Exception as exc:  # unique role violation
         db.rollback()
@@ -431,6 +432,7 @@ def update_role_tab_visibility(
             visible_tabs=payload.visible_tabs,
             all_departments=payload.all_departments,
             cash_correction=payload.cash_correction,
+            request_disqualify_unchecked=payload.request_disqualify_unchecked,
         )
     except Exception as exc:
         db.rollback()

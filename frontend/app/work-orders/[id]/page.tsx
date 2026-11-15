@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { WorkOrderClosedWithoutPayment } from "@/components/WorkOrderClosedWithoutPayment";
+import { RequestControlCard } from "@/components/RequestControlCard";
 import { WorkOrderComment } from "@/components/WorkOrderComment";
 import { WorkOrderLineTabs } from "@/components/WorkOrderLineTabs";
 import { ROLE_ADMIN } from "@/lib/auth";
@@ -199,6 +200,8 @@ export default async function WorkOrderDetailPage({
               </>
             )}
           </div>
+
+          {workOrder.doc_type === "repair_request" && <RequestControlCard requestId={workOrder.id} phone={workOrder.phone} />}
 
           <WorkOrderComment workOrderId={workOrder.id} initialComment={workOrder.comment} />
 

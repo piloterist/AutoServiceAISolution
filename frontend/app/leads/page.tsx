@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-// "Заявки" is now the "Заявки с сайта" tab of Входящие лиды (/telephony); this
+// "Заявки" is now the "Заявки с сайта" tab of CRM (/telephony); this
 // keeps old links and bookmarks working, including the planner's ?id= deep link.
 export default async function LeadsPage({
   searchParams,

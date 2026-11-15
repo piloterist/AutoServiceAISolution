@@ -14,6 +14,7 @@ type FormState = {
   visibleTabs: NavTabKey[];
   allDepartments: boolean;
   cashCorrection: boolean;
+  requestDisqualifyUnchecked: boolean;
 };
 
 function emptyForm(takenRoles: string[]): FormState {
@@ -21,6 +22,7 @@ function emptyForm(takenRoles: string[]): FormState {
   return { role: firstFree, visibleTabs: NAV_TABS.map((t) => t.key),
     allDepartments: false,
     cashCorrection: false,
+    requestDisqualifyUnchecked: false,
   };
 }
 
@@ -30,6 +32,7 @@ function toForm(row: RoleTabVisibility): FormState {
     visibleTabs: row.visible_tabs as NavTabKey[],
     allDepartments: row.all_departments,
     cashCorrection: row.cash_correction,
+    requestDisqualifyUnchecked: row.request_disqualify_unchecked,
   };
 }
 
@@ -89,6 +92,7 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
         visible_tabs: form.visibleTabs,
         all_departments: form.allDepartments,
         cash_correction: form.cashCorrection,
+        request_disqualify_unchecked: form.requestDisqualifyUnchecked,
       };
       if (editing === "new") {
         const created = await roleTabVisibilityApi.create(payload);
@@ -149,6 +153,7 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
             <th style={{ width: "58%" }}>Закладки</th>
             <th>Все подразделения</th>
             <th>Корректировка кассы</th>
+            <th>Дисквалификация заявок без попыток</th>
           </tr>
         </thead>
         <tbody>
@@ -162,11 +167,12 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
               <td>{tabLabels(row.visible_tabs) || "—"}</td>
               <td>{row.all_departments ? "Да" : "Нет"}</td>
               <td>{row.cash_correction ? "Да" : "Нет"}</td>
+              <td>{row.request_disqualify_unchecked ? "Да" : "Нет"}</td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={4} className="admin-empty-row">
+              <td colSpan={5} className="admin-empty-row">
                 Для всех ролей действует видимость по умолчанию (все закладки)
               </td>
             </tr>
@@ -229,8 +235,9 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
             Все подразделения
           </label>
           <p className="settings-description">
-            Пользователи этой роли видят на закладке «Касса» кассы всех подразделений и цехов. Без галки
-            пользователь видит только кассу своего цеха (выбранного в его карточке).
+            Пользователи этой роли видят на закладке «Касса» кассы всех подразделений и цехов, а колокольчик
+            контроля заявок в планировщике считает просроченные заявки всех цехов. Без галки пользователь
+            видит только свой цех (выбранный в его карточке).
           </p>
 
           <label className="settings-checkbox">
@@ -244,6 +251,20 @@ export function RoleTabVisibilityCard({ initialRows }: { initialRows: RoleTabVis
           <p className="settings-description">
             Только пользователи этой роли могут вносить и менять записи кассы за любой день. Без галки — только
             за сегодняшний.
+          </p>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={form.requestDisqualifyUnchecked}
+              onChange={(e) => setForm((prev) => ({ ...prev, requestDisqualifyUnchecked: e.target.checked }))}
+            />
+            Дисквалификация заявок без попыток
+          </label>
+          <p className="settings-description">
+            Пользователи этой роли могут дисквалифицировать заявку на ремонт, по которой ещё нет двух попыток
+            связаться с клиентом. Без галки заявку можно дисквалифицировать только после двух попыток. У роли
+            «Админ» это право есть всегда.
           </p>
         </div>
 

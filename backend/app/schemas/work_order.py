@@ -6,6 +6,7 @@ purpose - the two evolve independently.
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -77,6 +78,11 @@ class WorkOrderListItem(BaseModel):
     # frontend/components/WorkOrdersTable.tsx) - product ask, 2026-10-17.
     # Same attach-before-validate pattern as is_scheduled/has_comment above.
     is_individual_customer: bool
+    # Repair requests only (контроль заявок): "first" / "second" - просрочен первый / второй
+    # звонок клиенту; the list highlights such rows pink. Same attach-before-validate pattern.
+    request_issue: Literal["first", "second"] | None = None
+    # The request was disqualified by staff (WorkOrder.request_disqualified_at is set).
+    request_disqualified: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { DateInput } from "@/components/DateInput";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import type { AppSettings, AutoMatchResult, OrderExclusionMode } from "@/lib/backend-api";
+import { invalidateWorkOrdersCache } from "@/lib/work-orders-cache";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -87,6 +88,22 @@ export function SettingsForm({
   // Касса: the locked period (both inclusive) - empty = nothing locked.
   const [cashLockFrom, setCashLockFrom] = useState(initialSettings.cash_lock_from ?? "");
   const [cashLockTo, setCashLockTo] = useState(initialSettings.cash_lock_to ?? "");
+  // Контроль заявок на ремонт (backend services/request_control_service.py).
+  const [requestControlEnabled, setRequestControlEnabled] = useState(initialSettings.request_control_enabled);
+  const [requestFirstCallDays, setRequestFirstCallDays] = useState(String(initialSettings.request_first_call_days));
+  const [requestSecondCallDays, setRequestSecondCallDays] = useState(String(initialSettings.request_second_call_days));
+  const [requestMinTalkSec, setRequestMinTalkSec] = useState(String(initialSettings.request_min_talk_sec));
+  const [requestPopupEnabled, setRequestPopupEnabled] = useState(initialSettings.request_popup_enabled);
+  const [requestPopupIntervalMinutes, setRequestPopupIntervalMinutes] = useState(
+    String(initialSettings.request_popup_interval_minutes),
+  );
+  const [requestAutoDisqualifyDays, setRequestAutoDisqualifyDays] = useState(
+    String(initialSettings.request_auto_disqualify_days),
+  );
+  // Доска задач CRM (backend services/crm_task_service.py): сроки окраски карточек «На контроле».
+  const [crmTaskWarnDays, setCrmTaskWarnDays] = useState(String(initialSettings.crm_task_warn_days));
+  const [crmTaskOverdueDays, setCrmTaskOverdueDays] = useState(String(initialSettings.crm_task_overdue_days));
+  const [crmTaskArchiveDays, setCrmTaskArchiveDays] = useState(String(initialSettings.crm_task_archive_days));
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [autoMatchState, setAutoMatchState] = useState<"idle" | "running" | "done" | "error">(
     "idle",
@@ -114,9 +131,22 @@ export function SettingsForm({
           planner_search_exclude_closed_orders: plannerSearchExcludeClosedOrders,
           cash_lock_from: cashLockFrom || null,
           cash_lock_to: cashLockTo || null,
+          request_control_enabled: requestControlEnabled,
+          request_first_call_days: Number(requestFirstCallDays) || 3,
+          request_second_call_days: Number(requestSecondCallDays) || 7,
+          request_min_talk_sec: Number(requestMinTalkSec) || 20,
+          request_popup_enabled: requestPopupEnabled,
+          request_popup_interval_minutes: Number(requestPopupIntervalMinutes) || 30,
+          request_auto_disqualify_days: Number(requestAutoDisqualifyDays) || 30,
+          crm_task_warn_days: Number(crmTaskWarnDays) || 1,
+          crm_task_overdue_days: Number(crmTaskOverdueDays) || 3,
+          crm_task_archive_days: Number(crmTaskArchiveDays) || 30,
         } satisfies AppSettings),
       });
       if (!res.ok) throw new Error(await res.text());
+      // The cached work orders list carries the repair requests' overdue marks (request_issue),
+      // which depend on these settings - drop it so the list is refetched with the new ones.
+      invalidateWorkOrdersCache();
       setSaveState("saved");
     } catch {
       setSaveState("error");
@@ -355,6 +385,150 @@ export function SettingsForm({
           Не показывать в поиске заказ-наряда (по номеру, VIN и т.п.) при создании записи
           планировщика заказ-наряды в статусе «Закрыт» или «Выполнен» — привязывать новую запись к
           уже завершённому заказ-наряду незачем.
+        </p>
+      </div>
+
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Контроль заявок на ремонт</h3>
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={requestControlEnabled}
+            onChange={(event) => setRequestControlEnabled(event.target.checked)}
+          />
+          Включить контроль заявок
+        </label>
+
+        <p className="settings-description">
+          Заявка на ремонт — документ из 1С, по которому клиент заехал на дефектовку. Пока по ней не
+          создан заказ-наряд, клиенту надо дозвониться и поговорить дважды. Сроки считаются от даты
+          создания заявки. Просроченные заявки видны в листе «Ошибки», на колокольчике планировщика
+          (по цеху пользователя) и подсвечиваются розовым в списке заказ-нарядов. Выключено — ничего
+          из этого не показывается.
+        </p>
+
+        <div className="settings-field">
+          <label htmlFor="request-first-call-days">Первый звонок — в течение (дней)</label>
+          <input
+            id="request-first-call-days"
+            type="number"
+            min={1}
+            value={requestFirstCallDays}
+            onChange={(event) => setRequestFirstCallDays(event.target.value)}
+          />
+        </div>
+        <div className="settings-field">
+          <label htmlFor="request-second-call-days">Второй звонок — в течение (дней)</label>
+          <input
+            id="request-second-call-days"
+            type="number"
+            min={1}
+            value={requestSecondCallDays}
+            onChange={(event) => setRequestSecondCallDays(event.target.value)}
+          />
+        </div>
+        <div className="settings-field">
+          <label htmlFor="request-min-talk-sec">Разговор считается попыткой от (сек)</label>
+          <input
+            id="request-min-talk-sec"
+            type="number"
+            min={1}
+            value={requestMinTalkSec}
+            onChange={(event) => setRequestMinTalkSec(event.target.value)}
+          />
+        </div>
+
+        <p className="settings-description">
+          Попытка — состоявшийся исходящий разговор с клиентом (звонок на номер из заявки с любой
+          линии, не короче указанного времени) или ручная отметка с комментарием. Недозвон попыткой
+          не считается: звонить нужно, пока не дозвонятся. Два разговора в один день — одна попытка.
+          Дисквалифицировать заявку можно после двух попыток; без них — только роли с правом
+          «Дисквалификация заявок без попыток» (Настройки → Пользователи → Права доступа).
+        </p>
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={requestPopupEnabled}
+            onChange={(event) => setRequestPopupEnabled(event.target.checked)}
+          />
+          Жёлтое напоминание в планировщике
+        </label>
+        <div className="settings-field">
+          <label htmlFor="request-popup-interval">Повторять каждые (мин)</label>
+          <input
+            id="request-popup-interval"
+            type="number"
+            min={1}
+            value={requestPopupIntervalMinutes}
+            onChange={(event) => setRequestPopupIntervalMinutes(event.target.value)}
+          />
+        </div>
+
+        <p className="settings-description">
+          Мастерам-приёмщикам цеха в планировщике показывается окно с восклицательным знаком и списком
+          просроченных заявок: при каждом открытии планировщика и затем с указанным периодом, пока
+          просроченные есть. Колокольчик со счётчиком остаётся и при выключенном окне.
+        </p>
+
+        <div className="settings-field">
+          <label htmlFor="request-auto-disqualify">Автодисквалификация заявок старше (дней)</label>
+          <input
+            id="request-auto-disqualify"
+            type="number"
+            min={1}
+            value={requestAutoDisqualifyDays}
+            onChange={(event) => setRequestAutoDisqualifyDays(event.target.value)}
+          />
+        </div>
+
+        <p className="settings-description">
+          Заявка без заказ-наряда старше указанного срока (от даты создания) считается
+          дисквалифицированной автоматически и больше не попадает в просрочку.
+        </p>
+      </div>
+
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Доска задач CRM</h3>
+
+        <div className="settings-field">
+          <label htmlFor="crm-task-warn-days">Розовая карточка — на контроле дольше (дней)</label>
+          <input
+            id="crm-task-warn-days"
+            type="number"
+            min={1}
+            value={crmTaskWarnDays}
+            onChange={(event) => setCrmTaskWarnDays(event.target.value)}
+          />
+        </div>
+        <div className="settings-field">
+          <label htmlFor="crm-task-overdue-days">Красная карточка — на контроле дольше (дней)</label>
+          <input
+            id="crm-task-overdue-days"
+            type="number"
+            min={1}
+            value={crmTaskOverdueDays}
+            onChange={(event) => setCrmTaskOverdueDays(event.target.value)}
+          />
+        </div>
+        <div className="settings-field">
+          <label htmlFor="crm-task-archive-days">Архив — «Отказ» и «Заказ-наряд» старше (дней)</label>
+          <input
+            id="crm-task-archive-days"
+            type="number"
+            min={1}
+            value={crmTaskArchiveDays}
+            onChange={(event) => setCrmTaskArchiveDays(event.target.value)}
+          />
+        </div>
+
+        <p className="settings-description">
+          Телефон попадает на доску кнопкой «На контроль» у звонка. Пока карточка висит в столбце
+          «На контроле» дольше первого срока, она розовая, дольше второго — красная; сроки считаются
+          от попадания карточки в столбец. Рядом с трубкой в планировщике показывается число карточек
+          цеха, дошедших хотя бы до розового срока. Карточки «Отказ» и «Заказ-наряд» старше срока
+          архива скрываются с доски; вернуть их можно галкой «Показать архивные».
         </p>
       </div>
 

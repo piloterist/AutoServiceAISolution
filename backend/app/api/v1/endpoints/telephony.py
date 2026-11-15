@@ -400,6 +400,7 @@ def line_calls(
                 workshop_label=(
                     workshop_labels.get(event.workshop_id) if event.workshop_id else None
                 ),
+                workshop_id=event.workshop_id,
                 dst=event.dst,
                 dst_extension=event.dst_extension,
                 answered_phone=event.answered_phone,

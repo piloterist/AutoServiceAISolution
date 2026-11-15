@@ -72,7 +72,14 @@ export type WorkOrderListItem = {
   // list filter and the closed/unpaid/individual row highlight (see
   // WorkOrdersTable.tsx) - product ask, 2026-10-17.
   is_individual_customer: boolean;
+  // Repair requests (контроль заявок): "first" / "second" = the first / second call to the
+  // client is overdue - the list paints such rows pink; the request was disqualified by staff.
+  // Rows cached before these fields existed have neither (= no issue).
+  request_issue?: RequestIssueKind | null;
+  request_disqualified?: boolean;
 };
+
+export type RequestIssueKind = "first" | "second";
 
 export type WorkOrderListResponse = {
   items: WorkOrderListItem[];
@@ -119,6 +126,23 @@ export type RepairTypeListResponse = {
 export type OrderExclusionMode = "none" | "internal" | "external";
 
 export type AppSettings = {
+  // Контроль заявок на ремонт (backend services/request_control_service.py): master switch,
+  // the days from the request's creation by which the 1st / 2nd conversation with the client
+  // must have happened, the minimum talk time that makes a call an attempt, the yellow
+  // popup in the Planner and its period, and the age after which a request is disqualified.
+  request_control_enabled: boolean;
+  request_first_call_days: number;
+  request_second_call_days: number;
+  request_min_talk_sec: number;
+  request_popup_enabled: boolean;
+  request_popup_interval_minutes: number;
+  request_auto_disqualify_days: number;
+  // Доска задач CRM: days a card may sit in "На контроле" before it turns pink / red
+  // (backend services/crm_task_service.py).
+  crm_task_warn_days: number;
+  crm_task_overdue_days: number;
+  // Days after which a card in "Отказ" / "Заказ-наряд" goes to the board's archive.
+  crm_task_archive_days: number;
   // Касса: the locked period (both inclusive, "YYYY-MM-DD") - no cash entry
   // can be created, changed or deleted on those days. Both set or both null.
   cash_lock_from: string | null;
@@ -480,23 +504,32 @@ export function getWorkOrders(
     workshopId?: string;
     /** Also list the repair requests (Заявки на ремонт) - the work orders list page. */
     includeRequests?: boolean;
+    /** Only the repair requests with an overdue call in the caller's цех - what the
+     * Planner's bell links to. Needs `actor` (whose цех). */
+    onlyRequestIssues?: boolean;
+    actor?: { id: string; fullName: string };
     limit?: number;
     offset?: number;
   },
 ): Promise<WorkOrderListResponse> {
-  return backendGet<WorkOrderListResponse>("/api/v1/work-orders", {
-    date_from: params?.dateFrom ?? "",
-    date_to: dateToParam(params?.dateTo),
-    departments: departmentsParam(params?.departments),
-    paid_from: params?.paidFrom ?? "",
-    paid_to: dateToParam(params?.paidTo),
-    only_receivables: params?.onlyReceivables ? "true" : "",
-    only_revenue: params?.onlyRevenue ? "true" : "",
-    workshop_id: params?.workshopId ?? "",
-    include_requests: params?.includeRequests ? "true" : "",
-    limit: params?.limit ? String(params.limit) : "",
-    offset: params?.offset ? String(params.offset) : "",
-  });
+  return backendGet<WorkOrderListResponse>(
+    "/api/v1/work-orders",
+    {
+      date_from: params?.dateFrom ?? "",
+      date_to: dateToParam(params?.dateTo),
+      departments: departmentsParam(params?.departments),
+      paid_from: params?.paidFrom ?? "",
+      paid_to: dateToParam(params?.paidTo),
+      only_receivables: params?.onlyReceivables ? "true" : "",
+      only_revenue: params?.onlyRevenue ? "true" : "",
+      workshop_id: params?.workshopId ?? "",
+      include_requests: params?.includeRequests ? "true" : "",
+      only_request_issues: params?.onlyRequestIssues ? "true" : "",
+      limit: params?.limit ? String(params.limit) : "",
+      offset: params?.offset ? String(params.offset) : "",
+    },
+    params?.actor ? actorHeaders(params.actor) : undefined,
+  );
 }
 
 // Конверсия новых клиентов в заказ-наряды за период (страница Аналитика) -
@@ -1002,6 +1035,9 @@ export type RoleTabVisibility = {
   all_departments: boolean;
   // "Корректировка кассы": may edit the cash book for any day, not only today.
   cash_correction: boolean;
+  // "Дисквалификация заявок без попыток": may disqualify a repair request that has fewer than
+  // two counted attempts to reach the client.
+  request_disqualify_unchecked: boolean;
 };
 
 export type RoleTabVisibilityWrite = {
@@ -1009,6 +1045,7 @@ export type RoleTabVisibilityWrite = {
   visible_tabs: string[];
   all_departments: boolean;
   cash_correction: boolean;
+  request_disqualify_unchecked: boolean;
 };
 
 export function getRoleTabVisibility(): Promise<RoleTabVisibility[]> {
@@ -1476,6 +1513,8 @@ export type LineCallEvent = {
   // "Цех — Телефон — Добавочный" table) - null if nothing matched this
   // call, or the mapping table is empty / hasn't been recomputed yet.
   workshop_label: string | null;
+  // The same цех as an id - preselected in the "На контроль" dialog (Доска задач).
+  workshop_id?: string | null;
   // "Куда звонили"/"Кто ответил" columns - dst is the raw destination
   // dialed (client's own line for IN, the number we dialed for OUT/
   // callback); dst_extension/answered_phone are its paired добавочный/
@@ -2267,6 +2306,225 @@ export function resolveBayIssue(
   actor: { id: string; fullName: string },
 ): Promise<BayIssuesResponse> {
   return backendPost<BayIssuesResponse>(`/api/v1/bays/issues/${id}/resolve`, { note }, actorHeaders(actor));
+}
+
+// Контроль заявок на ремонт (backend services/request_control_service.py).
+export type OverdueRequest = {
+  id: string;
+  external_number: string;
+  customer_name: string | null;
+  phone: string | null;
+  vehicle_description: string | null;
+  department: string | null;
+  created_at: string;
+  overdue: RequestIssueKind;
+  /** The deadline that was missed (of the first or of the second call). */
+  deadline: string;
+  attempts_count: number;
+};
+
+export type OverdueRequestsResponse = {
+  enabled: boolean;
+  popup_enabled: boolean;
+  popup_interval_minutes: number;
+  first_count: number;
+  second_count: number;
+  items: OverdueRequest[];
+};
+
+export type RequestAttempt = {
+  at: string;
+  kind: "call" | "manual";
+  operator: string | null;
+  talk_sec: number | null;
+  comment: string | null;
+  by: string | null;
+};
+
+export type RequestControl = {
+  id: string;
+  status: "open" | "converted" | "disqualified" | "expired";
+  overdue: RequestIssueKind | null;
+  created_at: string;
+  first_deadline: string;
+  second_deadline: string;
+  attempts_count: number;
+  attempts_required: number;
+  missed_calls: number;
+  attempts: RequestAttempt[];
+  disqualified_at: string | null;
+  disqualified_by: string | null;
+  disqualify_reason: string | null;
+  disqualify_comment: string | null;
+  can_disqualify: boolean;
+  can_disqualify_unchecked: boolean;
+  reasons: string[];
+  min_talk_sec: number;
+  control_enabled: boolean;
+};
+
+type Actor = { id: string; fullName: string };
+
+/** scope "mine" = the caller's цех (Planner bell/popup), "all" = every цех (лист «Ошибки»). */
+export function getOverdueRequests(
+  scope: "mine" | "all",
+  actor: Actor,
+  workshopId?: string,
+): Promise<OverdueRequestsResponse> {
+  return backendGet<OverdueRequestsResponse>(
+    "/api/v1/repair-requests/overdue",
+    { scope, ...(workshopId ? { workshop_id: workshopId } : {}) },
+    actorHeaders(actor),
+  );
+}
+
+export function getRequestControl(id: string, actor: Actor): Promise<RequestControl> {
+  return backendGet<RequestControl>(`/api/v1/repair-requests/${id}/control`, undefined, actorHeaders(actor));
+}
+
+export function addRequestAttempt(
+  id: string,
+  payload: { comment: string; attempted_at?: string | null },
+  actor: Actor,
+): Promise<RequestControl> {
+  return backendPost<RequestControl>(`/api/v1/repair-requests/${id}/attempts`, payload, actorHeaders(actor));
+}
+
+export function disqualifyRequest(
+  id: string,
+  payload: { reason: string; comment?: string | null },
+  actor: Actor,
+): Promise<RequestControl> {
+  return backendPost<RequestControl>(`/api/v1/repair-requests/${id}/disqualify`, payload, actorHeaders(actor));
+}
+
+// Доска задач CRM (backend services/crm_task_service.py).
+export type CrmTaskStatus = "control" | "inspection" | "thinking" | "refused" | "work_order";
+
+export type CrmTask = {
+  id: string;
+  phone: string;
+  status: CrmTaskStatus;
+  status_changed_at: string;
+  call_at: string;
+  workshop_id: string | null;
+  workshop_label: string | null;
+  employee_id: string | null;
+  employee_name: string | null;
+  /** Planned date of the next action ("YYYY-MM-DD"): the pink / red terms count from it. */
+  next_action_date: string | null;
+  client_name: string | null;
+  car_description: string | null;
+  request_number: string | null;
+  work_order_number: string | null;
+  refuse_reason: string | null;
+  /** The planner record: when it was made, and the inspection stage's dates (date-only). */
+  inspection_at: string | null;
+  inspection_date: string | null;
+  inspection_end_date: string | null;
+  created_by_name: string;
+  moved_by_name: string | null;
+  /** Pink / red card colour in "На контроле" (thresholds are in Settings); null elsewhere. */
+  alert: "warn" | "overdue" | null;
+  comments_count: number;
+};
+
+export type CrmTaskComment = {
+  id: string;
+  /** The column the card was in when the comment was left. */
+  status: CrmTaskStatus;
+  text: string;
+  author_name: string;
+  created_at: string;
+};
+
+export type CrmTaskAction = {
+  id: string;
+  planned_date: string; // "YYYY-MM-DD"
+  comment: string;
+  author_name: string;
+  created_at: string;
+};
+
+/** The lead window: the card, links to the repair request / work order and the comments (newest first). */
+export type CrmTaskDetail = {
+  task: CrmTask;
+  request_id: string | null;
+  work_order_id: string | null;
+  comments: CrmTaskComment[];
+  /** History of the planned actions, newest first. */
+  actions: CrmTaskAction[];
+};
+
+export type CrmTaskListResponse = {
+  warn_days: number;
+  overdue_days: number;
+  items: CrmTask[];
+};
+
+export type CrmTaskOverdueCount = {
+  /** Cards in "На контроле" that reached at least the pink threshold (red ones included). */
+  count: number;
+  overdue_count: number;
+  warn_days: number;
+  overdue_days: number;
+};
+
+export function getCrmTasks(
+  workshopId?: string | null,
+  archived?: boolean,
+  employeeId?: string | null,
+): Promise<CrmTaskListResponse> {
+  return backendGet<CrmTaskListResponse>("/api/v1/crm-tasks", {
+    workshop_id: workshopId ?? "",
+    employee_id: employeeId ?? "",
+    archived: archived ? "true" : "",
+  });
+}
+
+export function getCrmTaskOverdueCount(workshopId?: string | null): Promise<CrmTaskOverdueCount> {
+  return backendGet<CrmTaskOverdueCount>(
+    "/api/v1/crm-tasks/overdue-count",
+    workshopId ? { workshop_id: workshopId } : undefined,
+  );
+}
+
+export function createCrmTask(
+  callId: string,
+  workshopId: string,
+  employeeId: string | null,
+  actor: Actor,
+): Promise<{ task: CrmTask; created: boolean }> {
+  return backendPost<{ task: CrmTask; created: boolean }>(
+    "/api/v1/crm-tasks",
+    { call_id: callId, workshop_id: workshopId, employee_id: employeeId },
+    actorHeaders(actor),
+  );
+}
+
+export function moveCrmTask(
+  id: string,
+  payload: { status: CrmTaskStatus; reason?: string | null },
+  actor: Actor,
+): Promise<CrmTask> {
+  return backendPost<CrmTask>(`/api/v1/crm-tasks/${id}/move`, payload, actorHeaders(actor));
+}
+
+export function getCrmTaskDetail(id: string): Promise<CrmTaskDetail> {
+  return backendGet<CrmTaskDetail>(`/api/v1/crm-tasks/${id}`);
+}
+
+export function addCrmTaskComment(
+  id: string,
+  text: string,
+  nextActionDate: string | null,
+  actor: Actor,
+): Promise<CrmTaskComment> {
+  return backendPost<CrmTaskComment>(
+    `/api/v1/crm-tasks/${id}/comments`,
+    { text, next_action_date: nextActionDate },
+    actorHeaders(actor),
+  );
 }
 
 export type BayEventWrite = {

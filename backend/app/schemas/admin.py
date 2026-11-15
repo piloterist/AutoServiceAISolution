@@ -204,6 +204,7 @@ class RoleTabVisibilityOut(BaseModel):
     visible_tabs: list[str]
     all_departments: bool
     cash_correction: bool
+    request_disqualify_unchecked: bool
 
     model_config = {"from_attributes": True}
 
@@ -215,6 +216,9 @@ class RoleTabVisibilityWrite(BaseModel):
     all_departments: bool = False
     # "Корректировка кассы": may edit the cash book for any day, not only today.
     cash_correction: bool = False
+    # "Дисквалификация заявок без попыток": may disqualify a repair request that has fewer
+    # than two counted attempts (see services/request_control_service.py).
+    request_disqualify_unchecked: bool = False
 
     def validate_choices(self) -> None:
         if self.role not in ROLES:

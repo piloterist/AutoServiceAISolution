@@ -8,6 +8,8 @@ import { BodyView } from "./BodyView";
 import { LeadsBadge } from "./LeadsBadge";
 import { MechanicalView } from "./MechanicalView";
 import { MissedCallsBadge } from "./MissedCallsBadge";
+import { RequestsBell } from "./RequestsBell";
+import { TaskBoardBadge } from "./TaskBoardBadge";
 
 /** Picks the workshop a department/type switch should land on: prefers the
  * one marked "по умолчанию", otherwise the first match - see product brief
@@ -123,8 +125,10 @@ export function PlannerShell({
             </button>
           ))}
         </div>
+        <TaskBoardBadge workshopId={selectedWorkshop?.id ?? null} />
         <MissedCallsBadge />
         <LeadsBadge />
+        <RequestsBell workshopId={selectedWorkshop?.id ?? null} />
       </div>
 
       {departmentWorkshopTypes.length > 0 && (

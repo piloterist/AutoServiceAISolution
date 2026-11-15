@@ -207,6 +207,8 @@ class LineCallEventOut(BaseModel):
     # цеха"). Resolved from CallRecord.workshop_id at the API layer - see
     # endpoints/telephony.py's own _workshop_label_map.
     workshop_label: str | None
+    # The same цех as an id - preselected in the "На контроль" dialog (Доска задач).
+    workshop_id: uuid.UUID | None = None
     # "Куда звонили"/"Кто ответил" (product ask, 2026-10-04) - dst is the
     # raw destination dialed (the client's own line for IN, the number we
     # dialed for OUT/callback); dst_extension/answered_phone are resolved

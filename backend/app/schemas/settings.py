@@ -38,6 +38,18 @@ class AppSettingsResponse(BaseModel):
     planner_search_exclude_closed_orders: bool
     cash_lock_from: date | None
     cash_lock_to: date | None
+    # Контроль заявок на ремонт - see models/app_settings.py.
+    request_control_enabled: bool
+    request_first_call_days: int
+    request_second_call_days: int
+    request_min_talk_sec: int
+    request_popup_enabled: bool
+    request_popup_interval_minutes: int
+    request_auto_disqualify_days: int
+    # Доска задач CRM - see models/app_settings.py.
+    crm_task_warn_days: int
+    crm_task_overdue_days: int
+    crm_task_archive_days: int
 
     model_config = {"from_attributes": True}
 
@@ -64,6 +76,30 @@ class AppSettingsUpdate(BaseModel):
     planner_search_exclude_closed_orders: bool = False
     cash_lock_from: date | None = None
     cash_lock_to: date | None = None
+    request_control_enabled: bool = False
+    request_first_call_days: int = Field(default=3, ge=1, le=365)
+    request_second_call_days: int = Field(default=7, ge=1, le=365)
+    request_min_talk_sec: int = Field(default=20, ge=1, le=3600)
+    request_popup_enabled: bool = True
+    request_popup_interval_minutes: int = Field(default=30, ge=1, le=1440)
+    request_auto_disqualify_days: int = Field(default=30, ge=1, le=3650)
+    crm_task_warn_days: int = Field(default=1, ge=1, le=365)
+    crm_task_overdue_days: int = Field(default=3, ge=1, le=365)
+    crm_task_archive_days: int = Field(default=30, ge=1, le=3650)
+
+    @model_validator(mode="after")
+    def _check_crm_task_days(self) -> "AppSettingsUpdate":
+        if self.crm_task_overdue_days < self.crm_task_warn_days:
+            raise ValueError("Красный срок доски задач не может быть раньше розового")
+        return self
+
+    @model_validator(mode="after")
+    def _check_request_days(self) -> "AppSettingsUpdate":
+        if self.request_second_call_days < self.request_first_call_days:
+            raise ValueError("Срок второго звонка не может быть раньше срока первого")
+        if self.request_auto_disqualify_days < self.request_second_call_days:
+            raise ValueError("Автодисквалификация не может наступать раньше срока второго звонка")
+        return self
 
     @model_validator(mode="after")
     def _check_cash_lock(self) -> "AppSettingsUpdate":

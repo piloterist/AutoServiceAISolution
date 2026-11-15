@@ -102,6 +102,7 @@ def list_work_orders(
     only_receivables: bool = False,
     only_revenue: bool = False,
     include_requests: bool = False,
+    only_ids: set[UUID] | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[WorkOrder], int]:
@@ -135,6 +136,9 @@ def list_work_orders(
     filters = _date_range_filters(WorkOrder.document_date, date_from, date_to)
     if departments:
         filters.append(WorkOrder.department.in_(departments))
+    if only_ids is not None:
+        # "Заявки с проблемами" (колокольчик планировщика): ровно эти документы.
+        filters.append(WorkOrder.id.in_(only_ids))
     if paid_from is not None or paid_to is not None:
         payment_filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, paid_from, paid_to)
         filters.append(

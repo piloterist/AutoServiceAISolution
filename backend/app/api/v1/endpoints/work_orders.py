@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
+from app.api.v1.endpoints.planner import actor
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.work_order import (
@@ -44,7 +45,7 @@ from app.schemas.work_order import (
     WorkOrderListResponse,
     WorkOrderPartLineItem,
 )
-from app.services import planner_service
+from app.services import planner_service, request_control_service
 from app.services.cockpit_service import _mapped_source_departments
 from app.services.internal_order_rules import is_physical_person
 from app.services.order_exclusion import (
@@ -106,11 +107,17 @@ def get_work_orders(
     ),
     workshop_id: UUID | None = Query(
         default=None,
-        description="Scopes only_receivables to one workshop, like Cockpit's own filter",
+        description="Scopes only_receivables (like Cockpit's own filter) and only_request_issues "
+        "(the Planner bell's workshop) to one workshop",
     ),
     include_requests: bool = Query(
         default=False,
         description="Also list the repair requests (Заявки на ремонт) - the list page only",
+    ),
+    only_request_issues: bool = Query(
+        default=False,
+        description="Only the repair requests with an overdue call in the caller's цех "
+        "(the Planner bell's link); implies include_requests",
     ),
     # The work orders list page fetches everything in one call and filters
     # client-side (see WorkOrdersTable) so its own filters stay correct
@@ -120,9 +127,22 @@ def get_work_orders(
     # 2025-01-01 start date change).
     limit: int = Query(default=100, ge=1, le=100_000),
     offset: int = Query(default=0, ge=0),
+    who: tuple[UUID | None, str] = Depends(actor),
     db: Session = Depends(get_db),
 ) -> WorkOrderListResponse:
     resolved_departments = _split_departments(departments)
+    issue_ids: set[UUID] | None = None
+    if only_request_issues:
+        include_requests = True
+        issue_departments = (
+            request_control_service.departments_for_workshop(db, who[0], workshop_id)
+            if workshop_id is not None
+            else request_control_service.departments_for_user(db, who[0])
+        )
+        issue_ids = {
+            state.request.id
+            for state in request_control_service.overdue_states(db, departments=issue_departments)
+        }
     if only_receivables and workshop_id is not None:
         # Same workshop -> raw-department-string resolution Cockpit's own
         # ДЗ figure uses - see cockpit_service._receivables/
@@ -141,16 +161,22 @@ def get_work_orders(
         only_receivables=only_receivables,
         only_revenue=only_revenue,
         include_requests=include_requests,
+        only_ids=issue_ids,
         limit=limit,
         offset=offset,
     )
     scheduled_ids = planner_service.scheduled_work_order_ids(db, [item.id for item in items])
+    request_issues = request_control_service.overdue_for_items(db, items)
+    control_enabled = get_app_settings(db).request_control_enabled
     for item in items:
         # Not a real column - see WorkOrderListItem.is_scheduled's own
         # comment for why a plain transient attribute works fine here.
         item.is_scheduled = item.id in scheduled_ids
         item.has_comment = item.comment is not None
         item.is_individual_customer = is_physical_person(item.customer_name)
+        item.request_issue = request_issues.get(item.id)
+        # "Дисквалифицирована" is a request-control mark - nothing about it with control off.
+        item.request_disqualified = control_enabled and item.request_disqualified_at is not None
     return WorkOrderListResponse(
         items=[WorkOrderListItem.model_validate(item) for item in items],
         total=total,

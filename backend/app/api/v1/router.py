@@ -9,11 +9,13 @@ from app.api.v1.endpoints import (
     budget,
     cash,
     cockpit,
+    crm_tasks,
     finance,
     import_work_orders,
     leads,
     planner,
     receivables,
+    repair_requests,
     settings,
     telephony,
     work_orders,
@@ -34,3 +36,5 @@ api_router.include_router(receivables.router)
 api_router.include_router(cash.router)
 api_router.include_router(finance.router)
 api_router.include_router(bays.router)
+api_router.include_router(repair_requests.router)
+api_router.include_router(crm_tasks.router)

@@ -379,7 +379,18 @@ def summarize_call_topic(
 # step is never a one-way, irreversible edit.
 
 MAX_ADAPT_COMPLETION_TOKENS = "8000"
-MAX_ADAPT_TRANSCRIPT_CHARS = 12000
+# Long calls are not sent whole: product ask, 2026-11-06 - a 707 s call (11 333 characters of raw
+# text) came back from the rewrite as 1 573 characters, whole paragraphs gone, because a model
+# asked to "clean up" a big text summarises it. Each piece below is small enough that the model
+# has nothing to condense, and the answer is checked against the piece it came from.
+ADAPT_CHUNK_CHARS = 2500
+# Hard cap on what is sent at all (cost/latency for a pathological call); the rest stays raw.
+MAX_ADAPT_TRANSCRIPT_CHARS = 60000
+# A piece whose answer is shorter than this share of the input is treated as a summary, not a
+# clean-up (noise and filler legitimately shrink a piece, but not by half).
+MIN_KEPT_RATIO = 0.6
+# Below this the ratio is meaningless (a couple of lines).
+MIN_CHECKED_CHUNK_CHARS = 400
 
 _ADAPT_SYSTEM_PROMPT = (
     "Тебе присылают автоматическую расшифровку (Yandex SpeechKit) одного "
@@ -458,22 +469,27 @@ def _looks_like_transcript(text: str) -> bool:
     return bool(_SPEAKER_LINE_RE.search(text))
 
 
-def adapt_transcript(
-    client: httpx.Client, settings: YandexGPTSettings, transcript_text: str
-) -> str:
-    """Lightly corrects a raw SpeechKit transcript (recognition artifacts,
-    mis-split speaker turns) before it's used for topic summary/quality
-    assessment - see module comment above. Falls back to returning the
-    original text unchanged on any failure (an empty transcript, a request/
-    API error, an empty model answer, or an answer that doesn't look like
-    an actual transcript - see _looks_like_transcript) rather than raising -
-    adaptation is a quality improvement, never a reason to lose the call's
-    transcript
-    entirely (see call_transcription_service.py's caller)."""
-    transcript = transcript_text.strip()[:MAX_ADAPT_TRANSCRIPT_CHARS]
-    if not transcript:
-        return transcript_text
+def _split_transcript(text: str, limit: int = ADAPT_CHUNK_CHARS) -> list[str]:
+    """Splits on speaker-line boundaries into pieces of at most ~limit characters (one very long
+    line stays a piece of its own) - the model gets a manageable fragment, never a cut-off line."""
+    chunks: list[str] = []
+    current: list[str] = []
+    size = 0
+    for line in text.splitlines():
+        if current and size + len(line) + 1 > limit:
+            chunks.append("\n".join(current))
+            current, size = [], 0
+        current.append(line)
+        size += len(line) + 1
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
 
+
+def _complete_transcript(
+    client: httpx.Client, settings: YandexGPTSettings, system_prompt: str, chunk: str
+) -> str | None:
+    """One piece through the model; None on any failure or an answer that is not a transcript."""
     body = {
         "modelUri": _model_uri(settings),
         "completionOptions": {
@@ -482,8 +498,8 @@ def adapt_transcript(
             "maxTokens": MAX_ADAPT_COMPLETION_TOKENS,
         },
         "messages": [
-            {"role": "system", "text": _ADAPT_SYSTEM_PROMPT},
-            {"role": "user", "text": transcript},
+            {"role": "system", "text": system_prompt},
+            {"role": "user", "text": chunk},
         ],
     }
     try:
@@ -493,12 +509,55 @@ def adapt_transcript(
         alternatives = response.json()["result"]["alternatives"]
         raw_answer = alternatives[0]["message"]["text"]
     except (httpx.HTTPError, YandexGPTError, KeyError, IndexError, ValueError):
-        return transcript_text
+        return None
+    answer = raw_answer.strip()
+    if not answer or not _looks_like_transcript(answer):
+        return None
+    return answer
 
-    adapted = raw_answer.strip()
-    if not adapted or not _looks_like_transcript(adapted):
+
+def _is_summary(source: str, answer: str) -> bool:
+    return len(source) >= MIN_CHECKED_CHUNK_CHARS and len(answer) < MIN_KEPT_RATIO * len(source)
+
+
+def _process_transcript(
+    client: httpx.Client,
+    settings: YandexGPTSettings,
+    transcript_text: str,
+    prompts: tuple[str, ...],
+) -> str:
+    """Runs the transcript through the model piece by piece. For every piece the prompts are tried
+    in order and the first answer that is a transcript and not a summary (see _is_summary) wins;
+    when none qualifies, the piece stays as SpeechKit wrote it - a messy but complete text beats a
+    tidy one with paragraphs missing. Never raises."""
+    transcript = transcript_text.strip()
+    if not transcript:
         return transcript_text
-    return adapted
+    head, tail = transcript[:MAX_ADAPT_TRANSCRIPT_CHARS], transcript[MAX_ADAPT_TRANSCRIPT_CHARS:]
+
+    parts: list[str] = []
+    for chunk in _split_transcript(head):
+        chosen = chunk
+        for prompt in prompts:
+            answer = _complete_transcript(client, settings, prompt, chunk)
+            if answer is not None and not _is_summary(chunk, answer):
+                chosen = answer
+                break
+        parts.append(chosen)
+    if tail:
+        parts.append(tail.strip())
+    return "\n".join(parts)
+
+
+def adapt_transcript(
+    client: httpx.Client, settings: YandexGPTSettings, transcript_text: str
+) -> str:
+    """Lightly corrects a raw SpeechKit transcript (recognition artifacts, mis-split speaker turns)
+    before it's used for topic summary/quality assessment - see module comment above. Works piece
+    by piece and falls back to the original text of a piece on any failure or a too-short answer
+    (see _process_transcript) - adaptation is a quality improvement, never a reason to lose the
+    call's transcript (see call_transcription_service.py's caller)."""
+    return _process_transcript(client, settings, transcript_text, (_ADAPT_SYSTEM_PROMPT,))
 
 
 # --- Transcript rewrite (product ask, 2026-10-07: even after adapt_
@@ -512,32 +571,35 @@ def adapt_transcript(
 # call, since rewriting an already-adapted transcript buys nothing.
 
 _REWRITE_SYSTEM_PROMPT = (
-    "Тебе присылают автоматическую расшифровку (Yandex SpeechKit) одного "
+    "Тебе присылают автоматическую расшифровку (Yandex SpeechKit) ФРАГМЕНТА "
     "телефонного разговора сотрудника автосервиса с клиентом. Распознавание "
     "речи и определение говорящих в ней работают плохо: много слов "
     "распознано с ошибками, реплики часто разорваны на части и перепутаны "
-    "между говорящими, из-за чего разговор почти невозможно читать.\n"
+    "между говорящими, из-за чего разговор трудно читать.\n"
     "\n"
-    "Твоя задача — полностью переписать расшифровку в чистый, связный "
-    "диалог, сохранив:\n"
-    "1. Суть основного запроса/вопроса клиента — зачем он звонил.\n"
-    "2. Смысл ответа сотрудника — что ему сказали, что решили, что "
-    "пообещали.\n"
-    "3. Все существенные детали разговора (марка/модель машины, даты, "
-    "суммы, договорённости) — ничего важного не теряй и не выдумывай.\n"
+    "Твоя задача — привести расшифровку в читаемый вид, НЕ СОКРАЩАЯ "
+    "разговор. Это правка, а не пересказ и не резюме.\n"
     "\n"
-    "ОСОБОЕ ВНИМАНИЕ — МАРКЕ И МОДЕЛИ АВТОМОБИЛЯ. Это важная деталь, и "
-    "SpeechKit особенно часто искажает именно её (редкое для русской речи "
-    "сочетание звуков). Внимательно ищи в тексте любое упоминание марки "
-    "или модели — даже обрывочное, странно разбитое на слова или "
-    "фонетически искажённое (например, «ладо ларгус», «ладо ларгусе», "
-    "«лада ларгус» — это модель «Lada Largus»; «хёндай солярис», "
-    "«хундай солярис» — «Hyundai Solaris»; и так далее для любых "
-    "реальных марок/моделей). Если по звучанию и контексту фразы "
-    "понятно, что речь о конкретной машине — восстанови и впиши "
-    "правильное, общепринятое название марки/модели вместо искажённого "
-    "варианта. Если марка или модель нигде в тексте даже отдалённо не "
-    "звучит — не придумывай её и не угадывай по косвенным признакам.\n"
+    "ГЛАВНОЕ ПРАВИЛО — ПОЛНОТА. Каждая содержательная мысль, вопрос, "
+    "ответ, цифра, дата, сумма, срок, название детали, марка и модель "
+    "машины, возражение и договорённость из исходного текста должны "
+    "остаться в результате. Если в исходном фрагменте клиент или "
+    "сотрудник говорят на какую-то тему несколько реплик подряд — все эти "
+    "реплики должны быть в ответе, а не одно обобщающее предложение. "
+    "Результат должен быть примерно той же длины, что и исходный текст: "
+    "короче можно стать только за счёт слов-паразитов, пауз и мусора "
+    "распознавания (см. ниже), и обычно это не больше 15–25% объёма. "
+    "Результат короче половины исходного текста — это ошибка.\n"
+    "\n"
+    "ОСОБОЕ ВНИМАНИЕ — МАРКЕ И МОДЕЛИ АВТОМОБИЛЯ. SpeechKit особенно часто "
+    "искажает именно её (редкое для русской речи сочетание звуков). "
+    "Внимательно ищи любое упоминание марки или модели — даже обрывочное, "
+    "странно разбитое на слова или фонетически искажённое (например, «ладо "
+    "ларгус», «лада ларгус» — это «Lada Largus»; «хёндай солярис», «хундай "
+    "солярис» — «Hyundai Solaris»; «раф 4» — «Toyota RAV4»). Если по "
+    "звучанию и контексту понятно, что речь о конкретной машине — впиши "
+    "правильное общепринятое название вместо искажённого. Если марка или "
+    "модель нигде не звучит — не придумывай её.\n"
     "\n"
     "Как определять, кто есть кто: сотрудник автосервиса представляется "
     "от лица компании и говорит о машине клиента как о чужой («ваша "
@@ -545,64 +607,44 @@ _REWRITE_SYSTEM_PROMPT = (
     "машины и говорит о ней от первого лица.\n"
     "\n"
     "Можно:\n"
-    "— Переформулировать реплики своими словами для связности — не "
-    "обязательно сохранять дословную формулировку исходного текста.\n"
-    "— Решительно переставлять реплики между говорящими и объединять "
-    "разорванные куски одной мысли, опираясь на смысл разговора, а не на "
-    "то, как их разметил SpeechKit.\n"
-    "— Убирать слова-паразиты, обрывки, явный мусор распознавания и "
-    "бессвязные повторы.\n"
+    "— Исправлять явные ошибки распознавания слов, когда из контекста "
+    "ясно, что имелось в виду.\n"
+    "— Переставлять реплики между говорящими и объединять разорванные куски "
+    "одной мысли, опираясь на смысл, а не на разметку SpeechKit.\n"
+    "— Слегка править формулировки для связности, сохраняя содержание "
+    "каждой реплики и манеру речи говорящего.\n"
+    "— Убирать слова-паразиты («ну», «вот», «значит», «э-э»), одиночные "
+    "«алло» при плохой связи, обрывки без смысла и подряд идущие дубли "
+    "одного и того же слова.\n"
     "\n"
     "Нельзя:\n"
-    "— Добавлять факты, которых не было в разговоре.\n"
-    "— Менять суть договорённостей (сроки, цены, что именно обещали "
-    "сделать) или теряющихся деталей.\n"
+    "— Пропускать и склеивать в одну фразу целые куски разговора, "
+    "пересказывать их или подводить итог.\n"
+    "— Убирать реплики только потому, что они кажутся незначительными, "
+    "бытовыми или повторяют сказанное ранее по смыслу: если человек "
+    "возвращается к вопросу, это тоже часть разговора.\n"
+    "— Добавлять факты, приветствия, прощания и любые реплики, которых не "
+    "было в тексте, и менять суть договорённостей (сроки, цены, что "
+    "именно обещали сделать).\n"
     "\n"
     "Формат вывода — такой же, как на входе: каждая реплика на отдельной "
-    "строке «Говорящий N: текст», в хронологическом порядке разговора, "
-    "та же нумерация говорящих. Ответь СТРОГО только переписанной "
-    "расшифровкой целиком, без пояснений, без markdown, без текста до "
-    "или после."
+    "строке «Говорящий N: текст», в хронологическом порядке, та же "
+    "нумерация говорящих. Ответь СТРОГО только исправленным текстом "
+    "фрагмента, без пояснений, без markdown, без текста до или после."
 )
 
 
 def rewrite_transcript(
     client: httpx.Client, settings: YandexGPTSettings, transcript_text: str
 ) -> str:
-    """Heavily rewrites a raw SpeechKit transcript into a clean, readable
-    dialogue - see TelephonySettings.transcript_rewrite_enabled and the
-    module comment above for how this differs from adapt_transcript's
-    light touch-up. Same fallback contract as adapt_transcript: returns
-    the original text unchanged on any failure, never raises."""
-    transcript = transcript_text.strip()[:MAX_ADAPT_TRANSCRIPT_CHARS]
-    if not transcript:
-        return transcript_text
-
-    body = {
-        "modelUri": _model_uri(settings),
-        "completionOptions": {
-            "stream": False,
-            "temperature": TEMPERATURE,
-            "maxTokens": MAX_ADAPT_COMPLETION_TOKENS,
-        },
-        "messages": [
-            {"role": "system", "text": _REWRITE_SYSTEM_PROMPT},
-            {"role": "user", "text": transcript},
-        ],
-    }
-    try:
-        response = client.post(COMPLETION_URL, json=body, headers=_headers(settings))
-        if response.status_code != 200:
-            raise _error(response, "completion")
-        alternatives = response.json()["result"]["alternatives"]
-        raw_answer = alternatives[0]["message"]["text"]
-    except (httpx.HTTPError, YandexGPTError, KeyError, IndexError, ValueError):
-        return transcript_text
-
-    rewritten = raw_answer.strip()
-    if not rewritten or not _looks_like_transcript(rewritten):
-        return transcript_text
-    return rewritten
+    """Rewrites a raw SpeechKit transcript into a clean, readable dialogue - see
+    TelephonySettings.transcript_rewrite_enabled and the module comment above for how this differs
+    from adapt_transcript's light touch-up. Same fallback contract as adapt_transcript; a piece the
+    rewrite answered with a summary (see _is_summary) is retried with the stricter adaptation
+    prompt, and kept raw if that comes back short too."""
+    return _process_transcript(
+        client, settings, transcript_text, (_REWRITE_SYSTEM_PROMPT, _ADAPT_SYSTEM_PROMPT)
+    )
 
 
 def new_client() -> httpx.Client:

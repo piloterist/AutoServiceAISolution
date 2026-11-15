@@ -21,6 +21,9 @@ import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } fro
 // 11 Вид ремонта | 12 Сумма | 13 Сумма оплаты | 14 % оплаты
 // "Запланирован" (col 9) is a bit wider so its header does not wrap.
 const GRID_TEMPLATE_COLUMNS = "6.5% 6.5% 7% 8.5% 8.5% 7.5% 6.5% 7.5% 6.5% 8% 7.5% 6.5% 6.5% 6.5%";
+// The "Заявки на ремонт" tab of CRM (requestsMode): Дата документа | Номер | Тип | Заказ-наряд |
+// Автомобиль | Контрагент | Подразделение | Вид ремонта | Сумма.
+const REQUESTS_GRID_TEMPLATE_COLUMNS = "8% 9% 9% 11% 17% 14% 12% 11% 9%";
 
 function formatDateOrDash(iso: string | null): string {
   if (!iso) return "—";
@@ -228,6 +231,7 @@ type Row = {
   closedDate: string;
   number: string;
   docType: string;
+  linkedOrder: string;
   vehicle: string;
   customer: string;
   status: string;
@@ -245,6 +249,7 @@ type ColumnKey =
   | "closedDate"
   | "number"
   | "docType"
+  | "linkedOrder"
   | "vehicle"
   | "customer"
   | "status"
@@ -261,6 +266,7 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "closedDate", label: "Дата закрытия" },
   { key: "number", label: "Номер" },
   { key: "docType", label: "Тип" },
+  { key: "linkedOrder", label: "Заказ-наряд" },
   { key: "vehicle", label: "Автомобиль" },
   { key: "customer", label: "Контрагент" },
   { key: "status", label: "Статус" },
@@ -272,6 +278,22 @@ const COLUMNS: { key: ColumnKey; label: string; numeric?: boolean }[] = [
   { key: "paidAmount", label: "Сумма оплаты", numeric: true },
   { key: "paymentPercent", label: "% оплаты", numeric: true },
 ];
+
+// Columns of the two modes: the work orders list has no "Заказ-наряд" (the one created from a
+// request); the requests tab drops closing date/status/internal/scheduled/payment columns.
+const WORK_ORDER_COLUMNS = COLUMNS.filter((col) => col.key !== "linkedOrder");
+const REQUEST_COLUMN_KEYS: ColumnKey[] = [
+  "documentDate",
+  "number",
+  "docType",
+  "linkedOrder",
+  "vehicle",
+  "customer",
+  "department",
+  "repairType",
+  "amount",
+];
+const REQUEST_COLUMNS = COLUMNS.filter((col) => REQUEST_COLUMN_KEYS.includes(col.key));
 
 /** The real number behind a numeric column, for operator-based filtering
  * (parseNumericToken above) - as opposed to `row[key]`, which is the
@@ -313,6 +335,8 @@ function formatPhoneForChip(last10: string): string {
 }
 
 const FILTERS_STORAGE_KEY = "work-orders-filters:v1";
+// The requests tab remembers its own filters, separate from the work orders list.
+const REQUESTS_FILTERS_STORAGE_KEY = "repair-requests-filters:v1";
 
 // Remembers which row was last opened, so returning to the list (product
 // ask, 2026-10-06: "хочу чтобы при возврате на страницу у меня на экране
@@ -346,27 +370,27 @@ function readLastOpened(): string | null {
  * needs to survive a full remount, but only for this tab/session, and
  * silently no-ops server-side (SSR) and in a private-browsing tab that
  * blocks it, same as the data cache. */
-function readPersistedFilters(): PersistedFilters | null {
+function readPersistedFilters(storageKey: string): PersistedFilters | null {
   try {
-    const raw = sessionStorage.getItem(FILTERS_STORAGE_KEY);
+    const raw = sessionStorage.getItem(storageKey);
     return raw ? (JSON.parse(raw) as PersistedFilters) : null;
   } catch {
     return null;
   }
 }
 
-function writePersistedFilters(filters: PersistedFilters): void {
+function writePersistedFilters(storageKey: string, filters: PersistedFilters): void {
   try {
-    sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    sessionStorage.setItem(storageKey, JSON.stringify(filters));
   } catch {
     // Ignore (private browsing, quota) - filters just won't survive a
     // remount this time, same degradation as the data cache.
   }
 }
 
-function clearPersistedFilters(): void {
+function clearPersistedFilters(storageKey: string): void {
   try {
-    sessionStorage.removeItem(FILTERS_STORAGE_KEY);
+    sessionStorage.removeItem(storageKey);
   } catch {
     // ignore
   }
@@ -387,25 +411,28 @@ function exportNumber(value: string | null): string {
  * "dd.mm.yyyy" as a real date); amounts/percent are re-derived from the
  * raw values instead of the display strings, since those carry a "₽"/"%"/
  * thousands separators that would paste as text, not numbers. */
-function buildClipboardText(rows: Row[]): string {
-  const header = COLUMNS.map((col) => col.label).join("\t");
-  const lines = rows.map((row) =>
-    [
-      row.documentDate,
-      row.closedDate,
-      row.number,
-      row.vehicle || "—",
-      row.customer || "—",
-      row.status || "—",
-      row.internal,
-      row.scheduled,
-      row.department || "—",
-      row.repairType || "—",
-      exportNumber(row.item.amount),
-      exportNumber(row.item.paid_amount),
-      exportNumber(row.item.payment_percent),
-    ].join("\t"),
-  );
+function buildClipboardText(rows: Row[], columns: typeof COLUMNS): string {
+  const header = columns.map((col) => col.label).join("\t");
+  const cell = (row: Row, key: ColumnKey): string => {
+    switch (key) {
+      case "amount":
+        return exportNumber(row.item.amount);
+      case "paidAmount":
+        return exportNumber(row.item.paid_amount);
+      case "paymentPercent":
+        return exportNumber(row.item.payment_percent);
+      case "documentDate":
+      case "closedDate":
+      case "number":
+      case "docType":
+      case "internal":
+      case "scheduled":
+        return row[key];
+      default:
+        return row[key] || "—";
+    }
+  };
+  const lines = rows.map((row) => columns.map((col) => cell(row, col.key)).join("\t"));
   return [header, ...lines].join("\n");
 }
 
@@ -427,11 +454,17 @@ export function WorkOrdersTable({
   onlyReceivables,
   onlyRevenue,
   workshopId,
+  requestIssues,
   initialOnlyIndividualCustomer,
   initialUnpaid,
   initialPhone,
   conversionFilter,
+  requestsMode,
 }: {
+  /** The "Заявки на ремонт" tab of CRM: only the repair requests, a trimmed set of columns
+   * and filters (no type/payment/repair-type/closing-date filters), and the "Заказ-наряд"
+   * column with the number of the work order created from the request. */
+  requestsMode?: boolean;
   /** Pre-applied filters, e.g. arriving from a click on the dashboard's
    * status chips (/work-orders?status=...&date_from=...&date_to=...) or the
    * revenue stat tile
@@ -461,6 +494,10 @@ export function WorkOrdersTable({
    * figure (server-side, like onlyReceivables). */
   onlyRevenue?: boolean;
   workshopId?: string;
+  /** From the Planner's bell (контроль заявок): only the repair requests of the user's цех
+   * whose first/second call to the client is overdue - server-side like onlyReceivables, so the
+   * list is fresh (not the 15-minute cache); the overdue rows are painted pink. */
+  requestIssues?: boolean;
   /** From Cockpit's "₽" lamp (product ask, 2026-10-17) - seeds the
    * "Физ.лицо" checkbox. Client-side filter, like initialStatus above, not
    * a server-side one like paidFrom/onlyReceivables. */
@@ -485,6 +522,9 @@ export function WorkOrdersTable({
   };
 }) {
   const router = useRouter();
+  const columns = requestsMode ? REQUEST_COLUMNS : WORK_ORDER_COLUMNS;
+  const gridTemplateColumns = requestsMode ? REQUESTS_GRID_TEMPLATE_COLUMNS : GRID_TEMPLATE_COLUMNS;
+  const storageKey = requestsMode ? REQUESTS_FILTERS_STORAGE_KEY : FILTERS_STORAGE_KEY;
 
   // Loads client-side (not server-rendered) so the unfiltered case can
   // render instantly from lib/work-orders-cache.ts's cache when the
@@ -505,7 +545,9 @@ export function WorkOrdersTable({
       setTotal(partialTotal);
     };
 
-    const hasServerFilter = Boolean(paidFrom || paidTo || onlyReceivables || onlyRevenue);
+    const hasServerFilter = Boolean(
+      paidFrom || paidTo || onlyReceivables || onlyRevenue || requestIssues,
+    );
 
     if (!hasServerFilter) {
       const cached = getCachedWorkOrders();
@@ -521,7 +563,10 @@ export function WorkOrdersTable({
     }
 
     const task = hasServerFilter
-      ? loadWorkOrdersFiltered({ paidFrom, paidTo, onlyReceivables, onlyRevenue, workshopId }, onProgress)
+      ? loadWorkOrdersFiltered(
+          { paidFrom, paidTo, onlyReceivables, onlyRevenue, workshopId, onlyRequestIssues: requestIssues },
+          onProgress,
+        )
       : loadWorkOrdersCached(onProgress);
 
     task
@@ -540,7 +585,7 @@ export function WorkOrdersTable({
     return () => {
       cancelled = true;
     };
-  }, [paidFrom, paidTo, onlyReceivables, onlyRevenue, workshopId]);
+  }, [paidFrom, paidTo, onlyReceivables, onlyRevenue, workshopId, requestIssues]);
 
   // A link with real filter params (e.g. a dashboard status chip or the
   // revenue tile) always wins for this visit; otherwise restore whatever
@@ -557,11 +602,12 @@ export function WorkOrdersTable({
       initialOnlyIndividualCustomer ||
       initialUnpaid ||
       initialPhone ||
+      requestIssues ||
       conversionFilter,
   );
   // "Открыть ЗН" of a phone (Конверсия): all its documents, work orders AND repair requests.
   const onlyPhoneLink = Boolean(initialPhone) && !conversionFilter && !initialStatus;
-  const persisted = hasUrlFilters ? null : readPersistedFilters();
+  const persisted = hasUrlFilters ? null : readPersistedFilters(storageKey);
 
   const [search, setSearch] = useState(() => persisted?.search ?? "");
   const [columnFilters, setColumnFilters] = useState<Record<ColumnKey, string>>(() => ({
@@ -569,6 +615,7 @@ export function WorkOrdersTable({
     closedDate: persisted?.columnFilters.closedDate ?? "",
     number: persisted?.columnFilters.number ?? "",
     docType: "",
+    linkedOrder: persisted?.columnFilters.linkedOrder ?? "",
     vehicle: persisted?.columnFilters.vehicle ?? "",
     customer: persisted?.columnFilters.customer ?? "",
     status: "",
@@ -614,8 +661,10 @@ export function WorkOrdersTable({
   // (not part of any figure) stay hidden there; the bare list shows both.
   const [selectedDocTypes, setSelectedDocTypes] = useState<string[]>(
     () =>
-      persisted?.selectedDocTypes ??
-      (conversionFilter?.kind.endsWith("_requests")
+      requestsMode
+        ? []
+        : persisted?.selectedDocTypes ??
+      (requestIssues || conversionFilter?.kind.endsWith("_requests")
         ? [DOC_TYPE_LABELS.repair_request]
         : hasUrlFilters && !onlyPhoneLink
           ? [DOC_TYPE_LABELS.work_order]
@@ -659,7 +708,7 @@ export function WorkOrdersTable({
   }, [conversionKind, conversionFrom, conversionTo, conversionDepartments, conversionIncludeRequests]);
 
   useEffect(() => {
-    writePersistedFilters({
+    writePersistedFilters(storageKey, {
       search,
       columnFilters,
       selectedStatuses,
@@ -688,6 +737,7 @@ export function WorkOrdersTable({
     scheduledFilter,
     onlyIndividualCustomer,
     selectedDocTypes,
+    storageKey,
   ]);
 
   const resetFilters = () => {
@@ -697,6 +747,7 @@ export function WorkOrdersTable({
       closedDate: "",
       number: "",
       docType: "",
+      linkedOrder: "",
       vehicle: "",
       customer: "",
       status: "",
@@ -721,17 +772,24 @@ export function WorkOrdersTable({
     setOnlyIndividualCustomer(false);
     setPhoneFilter("");
     setConversionActive(false);
-    clearPersistedFilters();
+    clearPersistedFilters(storageKey);
   };
+
+  // The requests tab shows nothing but repair requests (the "Тип" filter is gone there).
+  const visibleItems = useMemo(
+    () => (requestsMode ? items.filter((item) => item.doc_type === "repair_request") : items),
+    [items, requestsMode],
+  );
 
   const rows: Row[] = useMemo(
     () =>
-      items.map((item) => ({
+      visibleItems.map((item) => ({
         item,
         documentDate: formatDateOrDash(item.document_date),
         closedDate: formatDateOrDash(item.closed_date),
         number: item.external_number,
         docType: item.doc_type === "repair_request" ? "Заявка на ремонт" : "Заказ-наряд",
+        linkedOrder: item.linked_work_orders ?? "",
         vehicle: item.vehicle_description ?? "",
         customer: item.customer_name ?? "",
         status: item.status ?? "",
@@ -743,7 +801,7 @@ export function WorkOrdersTable({
         paidAmount: formatAmountOrDash(item.paid_amount),
         paymentPercent: formatPercentOrDash(item.payment_percent),
       })),
-    [items],
+    [visibleItems],
   );
 
   // Distinct status values actually present in the data - never a
@@ -795,13 +853,14 @@ export function WorkOrdersTable({
 
     return rows.filter((row) => {
       if (query) {
-        const haystack = COLUMNS.map((col) => row[col.key])
+        const haystack = columns
+          .map((col) => row[col.key])
           .join(" ")
           .toLowerCase();
         if (!haystack.includes(query)) return false;
       }
 
-      for (const { key, numeric } of COLUMNS) {
+      for (const { key, numeric } of columns) {
         const segments = splitFilterSegments(columnFilters[key]);
         if (segments.length === 0) continue;
         const matched = segments.some((segment) => {
@@ -851,6 +910,7 @@ export function WorkOrdersTable({
     });
   }, [
     rows,
+    columns,
     search,
     columnFilters,
     selectedStatuses,
@@ -891,7 +951,7 @@ export function WorkOrdersTable({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(buildClipboardText(filteredRows));
+      await navigator.clipboard.writeText(buildClipboardText(filteredRows, columns));
       setCopyState("copied");
     } catch {
       setCopyState("error");
@@ -985,23 +1045,27 @@ export function WorkOrdersTable({
       )}
 
       <div className="toolbar">
-        <MultiSelectDropdown
-          label="Тип документа"
-          options={DOC_TYPE_OPTIONS}
-          selected={selectedDocTypes}
-          onToggle={toggleDocType}
-          onClear={() => setSelectedDocTypes([])}
-          emptyMessage="Нет данных"
-        />
+        {!requestsMode && (
+          <MultiSelectDropdown
+            label="Тип документа"
+            options={DOC_TYPE_OPTIONS}
+            selected={selectedDocTypes}
+            onToggle={toggleDocType}
+            onClear={() => setSelectedDocTypes([])}
+            emptyMessage="Нет данных"
+          />
+        )}
 
-        <MultiSelectDropdown
-          label="Оплата"
-          options={[...PAYMENT_BUCKETS]}
-          selected={selectedPayments}
-          onToggle={togglePayment}
-          onClear={() => setSelectedPayments([])}
-          emptyMessage="Нет данных по оплате"
-        />
+        {!requestsMode && (
+          <MultiSelectDropdown
+            label="Оплата"
+            options={[...PAYMENT_BUCKETS]}
+            selected={selectedPayments}
+            onToggle={togglePayment}
+            onClear={() => setSelectedPayments([])}
+            emptyMessage="Нет данных по оплате"
+          />
+        )}
 
         <MultiSelectDropdown
           label="Статус"
@@ -1012,14 +1076,16 @@ export function WorkOrdersTable({
           emptyMessage="Нет данных по статусам"
         />
 
-        <MultiSelectDropdown
-          label="Вид ремонта"
-          options={availableRepairTypes}
-          selected={selectedRepairTypes}
-          onToggle={toggleRepairType}
-          onClear={() => setSelectedRepairTypes([])}
-          emptyMessage="Нет данных по видам ремонта"
-        />
+        {!requestsMode && (
+          <MultiSelectDropdown
+            label="Вид ремонта"
+            options={availableRepairTypes}
+            selected={selectedRepairTypes}
+            onToggle={toggleRepairType}
+            onClear={() => setSelectedRepairTypes([])}
+            emptyMessage="Нет данных по видам ремонта"
+          />
+        )}
 
         <div className="period-filter">
           <span className="period-filter-label">Дата документа</span>
@@ -1033,17 +1099,33 @@ export function WorkOrdersTable({
           </label>
         </div>
 
-        <div className="period-filter">
-          <span className="period-filter-label">Дата закрытия</span>
-          <label>
-            С
-            <DateInput value={closedFrom} onChange={setClosedFrom} ariaLabel="Дата закрытия с" />
-          </label>
-          <label>
-            По
-            <DateInput value={closedTo} onChange={setClosedTo} ariaLabel="Дата закрытия по" />
-          </label>
-        </div>
+        {!requestsMode && (
+          <div className="period-filter">
+            <span className="period-filter-label">Дата закрытия</span>
+            <label>
+              С
+              <DateInput value={closedFrom} onChange={setClosedFrom} ariaLabel="Дата закрытия с" />
+            </label>
+            <label>
+              По
+              <DateInput value={closedTo} onChange={setClosedTo} ariaLabel="Дата закрытия по" />
+            </label>
+          </div>
+        )}
+
+        {requestIssues && (
+          <span className="phone-filter-chip">
+            Заявки с просроченным звонком: {loading ? "загрузка…" : total ?? 0}
+            <button
+              type="button"
+              className="phone-filter-chip-clear"
+              onClick={() => router.push("/work-orders")}
+              aria-label="Показать все заказ-наряды и заявки"
+            >
+              ×
+            </button>
+          </span>
+        )}
 
         {conversionActive && conversionFilter && (
           <span className="phone-filter-chip">
@@ -1099,20 +1181,29 @@ export function WorkOrdersTable({
 
       <div className="table-meta">
         <span>
-          Показано {filteredRows.length} из {items.length}
+          Показано {filteredRows.length} из {visibleItems.length}
           {total !== null && items.length < total ? ` (загружаем ещё, всего ${total})…` : ""}
         </span>
-        <span className="table-meta-total">Сумма: {formatAmount(filteredAmount)}</span>
-        <span className="table-meta-total">Оплачено: {formatAmount(filteredPaid)}</span>
+        {!requestsMode && (
+          <>
+            <span className="table-meta-total">Сумма: {formatAmount(filteredAmount)}</span>
+            <span className="table-meta-total">Оплачено: {formatAmount(filteredPaid)}</span>
+          </>
+        )}
         <button type="button" className="copy-button" onClick={handleCopy}>
           {copyState === "copied" ? "Скопировано ✓" : copyState === "error" ? "Не удалось скопировать" : "Скопировать"}
         </button>
       </div>
 
-      <div className="vt-wrap" ref={scrollRef} role="table" aria-label="Заказ-наряды">
+      <div
+        className="vt-wrap"
+        ref={scrollRef}
+        role="table"
+        aria-label={requestsMode ? "Заявки на ремонт" : "Заказ-наряды"}
+      >
         <div className="vt-header" role="rowgroup">
-          <div className="vt-row" role="row" style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}>
-            {COLUMNS.map((col) => (
+          <div className="vt-row" role="row" style={{ gridTemplateColumns }}>
+            {columns.map((col) => (
               <div
                 key={col.key}
                 role="columnheader"
@@ -1125,9 +1216,9 @@ export function WorkOrdersTable({
           <div
             className="vt-row filter-row"
             role="row"
-            style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}
+            style={{ gridTemplateColumns }}
           >
-            {COLUMNS.map((col) =>
+            {columns.map((col) =>
               col.key === "status" || col.key === "repairType" || col.key === "docType" ? (
                 <div key={col.key} className="vt-cell" role="columnheader" />
               ) : col.key === "internal" ? (
@@ -1196,16 +1287,18 @@ export function WorkOrdersTable({
                   data-index={virtualRow.index}
                   ref={rowVirtualizer.measureElement}
                   className={
-                    isUnpaidClosedIndividual(row.item)
-                      ? "vt-row vt-row--body vt-row--unpaid-individual"
-                      : row.item.doc_type === "repair_request" && row.item.linked_work_orders
+                    row.item.request_issue
+                      ? "vt-row vt-row--body vt-row--request-issue"
+                      : isUnpaidClosedIndividual(row.item)
+                        ? "vt-row vt-row--body vt-row--unpaid-individual"
+                        : row.item.doc_type === "repair_request" && row.item.linked_work_orders
                         ? "vt-row vt-row--body vt-row--request-linked"
                         : "vt-row vt-row--body"
                   }
                   role="row"
                   tabIndex={0}
                   style={{
-                    gridTemplateColumns: GRID_TEMPLATE_COLUMNS,
+                    gridTemplateColumns,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                   onDoubleClick={() => openRow(row.item.id)}
@@ -1219,9 +1312,11 @@ export function WorkOrdersTable({
                   <div className="vt-cell" role="gridcell">
                     {row.documentDate}
                   </div>
-                  <div className="vt-cell" role="gridcell">
-                    {row.closedDate}
-                  </div>
+                  {!requestsMode && (
+                    <div className="vt-cell" role="gridcell">
+                      {row.closedDate}
+                    </div>
+                  )}
                   <div className="vt-cell" role="gridcell">
                     {row.item.has_comment && (
                       <svg
@@ -1266,22 +1361,39 @@ export function WorkOrdersTable({
                     }
                   >
                     {row.docType}
+                    {row.item.request_issue && (
+                      <span className="vt-request-issue-note">
+                        {row.item.request_issue === "first" ? "просрочен 1-й звонок" : "просрочен 2-й звонок"}
+                      </span>
+                    )}
+                    {row.item.request_disqualified && (
+                      <span className="vt-request-disqualified-note">дисквалифицирована</span>
+                    )}
                   </div>
+                  {requestsMode && (
+                    <div className="vt-cell" role="gridcell">
+                      {row.linkedOrder || "—"}
+                    </div>
+                  )}
                   <div className="vt-cell" role="gridcell">
                     {row.vehicle || "—"}
                   </div>
                   <div className="vt-cell" role="gridcell">
                     {row.customer || "—"}
                   </div>
-                  <div className="vt-cell" role="gridcell">
-                    {row.status || "—"}
-                  </div>
-                  <div className="vt-cell" role="gridcell">
-                    {row.internal}
-                  </div>
-                  <div className="vt-cell" role="gridcell">
-                    {row.scheduled}
-                  </div>
+                  {!requestsMode && (
+                    <>
+                      <div className="vt-cell" role="gridcell">
+                        {row.status || "—"}
+                      </div>
+                      <div className="vt-cell" role="gridcell">
+                        {row.internal}
+                      </div>
+                      <div className="vt-cell" role="gridcell">
+                        {row.scheduled}
+                      </div>
+                    </>
+                  )}
                   <div className="vt-cell" role="gridcell">
                     {row.department || "—"}
                   </div>
@@ -1291,12 +1403,16 @@ export function WorkOrdersTable({
                   <div className="vt-cell vt-cell--num" role="gridcell">
                     {row.amount}
                   </div>
-                  <div className="vt-cell vt-cell--num" role="gridcell">
-                    {row.paidAmount}
-                  </div>
-                  <div className="vt-cell vt-cell--num" role="gridcell">
-                    {row.paymentPercent}
-                  </div>
+                  {!requestsMode && (
+                    <>
+                      <div className="vt-cell vt-cell--num" role="gridcell">
+                        {row.paidAmount}
+                      </div>
+                      <div className="vt-cell vt-cell--num" role="gridcell">
+                        {row.paymentPercent}
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })}

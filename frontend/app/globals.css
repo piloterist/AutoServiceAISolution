@@ -4221,6 +4221,39 @@ table.bt {
   color: var(--text-muted);
 }
 
+/* «На контроль» у звонка - PutOnControlButton.tsx, правее кнопки play. */
+.call-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.call-control-btn {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--accent);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.call-control-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.call-control-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.call-control-done {
+  color: var(--ok);
+  font-size: 0.8rem;
+}
+
 .telephony-transcript-raw {
   margin-top: 0.75rem;
   border-top: 1px solid var(--border);
@@ -7302,4 +7335,766 @@ main:has(.cockpit-page) {
 .errors-sub {
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+/* Контроль заявок (колокольчик планировщика, всплывающее окно, подсветка списка) -
+   см. components/planner/RequestsBell.tsx, components/RequestControlCard.tsx */
+.requests-bell-btn {
+  all: unset;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.requests-bell-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.requests-bell-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.requests-bell-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.requests-bell-count {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--down);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  box-shadow: 0 0 0 3px var(--bg);
+}
+
+/* Желтое окно по центру экрана с восклицательным знаком */
+.requests-popup {
+  width: min(560px, 92vw);
+  max-height: 80vh;
+  padding: 1.1rem 1.25rem 1.25rem;
+  border: 2px solid var(--warn);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--warn) 22%, var(--surface));
+  color: var(--text);
+  box-shadow: 0 10px 34px rgba(20, 30, 50, 0.3);
+}
+
+.requests-popup::backdrop {
+  background: rgba(10, 15, 25, 0.45);
+}
+
+.requests-popup-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  margin-bottom: 0.9rem;
+}
+
+.requests-popup-mark {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--warn);
+  color: #fff;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.requests-popup-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.requests-popup-sub {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.requests-popup-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.requests-popup-row {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: var(--surface);
+  border-left: 3px solid var(--warn);
+  cursor: pointer;
+}
+
+.requests-popup-row:hover {
+  background: var(--surface2);
+}
+
+.requests-popup-row:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.requests-popup-row-main {
+  font-weight: 700;
+}
+
+.requests-popup-row-meta {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.requests-popup-row-late {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--down);
+}
+
+.requests-popup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+/* Список ЗН: заявка с просроченным звонком клиенту - розовым */
+.vt-row--request-issue {
+  background: color-mix(in srgb, #ff4da6 22%, var(--surface));
+}
+
+.vt-row--request-issue:hover {
+  background: color-mix(in srgb, #ff4da6 32%, var(--surface));
+}
+
+.vt-request-issue-note,
+.vt-request-disqualified-note {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.vt-request-issue-note {
+  color: var(--down);
+}
+
+.vt-request-disqualified-note {
+  color: var(--text-muted);
+}
+
+/* Карточка заявки: контроль звонков */
+.request-control {
+  margin-top: 1rem;
+}
+
+.request-control-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.request-control-badge {
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.request-control-badge--late {
+  background: color-mix(in srgb, #ff4da6 25%, var(--surface));
+  color: var(--down);
+}
+
+.request-control-badge--ok {
+  background: color-mix(in srgb, #3fb950 22%, var(--surface));
+}
+
+.request-control-note {
+  margin: 0.4rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.request-control-attempts {
+  list-style: none;
+  margin: 0.6rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.request-control-attempt {
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  background: var(--surface2);
+  font-size: 0.88rem;
+}
+
+.request-control-attempt-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.request-control-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+  max-width: 560px;
+}
+
+.request-control-form textarea,
+.request-control-form select {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.request-control-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.request-control-error {
+  margin: 0.4rem 0 0;
+  color: var(--down);
+  font-size: 0.88rem;
+}
+
+/* Лист «Ошибки»: просроченные звонки по заявкам */
+.errors-request-link {
+  all: unset;
+  cursor: pointer;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Доска задач CRM (product ask, 2026-11-15) - components/crm/TaskBoard.tsx */
+.task-board-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.task-board-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+}
+
+.task-board-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.task-board-dot {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+}
+
+.task-board-dot--warn {
+  background: color-mix(in srgb, #ff4da6 28%, var(--surface));
+}
+
+.task-board-dot--overdue {
+  margin-left: 0.6rem;
+  background: color-mix(in srgb, var(--down) 38%, var(--surface));
+}
+
+.task-board-columns {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(250px, 1fr));
+  gap: 1rem;
+  align-items: start;
+  overflow-x: auto;
+  padding: 0.25rem 0.1rem 0.75rem;
+}
+
+/* У каждого столбца свой цвет (--col): шапка, фон, акцент карточек. */
+.task-column {
+  --col: #64748b;
+  display: flex;
+  flex-direction: column;
+  min-height: 16rem;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--col) 30%, var(--border));
+  background: color-mix(in srgb, var(--col) 7%, var(--surface2));
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.task-column--control { --col: #3b82f6; }
+.task-column--inspection { --col: #8b5cf6; }
+.task-column--thinking { --col: #f59e0b; }
+.task-column--refused { --col: #ef4444; }
+.task-column--work_order { --col: #10b981; }
+
+.task-column--over {
+  border-color: var(--col);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--col) 18%, var(--surface2));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--col) 25%, transparent);
+}
+
+.task-column-title {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--col) 70%, var(--text));
+  background: color-mix(in srgb, var(--col) 16%, var(--surface));
+  border-bottom: 3px solid var(--col);
+}
+
+.task-column-icon {
+  margin-right: 0.4rem;
+  font-size: 1.1rem;
+}
+
+.task-column-count {
+  min-width: 1.7rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: var(--col);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.task-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  flex: 1;
+}
+
+.task-column-empty {
+  margin: 1.5rem 0;
+  color: color-mix(in srgb, var(--col) 45%, var(--text-muted));
+  text-align: center;
+  font-size: 1.4rem;
+  opacity: 0.6;
+}
+
+.task-card {
+  padding: 0.65rem 0.8rem 0.65rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--col);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  cursor: grab;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+
+.task-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.14);
+}
+
+.task-card:active {
+  cursor: grabbing;
+}
+
+.task-card--locked {
+  cursor: default;
+}
+
+.task-card--locked:hover {
+  transform: none;
+}
+
+/* «На контроле» дольше розового / красного срока (Настройки -> Общие) */
+.task-card--warn {
+  background: color-mix(in srgb, #ff4da6 18%, var(--surface));
+  border-color: color-mix(in srgb, #ff4da6 50%, var(--border));
+  border-left-color: #ff4da6;
+}
+
+.task-card--overdue {
+  background: color-mix(in srgb, var(--down) 26%, var(--surface));
+  border-color: var(--down);
+  border-left-color: var(--down);
+}
+
+.task-card-phone {
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-card-line {
+  margin-top: 0.25rem;
+  font-weight: 500;
+}
+
+.task-card-reason {
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--down) 12%, transparent);
+  color: var(--down);
+  font-weight: 600;
+}
+
+.task-card-meta {
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.task-card-meta:first-of-type {
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--border);
+}
+
+.task-refuse-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: min(420px, 80vw);
+}
+
+.task-refuse-dialog textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+/* Кнопка «Доска задач» слева от трубки в шапке планировщика -
+   components/planner/TaskBoardBadge.tsx. Берёт на себя margin-left:auto, который иначе был у
+   трубки, и она вместе с остальными значками остаётся прижатой к правому краю. */
+.task-board-badge-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 36px;
+  margin-left: auto;
+  padding: 0 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.task-board-badge-btn:hover {
+  background: var(--surface2);
+  border-color: var(--accent);
+}
+
+.task-board-badge-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.task-board-badge-btn + .missed-calls-badge-btn {
+  margin-left: 0.5rem;
+}
+
+.task-board-badge-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--down);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.task-board-archive {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+/* Диалог «На контроль» у звонка - components/telephony/PutOnControlButton.tsx */
+.call-control-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: min(560px, 85vw);
+  font-size: 1.05rem;
+}
+
+.call-control-dialog label {
+  margin-top: 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.call-control-dialog select {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  font-size: 1.15rem;
+  border-radius: 8px;
+}
+
+.call-control-dialog .request-control-actions {
+  margin-top: 0.6rem;
+}
+
+.call-control-dialog .admin-btn {
+  padding: 0.65rem 1.4rem;
+  font-size: 1.05rem;
+}
+
+/* Окно лида (клик по карточке доски) - components/crm/TaskDetailModal.tsx */
+.task-card-comments {
+  float: right;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.task-detail {
+  --col: #64748b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.task-detail-summary {
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--col) 35%, var(--border));
+  border-left: 6px solid var(--col);
+  background: color-mix(in srgb, var(--col) 8%, var(--surface));
+}
+
+.task-detail-stage {
+  display: inline-block;
+  margin-bottom: 0.6rem;
+  padding: 0.2rem 0.8rem;
+  border-radius: 999px;
+  background: var(--col);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.task-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.35rem 1.5rem;
+}
+
+.task-detail-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.task-detail-label {
+  flex: 0 0 8.5rem;
+  color: var(--text-muted);
+}
+
+.task-detail-link {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.task-detail-refusal {
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--down) 12%, transparent);
+  color: var(--down);
+}
+
+.task-detail-refusal p {
+  margin: 0.2rem 0 0;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+
+.task-detail-heading {
+  margin: 0.6rem 0 0;
+  font-size: 1rem;
+}
+
+.task-detail-calls {
+  overflow-x: auto;
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.task-detail-comment-form textarea {
+  width: 100%;
+  resize: vertical;
+  margin-bottom: 0.5rem;
+}
+
+.task-detail-comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.task-detail-comment {
+  --col: #64748b;
+  padding: 0.5rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--col);
+  background: var(--surface2);
+}
+
+.task-detail-comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.8rem;
+  align-items: baseline;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.task-detail-comment-head strong {
+  color: var(--text);
+}
+
+.task-detail-comment-stage {
+  margin-left: auto;
+  color: color-mix(in srgb, var(--col) 70%, var(--text));
+  font-weight: 600;
+}
+
+.task-detail-comment p {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+}
+
+/* Окно лида почти на весь экран: по 2 см от краёв, чтобы было видно, что это окно поверх доски. */
+.admin-modal:has(.task-detail) {
+  width: calc(100vw - 4cm);
+  max-width: none;
+  max-height: calc(100vh - 4cm);
+  overflow-y: auto;
+}
+
+.task-detail-calls {
+  max-height: 32rem;
+}
+
+.task-detail-calls .data-table th,
+.task-detail-calls .data-table td {
+  white-space: nowrap;
+}
+
+/* Таблица звонков в окне лида: колонки по содержимому (а не поровну), «Событие» не уже 16rem, а
+   свободная ширина делится между всеми колонками пропорционально. */
+.task-detail-calls .telephony-events-table {
+  table-layout: auto;
+  width: 100%;
+  margin: 0;
+}
+
+.task-detail-calls .telephony-events-table th:nth-child(2),
+.task-detail-calls .telephony-events-table td:nth-child(2) {
+  min-width: 16rem;
+}
+
+/* Диалог «На контроль» у звонка - крупнее (поля и текст были слишком мелкие). */
+.admin-modal:has(.call-control-dialog) {
+  width: min(680px, 92vw);
+  padding: 1.6rem 1.8rem 1.8rem;
+}
+
+/* «Запланировать действие» в окне лида и подпись на карточке */
+.task-detail-plan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+  margin-bottom: 0.6rem;
+}
+
+.task-detail-plan label {
+  font-weight: 600;
+}
+
+.task-detail-plan input[type="date"] {
+  padding: 0.4rem 0.6rem;
+}
+
+.task-card-next {
+  color: var(--accent);
+  font-weight: 700;
 }

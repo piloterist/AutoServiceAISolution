@@ -7,12 +7,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getWorkOrders } from "@/lib/backend-api";
+import { getCurrentUser } from "@/lib/session";
 
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
+  // Requests with an overdue call are scoped to the caller's цех (the Planner bell's link).
+  const user = await getCurrentUser();
 
   try {
     const data = await getWorkOrders({
+      onlyRequestIssues: params.get("only_request_issues") === "true",
+      actor: user ? { id: user.id, fullName: user.fullName } : undefined,
       paidFrom: params.get("paid_from") || undefined,
       paidTo: params.get("paid_to") || undefined,
       onlyReceivables: params.get("only_receivables") === "true",

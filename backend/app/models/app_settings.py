@@ -129,6 +129,51 @@ class AppSettings(Base):
     cash_lock_from: Mapped[date | None] = mapped_column(Date, nullable=True)
     cash_lock_to: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # Контроль заявок на ремонт (product ask, 2026-11-06; services/request_control_service.py).
+    # Master switch: off = no overdue requests anywhere (bell, popup, list, Ошибки).
+    request_control_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    # Days from the request's creation by which the 1st / the 2nd real conversation with the
+    # client must have happened; later -> "просрочен первый / второй звонок".
+    request_first_call_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default="3"
+    )
+    request_second_call_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=7, server_default="7"
+    )
+    # An outgoing answered call counts as an attempt only from this many seconds of talk.
+    request_min_talk_sec: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=20, server_default="20"
+    )
+    # Yellow popup in the Planner listing the overdue requests of the user's цех.
+    request_popup_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    request_popup_interval_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
+    # A request without a work order older than this is disqualified automatically.
+    request_auto_disqualify_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
+
+    # Доска задач CRM (product ask, 2026-11-15; services/crm_task_service.py): сколько дней
+    # телефон висит в столбце «На контроле», прежде чем карточка краснеет розовым / красным.
+    # Оба срока считаются от попадания карточки в столбец; счётчик в планировщике - число
+    # карточек, дошедших хотя бы до розового срока.
+    crm_task_warn_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    crm_task_overdue_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=3, server_default="3"
+    )
+    # Карточки «Отказ» / «Заказ-наряд» старше стольких дней (в столбце) уходят с доски в архив;
+    # вернуть их можно галкой «Показать архивные».
+    crm_task_archive_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=30, server_default="30"
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

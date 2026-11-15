@@ -8,9 +8,14 @@ import httpx
 import pytest
 
 from app.services.yandexgpt_client import (
+    _ADAPT_SYSTEM_PROMPT,
+    _REWRITE_SYSTEM_PROMPT,
+    ADAPT_CHUNK_CHARS,
+    MIN_CHECKED_CHUNK_CHARS,
     TOPIC_UNDETERMINED,
     YandexGPTError,
     YandexGPTSettings,
+    _split_transcript,
     adapt_transcript,
     assess_call_quality,
     rewrite_transcript,
@@ -272,3 +277,108 @@ def test_adapt_and_rewrite_transcript_falls_back_on_http_error(monkeypatch, fn) 
     monkeypatch.setattr(httpx.Client, "post", fake_post)
     with httpx.Client() as client:
         assert fn(client, SETTINGS, RAW_TRANSCRIPT) == RAW_TRANSCRIPT
+
+
+# ---- long transcripts: piece by piece, never a summary -----------------------
+
+
+def _long_transcript(lines: int = 120) -> str:
+    return "\n".join(
+        f"Говорящий {1 + i % 2}: Реплика номер {i}, " + "слово " * 10 + "конец"
+        for i in range(lines)
+    )
+
+
+def _echo_pieces(monkeypatch, seen: list[str], *, shrink_to: int | None = None) -> None:
+    """The fake model answers with the piece it was given (optionally cut to `shrink_to`
+    characters, i.e. a summary), recording every piece."""
+
+    def fake_post(self, url, json=None, headers=None):  # noqa: ANN001
+        piece = json["messages"][1]["text"]
+        seen.append(piece)
+        answer = piece if shrink_to is None else piece[:shrink_to]
+        return _completion_response(answer)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+
+
+@pytest.mark.parametrize("fn", [adapt_transcript, rewrite_transcript])
+def test_long_transcript_is_sent_in_pieces_and_kept_whole(monkeypatch, fn) -> None:
+    raw = _long_transcript()
+    assert len(raw) > 3 * ADAPT_CHUNK_CHARS
+    seen: list[str] = []
+    _echo_pieces(monkeypatch, seen)
+    with httpx.Client() as client:
+        result = fn(client, SETTINGS, raw)
+    assert len(seen) >= 3
+    assert all(len(piece) <= ADAPT_CHUNK_CHARS + 200 for piece in seen)
+    # every speaker line survives, in order, and no line is cut in the middle
+    assert result.splitlines() == raw.splitlines()
+
+
+def test_a_transcript_longer_than_the_old_cap_is_not_cut_off(monkeypatch) -> None:
+    """The old code silently dropped everything after 12 000 characters."""
+    raw = _long_transcript(lines=200)
+    assert len(raw) > 12000
+    seen: list[str] = []
+    _echo_pieces(monkeypatch, seen)
+    with httpx.Client() as client:
+        result = rewrite_transcript(client, SETTINGS, raw)
+    assert result.splitlines() == raw.splitlines()
+
+
+def test_a_summarising_answer_is_replaced_by_the_original_piece(monkeypatch) -> None:
+    """Real incident, 2026-11-04: a 707 s call (11 333 characters) came back as 1 573."""
+    raw = _long_transcript(lines=20)
+    seen: list[str] = []
+    # keeps just the first speaker line of every piece - still looks like a transcript
+    _echo_pieces(monkeypatch, seen, shrink_to=60)
+    with httpx.Client() as client:
+        result = rewrite_transcript(client, SETTINGS, raw)
+    assert result == "\n".join(_split_transcript(raw))
+    assert result.splitlines() == raw.splitlines()
+
+
+def test_rewrite_retries_a_summarised_piece_with_the_strict_prompt(monkeypatch) -> None:
+    raw = _long_transcript(lines=8)
+    assert len(raw) >= MIN_CHECKED_CHUNK_CHARS
+    prompts: list[str] = []
+    full = raw.replace("Реплика", "Реплика (исправлено)")
+
+    def fake_post(self, url, json=None, headers=None):  # noqa: ANN001
+        system = json["messages"][0]["text"]
+        prompts.append(system)
+        if system == _REWRITE_SYSTEM_PROMPT:
+            return _completion_response("Говорящий 1: Коротко.")
+        return _completion_response(full)
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    with httpx.Client() as client:
+        result = rewrite_transcript(client, SETTINGS, raw)
+    assert prompts == [_REWRITE_SYSTEM_PROMPT, _ADAPT_SYSTEM_PROMPT]
+    assert result == full
+
+
+def test_a_failed_piece_stays_raw_while_the_others_are_cleaned(monkeypatch) -> None:
+    raw = _long_transcript(lines=120)
+    pieces = _split_transcript(raw)
+    assert len(pieces) >= 3
+    calls = {"n": 0}
+
+    def fake_post(self, url, json=None, headers=None):  # noqa: ANN001
+        calls["n"] += 1
+        if calls["n"] == 2:
+            return httpx.Response(500, json={}, request=httpx.Request("POST", url))
+        return _completion_response(json["messages"][1]["text"].replace("Реплика", "Правка"))
+
+    monkeypatch.setattr(httpx.Client, "post", fake_post)
+    with httpx.Client() as client:
+        result = adapt_transcript(client, SETTINGS, raw)
+    parts = result.split("\n")
+    assert pieces[1].splitlines()[0] in parts  # the failed piece is untouched
+    assert pieces[0].replace("Реплика", "Правка").splitlines()[0] in parts
+
+
+def test_the_rewrite_prompt_forbids_shortening() -> None:
+    assert "НЕ СОКРАЩАЯ" in _REWRITE_SYSTEM_PROMPT
+    assert "ПОЛНОТА" in _REWRITE_SYSTEM_PROMPT

@@ -3,7 +3,7 @@
 // session cookie, see lib/auth.ts's SessionUser.allowedTabs) and the
 // Settings "Права доступа" admin table (components/settings/
 // RoleTabVisibilityCard.tsx - lets an Admin edit which roles see which of
-// these). "Входящие лиды" (/telephony) holds the former Телефония and Заявки
+// these). "CRM" (/telephony, formerly "Входящие лиды") holds the former Телефония and Заявки
 // pages - the backend still accepts the old "/leads" key so stored role rows
 // keep validating. Mirrors backend app/models/role_tab_visibility.py's NAV_TAB_KEYS -
 // keep both lists in sync if a tab is ever added/removed/renamed.
@@ -20,7 +20,7 @@ export const NAV_TABS = [
   { key: "/kanban", label: "Kanban" },
   { key: "/employees", label: "Employees" },
   { key: "/analytics", label: "Analytics" },
-  { key: "/telephony", label: "Входящие лиды" },
+  { key: "/telephony", label: "CRM" },
   { key: "/budget", label: "Финансы" },
   { key: "/cash", label: "Касса" },
   { key: "/bays", label: "Боксы" },

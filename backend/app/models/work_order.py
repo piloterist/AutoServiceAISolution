@@ -117,6 +117,15 @@ class WorkOrder(Base):
     # Repair requests only: numbers of the work orders created from this request
     # (1C: ЗаказНаряд.ДокументОснование = the request), comma-separated; NULL while none.
     linked_work_orders: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Repair requests only, set by staff (services/request_control_service.py) and never by or
+    # to 1C - absent from the import's upsert, so a re-import cannot reset it: the request was
+    # disqualified (no work order will come of it), with the reason and who did it.
+    request_disqualified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    request_disqualified_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    request_disqualify_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    request_disqualify_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # ЗаказНаряд.Автомобиль.VIN - raw passthrough from 1C's vehicle catalog,
     # shown on the work order detail card only (never on the list/dashboard -

@@ -386,12 +386,14 @@ def create_role_tab_visibility(
     visible_tabs: list[str],
     all_departments: bool = False,
     cash_correction: bool = False,
+    request_disqualify_unchecked: bool = False,
 ) -> RoleTabVisibility:
     row = RoleTabVisibility(
         role=role,
         visible_tabs=visible_tabs,
         all_departments=all_departments,
         cash_correction=cash_correction,
+        request_disqualify_unchecked=request_disqualify_unchecked,
     )
     db.add(row)
     db.commit()
@@ -407,6 +409,7 @@ def update_role_tab_visibility(
     visible_tabs: list[str],
     all_departments: bool = False,
     cash_correction: bool = False,
+    request_disqualify_unchecked: bool = False,
 ) -> RoleTabVisibility | None:
     row = db.get(RoleTabVisibility, row_id)
     if row is None:
@@ -415,6 +418,7 @@ def update_role_tab_visibility(
     row.visible_tabs = visible_tabs
     row.all_departments = all_departments
     row.cash_correction = cash_correction
+    row.request_disqualify_unchecked = request_disqualify_unchecked
     db.commit()
     db.refresh(row)
     return row

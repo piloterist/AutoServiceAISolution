@@ -41,5 +41,15 @@ def write_settings(
         planner_search_exclude_closed_orders=payload.planner_search_exclude_closed_orders,
         cash_lock_from=payload.cash_lock_from,
         cash_lock_to=payload.cash_lock_to,
+        request_control_enabled=payload.request_control_enabled,
+        request_first_call_days=payload.request_first_call_days,
+        request_second_call_days=payload.request_second_call_days,
+        request_min_talk_sec=payload.request_min_talk_sec,
+        request_popup_enabled=payload.request_popup_enabled,
+        request_popup_interval_minutes=payload.request_popup_interval_minutes,
+        request_auto_disqualify_days=payload.request_auto_disqualify_days,
+        crm_task_warn_days=payload.crm_task_warn_days,
+        crm_task_overdue_days=payload.crm_task_overdue_days,
+        crm_task_archive_days=payload.crm_task_archive_days,
     )
     return AppSettingsResponse.model_validate(settings)

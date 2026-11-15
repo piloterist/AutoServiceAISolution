@@ -5,6 +5,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
 import { CallRecordingPlayer } from "@/components/telephony/CallRecordingPlayer";
+import { PutOnControlButton } from "@/components/telephony/PutOnControlButton";
 import type {
   ClientCallHistoryResponse,
   LineCallEvent,
@@ -273,10 +274,13 @@ export function CallEventsTable({
   events,
   showSource = false,
   defaultSortDir = "asc",
+  showControl = true,
 }: {
   events: LineCallEvent[];
   showSource?: boolean;
   defaultSortDir?: "asc" | "desc";
+  /** The "На контроль" button next to play; off in the lead window (it is already on the board). */
+  showControl?: boolean;
 }) {
   const [sortKey, setSortKey] = useState<EventSortKey>("time");
   const [sortDir, setSortDir] = useState<"asc" | "desc">(defaultSortDir);
@@ -351,7 +355,12 @@ export function CallEventsTable({
                 )}
               </td>
               <td>
-                <CallRecordingPlayer callId={event.call_id} hasRecording={event.has_recording} />
+                <span className="call-actions">
+                  <CallRecordingPlayer callId={event.call_id} hasRecording={event.has_recording} />
+                  {showControl && (
+                    <PutOnControlButton callId={event.call_id} callWorkshopId={event.workshop_id} />
+                  )}
+                </span>
               </td>
             </tr>
           ))}
@@ -402,7 +411,17 @@ function LineCallsPanel({
   return <CallEventsTable events={events} />;
 }
 
-export function TelephonyStatsView({ initialSummary }: { initialSummary: SourceSummaryResponse }) {
+export function TelephonyStatsView({
+  initialSummary,
+  historyPhones,
+  historySince,
+}: {
+  initialSummary: SourceSummaryResponse;
+  // Deep link from a repair request ("Все звонки"): history of these numbers (comma-separated)
+  // narrowed to the calls after `historySince` ("YYYY-MM-DD HH:MM:SS", Moscow-local).
+  historyPhones?: string;
+  historySince?: string;
+}) {
   const [summary, setSummary] = useState(initialSummary);
   const [startDate, setStartDate] = useState(initialSummary.start_date);
   const [endDate, setEndDate] = useState(initialSummary.end_date);
@@ -415,6 +434,38 @@ export function TelephonyStatsView({ initialSummary }: { initialSummary: SourceS
   const [history, setHistory] = useState<ClientCallHistoryResponse | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [sinceFilter, setSinceFilter] = useState<string | null>(null);
+
+  // Переход по «Все звонки» из заявки: сразу показываем историю по её номерам после даты заявки.
+  useEffect(() => {
+    const phones = (historyPhones ?? "").split(",").map((p) => p.trim()).filter(Boolean);
+    if (phones.length === 0) return;
+    let cancelled = false;
+    setPhoneQuery(phones.join(", "));
+    setSinceFilter(historySince ?? null);
+    setHistoryLoading(true);
+    void Promise.all(phones.map((phone) => getClientCallHistoryClient(phone)))
+      .then((parts) => {
+        if (cancelled) return;
+        const events = new Map<string, LineCallEvent>();
+        for (const part of parts) for (const event of part.events) events.set(event.call_id, event);
+        const merged = [...events.values()].filter((event) => !historySince || event.time >= historySince);
+        setHistory({
+          query: phones.join(", "),
+          truncated: parts.some((part) => part.truncated),
+          events: merged,
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) setHistoryError(err instanceof Error ? err.message : "Не удалось загрузить историю звонков");
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [historyPhones, historySince]);
 
   const loadHistory = async () => {
     const query = phoneQuery.trim();
@@ -422,6 +473,7 @@ export function TelephonyStatsView({ initialSummary }: { initialSummary: SourceS
     setHistoryLoading(true);
     setHistoryError(null);
     try {
+      setSinceFilter(null); // ручной поиск - без ограничения по дате заявки
       setHistory(await getClientCallHistoryClient(query));
     } catch (err) {
       setHistory(null);
@@ -434,6 +486,7 @@ export function TelephonyStatsView({ initialSummary }: { initialSummary: SourceS
   const closeHistory = () => {
     setHistory(null);
     setHistoryError(null);
+    setSinceFilter(null);
   };
 
   const load = async () => {
@@ -500,7 +553,8 @@ export function TelephonyStatsView({ initialSummary }: { initialSummary: SourceS
         <section className="telephony-history">
           <div className="telephony-history-head">
             <h2 className="chart-title">
-              История звонков по номеру «{history.query}»: {history.events.length}
+              История звонков по номеру «{history.query}»
+              {sinceFilter ? ` после ${formatEventTime(sinceFilter)} (создание заявки)` : ""}: {history.events.length}
             </h2>
             <button type="button" className="admin-btn" onClick={closeHistory}>
               Закрыть

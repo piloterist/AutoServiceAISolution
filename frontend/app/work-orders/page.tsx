@@ -28,6 +28,9 @@ type SearchParams = {
   // that figure (server-side).
   only_revenue?: string;
   workshop_id?: string;
+  // Arriving from the Planner's bell (контроль заявок): only the repair requests of the
+  // user's цех with an overdue call (server-side), the overdue rows painted pink.
+  request_issues?: string;
   // Arriving from Cockpit's new "₽" lamp (see components/cockpit/
   // InstrumentCluster.tsx's openUnpaidIndividual) - seeds the "Физ.лицо"
   // checkbox and the "Оплата" bucket dropdown to its two non-full-payment
@@ -75,6 +78,7 @@ export default async function WorkOrdersPage({
         onlyReceivables={params.only_receivables === "1"}
         onlyRevenue={params.only_revenue === "1"}
         workshopId={params.workshop_id}
+        requestIssues={params.request_issues === "1"}
         initialOnlyIndividualCustomer={params.individual === "1"}
         initialUnpaid={params.unpaid === "1"}
         initialPhone={params.phone}
