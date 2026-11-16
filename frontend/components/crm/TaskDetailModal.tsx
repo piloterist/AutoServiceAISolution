@@ -30,7 +30,18 @@ export function TaskDetailModal({
   return (
     <AdminModal
       open={task !== null}
-      title={task ? `Лид · ${formatPhone(task.phone)}` : "Лид"}
+      title={
+        task ? (
+          <>
+            Лид · {formatPhone(task.phone)}
+            <span className={`task-detail-stage task-column--${task.status}`}>
+              <span aria-hidden="true">{columnOf(task.status).icon}</span> {columnOf(task.status).title}
+            </span>
+          </>
+        ) : (
+          "Лид"
+        )
+      }
       onClose={onClose}
       closeOnBackdropClick
       wide
@@ -71,9 +82,11 @@ function TaskDetail({
 
   const [comments, setComments] = useState<CrmTaskComment[]>([]);
   const [actions, setActions] = useState<CrmTaskAction[]>([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [callsOpen, setCallsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [text, setText] = useState("");
+  const [planText, setPlanText] = useState("");
   // «Запланировать действие»: пусто по умолчанию; с датой комментарий обязателен.
   const [nextDate, setNextDate] = useState("");
   const [saving, setSaving] = useState(false);
@@ -125,31 +138,40 @@ function TaskDetail({
     };
   }, [task.phone, task.call_at]);
 
-  const addComment = async () => {
-    const value = text.trim();
-    if (!value) return;
+  // Комментарий; с датой - ещё и запланированное действие (комментарий тогда обязателен).
+  const postComment = async (value: string, date: string | null): Promise<boolean> => {
     setSaving(true);
     setCommentError(null);
     try {
       const res = await fetch(`/api/crm-tasks/${task.id}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: value, next_action_date: nextDate || null }),
+        body: JSON.stringify({ text: value, next_action_date: date }),
       });
       const body = (await res.json()) as CrmTaskComment & { error?: string };
-      if (!res.ok) throw new Error(body.error ?? "Не удалось сохранить комментарий");
-      const planned = Boolean(nextDate);
-      setText("");
-      setNextDate("");
-      setHistoryOpen(true);
-      if (planned) setActionsOpen(true);
+      if (!res.ok) throw new Error(body.error ?? "Не удалось сохранить");
       const fresh = await loadDetail();
       onCommentCountChange(task.id, fresh.comments.length);
       onChanged();
+      return true;
     } catch (err) {
-      setCommentError(err instanceof Error ? err.message : "Не удалось сохранить комментарий");
+      setCommentError(err instanceof Error ? err.message : "Не удалось сохранить");
+      return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  const addComment = async () => {
+    const value = text.trim();
+    if (value && (await postComment(value, null))) setText("");
+  };
+
+  const addAction = async () => {
+    const value = planText.trim();
+    if (value && nextDate && (await postComment(value, nextDate))) {
+      setPlanText("");
+      setNextDate("");
     }
   };
 
@@ -233,55 +255,77 @@ function TaskDetail({
     }
   };
 
-  const link = (label: string, number: string | null, id: string | null | undefined) =>
+  const numberRow = (label: string, number: string | null) =>
     number && (
       <div className="task-detail-row">
         <span className="task-detail-label">{label}</span>
-        {id ? (
-          <a href={`/work-orders/${id}`} className="task-detail-link task-detail-linkbtn">
-            {number} ↗
-          </a>
-        ) : (
-          <span>{number}</span>
-        )}
+        <span>{number}</span>
       </div>
+    );
+
+  // Кнопка-ссылка в той же вкладке; пока ссылки нет - серая и недоступная.
+  const navButton = (label: string, href: string | null, hint: string) =>
+    href ? (
+      <a href={href} className="admin-btn task-detail-navbtn">
+        {label} ↗
+      </a>
+    ) : (
+      <button type="button" className="admin-btn task-detail-navbtn" disabled title={hint}>
+        {label}
+      </button>
     );
 
   return (
     <div className={`task-detail task-column--${task.status}`}>
       <div className="task-detail-summary">
-        <span className="task-detail-stage">
-          <span aria-hidden="true">{column.icon}</span> {column.title}
-        </span>
-        <div className="task-detail-grid">
-          <div className="task-detail-row">
-            <span className="task-detail-label">Телефон</span>
-            <span>{formatPhone(task.phone)}</span>
-          </div>
-          {task.client_name && (
+        <div className="task-detail-top">
+          <div className="task-detail-main">
+          {assignError && <p className="admin-form-error">{assignError}</p>}
+          <div className="task-detail-grid">
+            {task.client_name && (
+              <div className="task-detail-row">
+                <span className="task-detail-label">Клиент</span>
+                <span>{task.client_name}</span>
+              </div>
+            )}
+            {task.car_description && (
+              <div className="task-detail-row">
+                <span className="task-detail-label">Автомобиль</span>
+                <span>{task.car_description}</span>
+              </div>
+            )}
+            {task.next_action_date && (
+              <div className="task-detail-row">
+                <span className="task-detail-label">Следующее действие</span>
+                <span>{formatDate(task.next_action_date)}</span>
+              </div>
+            )}
             <div className="task-detail-row">
-              <span className="task-detail-label">Клиент</span>
-              <span>{task.client_name}</span>
-            </div>
-          )}
-          {task.car_description && (
-            <div className="task-detail-row">
-              <span className="task-detail-label">Автомобиль</span>
-              <span>{task.car_description}</span>
-            </div>
-          )}
-          {task.next_action_date && (
-            <div className="task-detail-row">
-              <span className="task-detail-label">Следующее действие</span>
-              <span>{formatDate(task.next_action_date)}</span>
-            </div>
-          )}
-          {assigning ? (
-            <div className="task-detail-assign">
-              <label htmlFor={`task-assign-workshop-${task.id}`}>Цех</label>
+              <span className="task-detail-label">Сотрудник</span>
               <select
-                id={`task-assign-workshop-${task.id}`}
-                value={assignWorkshop}
+                className="task-detail-select"
+                value={assigning ? assignEmployee : (task.employee_id ?? "")}
+                disabled={!assigning}
+                onChange={(event) => setAssignEmployee(event.target.value)}
+                aria-label="Сотрудник"
+              >
+                <option value="">Не выбран</option>
+                {employeesOfWorkshop(employees, (assigning ? assignWorkshop : task.workshop_id) || null).map(
+                  (employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.full_name}
+                      {employee.specialty ? ` — ${employee.specialty}` : ""}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+            <div className="task-detail-row">
+              <span className="task-detail-label">Цех</span>
+              <select
+                className="task-detail-select"
+                value={assigning ? assignWorkshop : (task.workshop_id ?? "")}
+                disabled={!assigning}
                 onChange={(event) => {
                   const next = event.target.value;
                   setAssignWorkshop(next);
@@ -289,6 +333,7 @@ function TaskDetail({
                   const keep = employees.find((e) => e.id === assignEmployee);
                   if (keep?.workshop_id && keep.workshop_id !== next) setAssignEmployee("");
                 }}
+                aria-label="Цех"
               >
                 <option value="">Выберите цех…</option>
                 {workshops.map((workshop) => (
@@ -297,83 +342,64 @@ function TaskDetail({
                   </option>
                 ))}
               </select>
-              <label htmlFor={`task-assign-employee-${task.id}`}>Сотрудник</label>
-              <select
-                id={`task-assign-employee-${task.id}`}
-                value={assignEmployee}
-                disabled={!assignWorkshop}
-                onChange={(event) => setAssignEmployee(event.target.value)}
-              >
-                <option value="">Не выбран</option>
-                {employeesOfWorkshop(employees, assignWorkshop || null).map((employee) => (
-                  <option key={employee.id} value={employee.id}>
-                    {employee.full_name}
-                    {employee.specialty ? ` — ${employee.specialty}` : ""}
-                  </option>
-                ))}
-              </select>
-              {assignError && <p className="admin-form-error">{assignError}</p>}
-              <div className="request-control-actions">
-                <button
-                  type="button"
-                  className="admin-btn admin-btn-primary"
-                  disabled={saving || !assignWorkshop}
-                  onClick={() => void saveAssign()}
-                >
-                  {saving ? "Сохраняем…" : "Сохранить"}
-                </button>
-                <button type="button" className="admin-btn" onClick={() => setAssigning(false)}>
-                  Отмена
-                </button>
-              </div>
             </div>
-          ) : (
-            <>
-              <div className="task-detail-row">
-                <span className="task-detail-label">Сотрудник</span>
-                <span>{task.employee_name ?? "не выбран"}</span>
-              </div>
-              <div className="task-detail-row">
-                <span className="task-detail-label">Цех</span>
-                <span>
-                  {task.workshop_label ?? "—"}{" "}
-                  <button type="button" className="admin-btn" onClick={startAssign}>
-                    Изменить
-                  </button>
-                </span>
-              </div>
-            </>
-          )}
-          <div className="task-detail-row">
-            <span className="task-detail-label">Звонок</span>
-            <span>{formatMoment(task.call_at, true)}</span>
-          </div>
-          <div className="task-detail-row">
-            <span className="task-detail-label">На доске</span>
-            <span>
-              {task.moved_by_name ?? task.created_by_name}, в столбце с {formatMoment(task.status_changed_at, true)}
-            </span>
-          </div>
-          {task.inspection_at && (
             <div className="task-detail-row">
-              <span className="task-detail-label">Запись на осмотр</span>
+              <span className="task-detail-label">Звонок</span>
+              <span>{formatMoment(task.call_at, true)}</span>
+            </div>
+            <div className="task-detail-row">
+              <span className="task-detail-label">На доске</span>
               <span>
-                создана {formatMoment(task.inspection_at, true)}
-                {task.inspection_date &&
-                  `, осмотр ${formatInspection(task.inspection_date, task.inspection_end_date)}`}
-                {plannerHref && (
-                  <>
-                    {" "}
-                    <a href={plannerHref} className="task-detail-link task-detail-linkbtn">
-                      Запись на осмотр ↗
-                    </a>
-                  </>
-                )}
+                {task.moved_by_name ?? task.created_by_name}, в столбце с {formatMoment(task.status_changed_at, true)}
               </span>
             </div>
-          )}
-          {link("Заявка на ремонт", task.request_number, detail?.request_id)}
-          {link("Заказ-наряд", task.work_order_number, detail?.work_order_id)}
+            {task.inspection_at && (
+              <div className="task-detail-row">
+                <span className="task-detail-label">Запись на осмотр</span>
+                <span>
+                  создана {formatMoment(task.inspection_at, true)}
+                  {task.inspection_date &&
+                    `, осмотр ${formatInspection(task.inspection_date, task.inspection_end_date)}`}
+                </span>
+              </div>
+            )}
+            {numberRow("Заявка на ремонт", task.request_number)}
+            {numberRow("Заказ-наряд", task.work_order_number)}
+          </div>
+          </div>
+            {/* Кнопки всегда в одном месте справа; поля ниже только разблокируются. */}
+            <span className="task-detail-head-actions">
+              {assigning ? (
+                <span className="task-detail-head-row">
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-primary"
+                    disabled={saving || !assignWorkshop}
+                    onClick={() => void saveAssign()}
+                  >
+                    {saving ? "Сохраняем…" : "Сохранить"}
+                  </button>
+                  <button type="button" className="admin-btn" disabled={saving} onClick={() => setAssigning(false)}>
+                    Отмена
+                  </button>
+                </span>
+              ) : (
+                <button type="button" className="admin-btn task-detail-navbtn" onClick={startAssign}>
+                  Изменить
+                </button>
+              )}
+              {navButton("Запись на осмотр", plannerHref, "Записи в планировщике пока нет")}
+              {navButton(
+                "Заявка на ремонт",
+                detail?.request_id ? `/work-orders/${detail.request_id}` : null,
+                "Заявки на ремонт пока нет",
+              )}
+              {navButton(
+                "Заказ-наряд",
+                detail?.work_order_id ? `/work-orders/${detail.work_order_id}` : null,
+                "Заказ-наряда пока нет",
+              )}
+            </span>
         </div>
         {task.status === "refused" && task.refuse_reason && (
           <div className="task-detail-refusal">
@@ -384,65 +410,120 @@ function TaskDetail({
         {detailError && <p className="admin-form-error">{detailError}</p>}
       </div>
 
-      <h4 className="task-detail-heading">Звонки{calls ? ` (${calls.length})` : ""}</h4>
-      {callsError && <p className="admin-form-error">{callsError}</p>}
-      {!calls && !callsError && <p className="admin-hint">Загрузка…</p>}
-      {calls && calls.length === 0 && <p className="admin-hint">Звонков не найдено</p>}
-      {calls && calls.length > 0 && (
-        <div className="task-detail-calls">
-          <CallEventsTable events={calls} showControl={false} defaultSortDir="desc" />
-        </div>
+      <button
+        type="button"
+        className="task-detail-toggle"
+        aria-expanded={callsOpen}
+        onClick={() => setCallsOpen((prev) => !prev)}
+      >
+        {callsOpen ? "▾" : "▸"} Звонки{calls ? ` (${calls.length})` : ""}
+      </button>
+      {callsOpen && (
+        <>
+          {callsError && <p className="admin-form-error">{callsError}</p>}
+          {!calls && !callsError && <p className="admin-hint">Загрузка…</p>}
+          {calls && calls.length === 0 && <p className="admin-hint">Звонков не найдено</p>}
+          {calls && calls.length > 0 && (
+            <div className="task-detail-calls">
+              <CallEventsTable events={calls} showControl={false} defaultSortDir="desc" />
+            </div>
+          )}
+        </>
       )}
 
-      <h4 className="task-detail-heading">Комментарии</h4>
-      <div className="task-detail-comment-form">
-        <textarea
-          rows={3}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) void addComment();
-          }}
-          placeholder="Написать комментарий…  (Ctrl+Enter - отправить)"
-          aria-label="Комментарий"
-        />
-        <h4 className="task-detail-heading">Запланировать действие</h4>
-        <div className="task-detail-plan">
-          <label htmlFor={`task-next-date-${task.id}`}>Дата контакта</label>
-          <DateInput id={`task-next-date-${task.id}`} value={nextDate} onChange={setNextDate} />
-          {nextDate && (
-            <button type="button" className="admin-btn" onClick={() => setNextDate("")}>
-              Очистить
-            </button>
-          )}
-          <span className="admin-hint">
-            {nextDate && !text.trim()
-              ? "С датой комментарий обязателен - напишите его выше."
-              : task.next_action_date
-                ? `Сейчас запланировано на ${formatDate(task.next_action_date)}: в этот день карточка станет розовой.`
-                : "Пусто - сроки считаются от перевода на контроль."}
-          </span>
-        </div>
-        <div className="request-control-actions">
-          <button
-            type="button"
-            className="admin-btn admin-btn-primary"
-            disabled={saving || !text.trim()}
-            onClick={() => void addComment()}
-          >
-            {saving ? "Сохраняем…" : nextDate ? "Запланировать и сохранить" : "Добавить комментарий"}
-          </button>
-          <button type="button" className="admin-btn" onClick={() => setHistoryOpen((prev) => !prev)}>
-            {historyOpen ? "Скрыть историю" : `История комментариев (${comments.length})`}
-          </button>
-          <button type="button" className="admin-btn" onClick={() => setActionsOpen((prev) => !prev)}>
-            {actionsOpen ? "Скрыть запланированные" : `Запланированные действия (${actions.length})`}
-          </button>
-        </div>
-        {commentError && <p className="admin-form-error">{commentError}</p>}
-      </div>
+      <button
+        type="button"
+        className="task-detail-toggle"
+        aria-expanded={commentsOpen}
+        onClick={() => setCommentsOpen((prev) => !prev)}
+      >
+        {commentsOpen ? "▾" : "▸"} Комментарии ({comments.length})
+      </button>
+      {commentsOpen && (
+        <>
+          <div className="task-detail-comment-form">
+            <textarea
+              rows={3}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) void addComment();
+              }}
+              placeholder="Написать комментарий…  (Ctrl+Enter - отправить)"
+              aria-label="Комментарий"
+            />
+            <div className="request-control-actions">
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                disabled={saving || !text.trim()}
+                onClick={() => void addComment()}
+              >
+                {saving ? "Сохраняем…" : "Добавить комментарий"}
+              </button>
+            </div>
+            {commentError && !actionsOpen && <p className="admin-form-error">{commentError}</p>}
+          </div>
+          <ul className="task-detail-comments">
+            {comments.length === 0 && <li className="admin-hint">Комментариев пока нет</li>}
+            {comments.map((comment) => {
+              const stage = columnOf(comment.status);
+              return (
+                <li key={comment.id} className={`task-detail-comment task-column--${comment.status}`}>
+                  <div className="task-detail-comment-head">
+                    <strong>{comment.author_name}</strong>
+                    <span>{formatMoment(comment.created_at, true)}</span>
+                    <span className="task-detail-comment-stage">
+                      {stage.icon} {stage.title}
+                    </span>
+                  </div>
+                  <p>{comment.text}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
 
+      <button
+        type="button"
+        className="task-detail-toggle"
+        aria-expanded={actionsOpen}
+        onClick={() => setActionsOpen((prev) => !prev)}
+      >
+        {actionsOpen ? "▾" : "▸"} Действия ({actions.length})
+      </button>
       {actionsOpen && (
+        <>
+          <div className="task-detail-comment-form">
+            <div className="task-detail-plan">
+              <label htmlFor={`task-next-date-${task.id}`}>Дата контакта</label>
+              <DateInput id={`task-next-date-${task.id}`} value={nextDate} onChange={setNextDate} />
+              <span className="admin-hint">
+                {task.next_action_date
+                  ? `Сейчас запланировано на ${formatDate(task.next_action_date)}: в этот день карточка станет розовой.`
+                  : "Не запланировано - сроки считаются от перевода на контроль."}
+              </span>
+            </div>
+            <textarea
+              rows={3}
+              value={planText}
+              onChange={(event) => setPlanText(event.target.value)}
+              placeholder="Что нужно сделать (комментарий обязателен)"
+              aria-label="Комментарий к запланированному действию"
+            />
+            <div className="request-control-actions">
+              <button
+                type="button"
+                className="admin-btn admin-btn-primary"
+                disabled={saving || !nextDate || !planText.trim()}
+                onClick={() => void addAction()}
+              >
+                {saving ? "Сохраняем…" : "Запланировать"}
+              </button>
+            </div>
+            {commentError && actionsOpen && <p className="admin-form-error">{commentError}</p>}
+          </div>
         <ul className="task-detail-comments">
           {actions.length === 0 && <li className="admin-hint">Действий пока не планировали</li>}
           {actions.map((action, index) => (
@@ -504,27 +585,7 @@ function TaskDetail({
           ))}
           {actionError && <li className="admin-form-error">{actionError}</li>}
         </ul>
-      )}
-
-      {historyOpen && (
-        <ul className="task-detail-comments">
-          {comments.length === 0 && <li className="admin-hint">Комментариев пока нет</li>}
-          {comments.map((comment) => {
-            const stage = columnOf(comment.status);
-            return (
-              <li key={comment.id} className={`task-detail-comment task-column--${comment.status}`}>
-                <div className="task-detail-comment-head">
-                  <strong>{comment.author_name}</strong>
-                  <span>{formatMoment(comment.created_at, true)}</span>
-                  <span className="task-detail-comment-stage">
-                    {stage.icon} {stage.title}
-                  </span>
-                </div>
-                <p>{comment.text}</p>
-              </li>
-            );
-          })}
-        </ul>
+        </>
       )}
     </div>
   );

@@ -15,7 +15,7 @@ export function AdminModal({
   closeOnBackdropClick,
 }: {
   open: boolean;
-  title: string;
+  title: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
   /** The default width is too cramped for a form with its own inner grid

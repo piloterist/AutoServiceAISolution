@@ -7977,7 +7977,7 @@ main:has(.cockpit-page) {
 
 .task-detail-stage {
   display: inline-block;
-  margin-bottom: 0.6rem;
+  margin-left: 0.4rem;
   padding: 0.2rem 0.8rem;
   border-radius: 999px;
   background: var(--col);
@@ -7986,19 +7986,24 @@ main:has(.cockpit-page) {
   font-weight: 700;
 }
 
+/* Поля лида друг под другом: подпись слева (фикс. ширина), значение справа на всю строку. */
 .task-detail-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 0.35rem 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.1rem;
+  max-width: 56rem;
+  margin-top: 0.4rem;
 }
 
 .task-detail-row {
   display: flex;
-  gap: 0.6rem;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 1.9rem;
 }
 
 .task-detail-label {
-  flex: 0 0 8.5rem;
+  flex: 0 0 11rem;
   color: var(--text-muted);
 }
 
@@ -8020,6 +8025,25 @@ main:has(.cockpit-page) {
   margin: 0.2rem 0 0;
   white-space: pre-wrap;
   color: var(--text);
+}
+
+.task-detail-toggle {
+  display: block;
+  width: 100%;
+  margin: 0.9rem 0 0.4rem;
+  padding: 0.5rem 0.2rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-detail-toggle:hover {
+  color: var(--accent);
 }
 
 .task-detail-heading {
@@ -8145,21 +8169,84 @@ main:has(.cockpit-page) {
   min-width: 11rem;
 }
 
-.task-detail-assign {
-  grid-column: 1 / -1;
+.task-detail-top {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.task-detail-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.task-detail-head-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0.4rem;
-  max-width: 34rem;
+  min-width: 12rem;
 }
 
-.task-detail-assign label {
+.task-detail-head-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.task-detail-head-row .admin-btn {
+  flex: 1 1 0;
+}
+
+.task-detail-navbtn {
+  display: block;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  text-align: center;
+  text-decoration: none;
   font-weight: 600;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 
-.task-detail-assign select {
-  padding: 0.55rem 0.7rem;
+a.task-detail-navbtn:hover {
+  background: var(--accent);
+  color: var(--surface);
+}
+
+.task-detail-navbtn:disabled {
+  opacity: 0.45;
+  border-color: var(--border);
+  color: var(--text-muted);
+  background: var(--surface2);
+  cursor: not-allowed;
+}
+
+.task-detail-select {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 0.25rem 0.6rem;
   font-size: 1rem;
+  text-align: left;
+  text-align-last: left;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Не в режиме правки: выглядит как обычный текст строки. */
+.task-detail-select:disabled {
+  opacity: 1;
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: default;
 }
 
 .task-detail-edit {
