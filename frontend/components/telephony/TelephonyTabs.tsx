@@ -13,7 +13,7 @@ import { LeadsView } from "@/components/leads/LeadsView";
 import { WorkOrdersTable } from "@/components/WorkOrdersTable";
 import { ConversionView } from "@/components/telephony/ConversionView";
 import { TelephonyStatsView } from "@/components/telephony/TelephonyStatsView";
-import type { CrmTask, CrmTaskListResponse, Employee, SourceSummaryResponse, WebsiteLead, Workshop } from "@/lib/backend-api";
+import type { CrmTask, CrmTaskListResponse, Employee, SlesarkaStatus, SourceSummaryResponse, WebsiteLead, Workshop } from "@/lib/backend-api";
 
 type TabKey = "board" | "calls" | "conversion" | "leads" | "requests";
 
@@ -36,6 +36,8 @@ export function TelephonyTabs({
   employees,
   currentEmployeeId,
   boardEmployeeId,
+  slesarkaStatuses,
+  fivesystemsApiEnabled,
   initialTab = "board",
   conversionFrom,
   conversionTo,
@@ -58,6 +60,9 @@ export function TelephonyTabs({
   currentEmployeeId: string | null;
   /** The board opens on this employee - the user's own, but "Все" (null) for Админ / Управляющий. */
   boardEmployeeId?: string | null;
+  /** The planner record form opened from the board (drag to «Записан на осмотр»). */
+  slesarkaStatuses: SlesarkaStatus[];
+  fivesystemsApiEnabled: boolean;
   initialTab?: TabKey;
   // Deep link from the Аналитика donuts (see ConversionView's props).
   conversionFrom?: string;
@@ -105,9 +110,15 @@ export function TelephonyTabs({
   const registerTask = useCallback((task: CrmTask) => {
     setControlTasks((prev) => ({ ...prev, [phoneKey(task.phone)]: task }));
   }, []);
+  // The card the calls' status button pointed at: the board shows it, the rest dimmed.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const showTask = useCallback((task: CrmTask) => {
+    setHighlightId(task.id);
+    setTab("board");
+  }, []);
   const controlValue = useMemo(
-    () => ({ byPhone: controlTasks, register: registerTask }),
-    [controlTasks, registerTask],
+    () => ({ byPhone: controlTasks, register: registerTask, show: showTask }),
+    [controlTasks, registerTask, showTask],
   );
 
   const selectTab = (key: TabKey) => {
@@ -140,7 +151,11 @@ export function TelephonyTabs({
           initialWorkshopId={boardWorkshopId}
           employees={employees}
           initialEmployeeId={boardEmployeeId}
+          slesarkaStatuses={slesarkaStatuses}
+          fivesystemsApiEnabled={fivesystemsApiEnabled}
           active={tab === "board"}
+          highlightId={highlightId}
+          onClearHighlight={() => setHighlightId(null)}
         />
       </div>
       <div hidden={tab !== "calls"}>

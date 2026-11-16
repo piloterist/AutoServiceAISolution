@@ -129,6 +129,8 @@ function groupOverlappingStages(stages: BodyCarStage[]): StageGroup[] {
 function carMatches(car: BodyCar, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
+  // The record's own id: the deep link from the CRM board's card (a record without a ЗН has no other key).
+  if (car.id.toLowerCase() === q) return true;
   return [car.work_order_number, car.car_description, car.vin].filter(Boolean).some((f) => f!.toLowerCase().includes(q));
 }
 

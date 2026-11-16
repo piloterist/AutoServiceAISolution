@@ -96,6 +96,8 @@ function computeLanes(jobs: WorkshopJob[]): Map<string, { lane: number; lanes: n
 function jobMatches(job: WorkshopJob, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
+  // The record's own id: the deep link from the CRM board's card (a record without a ЗН has no other key).
+  if (job.id.toLowerCase() === q) return true;
   return [job.work_order_number, job.car_description, job.vin]
     .filter(Boolean)
     .some((field) => field!.toLowerCase().includes(q));

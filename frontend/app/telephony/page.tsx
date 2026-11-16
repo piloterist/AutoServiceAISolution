@@ -1,8 +1,16 @@
 import { cookies } from "next/headers";
 
 import { TelephonyTabs } from "@/components/telephony/TelephonyTabs";
-import { getEmployees, getLeads, getOrgUsers, getSourceSummary, getWorkshops } from "@/lib/backend-api";
-import type { Employee, WebsiteLead, Workshop } from "@/lib/backend-api";
+import {
+  getAppSettings,
+  getEmployees,
+  getLeads,
+  getOrgUsers,
+  getSlesarkaStatuses,
+  getSourceSummary,
+  getWorkshops,
+} from "@/lib/backend-api";
+import type { Employee, SlesarkaStatus, WebsiteLead, Workshop } from "@/lib/backend-api";
 import { getCurrentUser } from "@/lib/session";
 
 // Same reasoning as app/settings/page.tsx - never statically prerendered,
@@ -66,6 +74,19 @@ export default async function TelephonyPage({
     employees = [];
   }
   if (currentEmployeeId && !employees.some((e) => e.id === currentEmployeeId)) currentEmployeeId = null;
+  // The planner's record form (drag to «Записан на осмотр»): статусы слесарки and the 5Systems switch.
+  let slesarkaStatuses: SlesarkaStatus[] = [];
+  let fivesystemsApiEnabled = false;
+  try {
+    slesarkaStatuses = await getSlesarkaStatuses();
+  } catch {
+    slesarkaStatuses = [];
+  }
+  try {
+    fivesystemsApiEnabled = (await getAppSettings()).fivesystems_api_enabled;
+  } catch {
+    fivesystemsApiEnabled = false;
+  }
   const boardEmployeeId =
     params.employee === "all" || !user || SEES_EVERYONE_ROLES.includes(user.role) ? null : currentEmployeeId;
   try {
@@ -98,6 +119,8 @@ export default async function TelephonyPage({
           employees={employees}
           currentEmployeeId={currentEmployeeId}
           boardEmployeeId={boardEmployeeId}
+          slesarkaStatuses={slesarkaStatuses}
+          fivesystemsApiEnabled={fivesystemsApiEnabled}
           initialTab={
             params.tab === "conversion"
               ? "conversion"

@@ -49,14 +49,22 @@ export function PutOnControlButton({
   // already exists after the call.
   const [column, setColumn] = useState<CrmTaskStatus>("control");
 
-  const { byPhone, register } = useControlTasks();
+  const { byPhone, register, show } = useControlTasks();
   const existing = byPhone[phoneKey(client)] ?? null;
 
+  // The цех's employees, plus the user's own one when the directory has no цех for them (such an
+  // employee fits any цех) - otherwise they would be missing from the list.
+  const ownEmployee = employees.find((e) => e.id === currentEmployeeId) ?? null;
   const employeeOptions = employeesOfWorkshop(employees, workshopId || null);
+  if (ownEmployee && !ownEmployee.workshop_id && !employeeOptions.some((e) => e.id === ownEmployee.id)) {
+    employeeOptions.unshift(ownEmployee);
+  }
 
   // Preselect the user's own employee when they work in the chosen цех; otherwise nobody.
   const preselectEmployee = (forWorkshop: string) =>
-    currentEmployeeId && employeesOfWorkshop(employees, forWorkshop).some((e) => e.id === currentEmployeeId)
+    currentEmployeeId &&
+    (employeesOfWorkshop(employees, forWorkshop).some((e) => e.id === currentEmployeeId) ||
+      (ownEmployee !== null && !ownEmployee.workshop_id))
       ? currentEmployeeId
       : "";
 
@@ -102,12 +110,17 @@ export function PutOnControlButton({
   // The phone is already on the board: the button is the card's column (same colour as there).
   if (existing) {
     return (
-      <span
+      <button
+        type="button"
         className={`call-control-status task-column--${existing.status}`}
-        title={`На «Доске задач», столбец «${COLUMN_TITLES[existing.status]}»`}
+        title={`На «Доске задач», столбец «${COLUMN_TITLES[existing.status]}» - открыть задачу на доске`}
+        onClick={(event) => {
+          event.stopPropagation();
+          show(existing);
+        }}
       >
         {COLUMN_TITLES[existing.status]}
-      </span>
+      </button>
     );
   }
 

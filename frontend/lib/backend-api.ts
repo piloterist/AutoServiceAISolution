@@ -2422,6 +2422,8 @@ export type CrmTask = {
   inspection_at: string | null;
   inspection_date: string | null;
   inspection_end_date: string | null;
+  planner_record: boolean;
+  planner_record_id: string | null;
   created_by_name: string;
   moved_by_name: string | null;
   /** Pink / red card colour in "На контроле" (thresholds are in Settings); null elsewhere. */
@@ -2504,7 +2506,12 @@ export function createCrmTask(
 
 export function moveCrmTask(
   id: string,
-  payload: { status: CrmTaskStatus; reason?: string | null },
+  payload: {
+    status: CrmTaskStatus;
+    reason?: string | null;
+    body_car_id?: string | null;
+    workshop_job_id?: string | null;
+  },
   actor: Actor,
 ): Promise<CrmTask> {
   return backendPost<CrmTask>(`/api/v1/crm-tasks/${id}/move`, payload, actorHeaders(actor));

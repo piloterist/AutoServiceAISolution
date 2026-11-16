@@ -48,6 +48,8 @@ from app.models.crm_task import (
 from app.models.employee import Employee
 from app.models.work_order import DOC_TYPE_REPAIR_REQUEST, DOC_TYPE_WORK_ORDER, WorkOrder
 from app.models.workshop import Workshop
+from app.models.workshop_job import WorkshopJob
+from app.services import planner_service
 from app.services.request_control_service import _aware
 from app.services.request_control_service import _phones as phone_numbers
 from app.services.settings_service import get_app_settings
@@ -103,7 +105,8 @@ def create_from_call(
         employee = db.get(Employee, employee_id)
         if employee is None:
             raise CrmTaskInvalid("Сотрудник не найден")
-        if employee.workshop_id != workshop_id:
+        # Сотрудник без цеха (в справочнике цех не указан) подходит к любому цеху.
+        if employee.workshop_id is not None and employee.workshop_id != workshop_id:
             raise CrmTaskInvalid("Сотрудник не работает в выбранном цехе")
     call = db.get(CallRecord, call_id)
     if call is None:
@@ -154,15 +157,27 @@ def _cutoff(task: CrmTask) -> datetime:
 def _take_inspection(db: Session, task: CrmTask, car: BodyCar) -> None:
     """Данные записи на осмотр на карточку: когда создана, автомобиль, клиент, даты осмотра."""
     task.inspection_at = car.created_at
+    task.body_car_id = car.id
     task.car_description = car.car_description or car.plate
     task.client_name = task.client_name or car.client_name
-    first, last = db.execute(
-        select(func.min(BodyCarStage.start_date), func.max(BodyCarStage.end_date)).where(
-            BodyCarStage.body_car_id == car.id, BodyCarStage.stage_name == INSPECTION_STAGE
-        )
-    ).one()
+    stages = select(func.min(BodyCarStage.start_date), func.max(BodyCarStage.end_date)).where(
+        BodyCarStage.body_car_id == car.id
+    )
+    first, last = db.execute(stages.where(BodyCarStage.stage_name == INSPECTION_STAGE)).one()
+    if first is None:  # запись создана руками с доски: этапа «Осмотр» может не быть
+        first, last = db.execute(stages).one()
     task.inspection_date = first
     task.inspection_end_date = last
+
+
+def _take_job(task: CrmTask, job: WorkshopJob) -> None:
+    """То же для записи слесарного цеха: осмотр - день записи на пост."""
+    task.inspection_at = job.created_at
+    task.workshop_job_id = job.id
+    task.car_description = job.car_description or job.plate
+    task.client_name = task.client_name or job.client_name
+    task.inspection_date = job.job_date
+    task.inspection_end_date = job.job_date
 
 
 def sync_tasks(db: Session) -> None:
@@ -237,8 +252,22 @@ def sync_tasks(db: Session) -> None:
             _take_inspection(db, task, car)
             changed = True
 
+        # Карточки, ставшие «Записан на осмотр» до появления связи с записью, - привязываем.
+        if task.inspection_at and task.body_car_id is None and task.workshop_job_id is None:
+            linked = next(
+                (
+                    c
+                    for c in cars_by_phone.get(task.phone, [])
+                    if _aware(c.created_at) == _aware(task.inspection_at)
+                ),
+                None,
+            )
+            if linked is not None:
+                task.body_car_id = linked.id
+                changed = True
+
         # Карточки, ставшие «Записан на осмотр» до появления даты осмотра, - дописываем её.
-        if task.inspection_at and task.inspection_date is None:
+        if task.inspection_at and task.inspection_date is None and task.workshop_job_id is None:
             car = next(
                 (
                     c
@@ -274,6 +303,9 @@ def move_task(
     target: str,
     *,
     reason: str | None,
+    body_car_id: uuid.UUID | None = None,
+    workshop_job_id: uuid.UUID | None = None,
+    actor_id: uuid.UUID | None = None,
     actor_name: str,
 ) -> CrmTask:
     task = db.get(CrmTask, task_id)
@@ -283,19 +315,28 @@ def move_task(
         raise CrmTaskInvalid("Неизвестный столбец")
     if target == task.status:
         return task
-    # Руками - только в «Отказ» (из любого столбца) и из «Отказа» обратно в «На контроле»; в
-    # остальные столбцы карточки приходят сами.
-    back_to_control = task.status == TASK_STATUS_REFUSED and target == TASK_STATUS_CONTROL
-    if target != TASK_STATUS_REFUSED and not back_to_control:
+    # Руками: в «Отказ» (из любого столбца); из «Отказа» и из «Записан на осмотр» в «На контроле»;
+    # из «На контроле» в «Записан на осмотр» - с записью, созданной в планировщике цеха карточки.
+    # В остальные столбцы карточки приходят сами.
+    back_to_control = target == TASK_STATUS_CONTROL and task.status in (
+        TASK_STATUS_REFUSED,
+        TASK_STATUS_INSPECTION,
+    )
+    to_inspection = target == TASK_STATUS_INSPECTION and task.status == TASK_STATUS_CONTROL
+    if target != TASK_STATUS_REFUSED and not back_to_control and not to_inspection:
         raise CrmTaskInvalid(
-            "Вручную карточку можно перенести только в «Отказ», а из «Отказа» - в «На контроле»; "
+            "Вручную карточку можно перенести в «Отказ», из «Отказа» и «Записан на осмотр» - "
+            "в «На контроле», из «На контроле» - в «Записан на осмотр»; "
             "в остальные столбцы она переходит сама"
         )
+    if to_inspection:
+        _link_planner_record(db, task, body_car_id, workshop_job_id)
 
     reason_text = (reason or "").strip()
     if target == TASK_STATUS_REFUSED and not reason_text:
         raise CrmTaskInvalid("Укажите причину отказа")
 
+    was_status = task.status
     now = datetime.now(UTC)
     task.status = target
     task.status_changed_at = now
@@ -305,6 +346,12 @@ def move_task(
     # Что нашла автоматика в более поздних столбцах, при переносе назад больше не верно:
     # события ищутся заново (и только после этого переноса).
     if target == TASK_STATUS_CONTROL:
+        # Из «Записан на осмотр» запись планировщика удаляется; из «Отказа» её не трогаем (при
+        # отказе запись остаётся), только отвязываем.
+        if was_status == TASK_STATUS_INSPECTION:
+            _delete_planner_record(db, task, actor_id, actor_name)
+        task.body_car_id = None
+        task.workshop_job_id = None
         task.inspection_at = None
         task.inspection_date = None
         task.inspection_end_date = None
@@ -325,6 +372,49 @@ def move_task(
     db.commit()
     db.refresh(task)
     return task
+
+
+def _link_planner_record(
+    db: Session,
+    task: CrmTask,
+    body_car_id: uuid.UUID | None,
+    workshop_job_id: uuid.UUID | None,
+) -> None:
+    """Привязывает к карточке запись, созданную в планировщике цеха карточки (кузовной или
+    слесарный), и берёт с неё данные осмотра."""
+    if (body_car_id is None) == (workshop_job_id is None):
+        raise CrmTaskInvalid("Создайте запись в планировщике цеха карточки")
+    if body_car_id is not None:
+        car = db.get(BodyCar, body_car_id)
+        if car is None:
+            raise CrmTaskInvalid("Запись планировщика не найдена")
+        if car.workshop_id != task.workshop_id:
+            raise CrmTaskInvalid("Запись создана в другом цехе")
+        _take_inspection(db, task, car)
+    else:
+        job = db.get(WorkshopJob, workshop_job_id)
+        if job is None:
+            raise CrmTaskInvalid("Запись планировщика не найдена")
+        if job.workshop_id != task.workshop_id:
+            raise CrmTaskInvalid("Запись создана в другом цехе")
+        _take_job(task, job)
+
+
+def _delete_planner_record(
+    db: Session, task: CrmTask, actor_id: uuid.UUID | None, actor_name: str
+) -> None:
+    """Удаляет запись планировщика, с которой связана карточка (если её уже не удалили)."""
+    try:
+        if task.body_car_id is not None and db.get(BodyCar, task.body_car_id) is not None:
+            planner_service.delete_body_car(
+                db, task.body_car_id, actor_user_id=actor_id, actor_name=actor_name
+            )
+        if task.workshop_job_id is not None and db.get(WorkshopJob, task.workshop_job_id):
+            planner_service.delete_workshop_job(
+                db, task.workshop_job_id, actor_user_id=actor_id, actor_name=actor_name
+            )
+    except planner_service.NotFoundError:
+        pass
 
 
 # ---- чтение --------------------------------------------------------------------------

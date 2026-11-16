@@ -82,6 +82,8 @@ def _out(
         inspection_at=task.inspection_at,
         inspection_date=task.inspection_date,
         inspection_end_date=task.inspection_end_date,
+        planner_record=task.body_car_id is not None or task.workshop_job_id is not None,
+        planner_record_id=task.body_car_id or task.workshop_job_id,
         created_by_name=task.created_by_name,
         moved_by_name=task.moved_by_name,
         alert=service.alert_for(task, warn_days, overdue_days, now),
@@ -170,7 +172,14 @@ def move_task(
 ) -> CrmTaskOut:
     try:
         task = service.move_task(
-            db, task_id, payload.status, reason=payload.reason, actor_name=who[1]
+            db,
+            task_id,
+            payload.status,
+            reason=payload.reason,
+            body_car_id=payload.body_car_id,
+            workshop_job_id=payload.workshop_job_id,
+            actor_id=who[0],
+            actor_name=who[1],
         )
     except service.CrmTaskError as exc:
         raise _http_error(exc) from exc

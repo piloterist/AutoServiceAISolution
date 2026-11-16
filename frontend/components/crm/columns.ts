@@ -16,12 +16,15 @@ export const COLUMNS: Column[] = [
   { key: "work_order", title: "Заказ-наряд", icon: "✅" },
 ];
 
-/** By hand a card goes only to «Отказ» (from any column) and from «Отказ» back to «На контроле»;
- * every other column is reached by itself (planner record -> repair request -> work order). The
- * backend enforces the same rule. */
+/** By hand: to «Отказ» from any column; back to «На контроле» from «Отказ» and from «Записан на
+ * осмотр» (that deletes the planner record); from «На контроле» to «Записан на осмотр» (a dialog
+ * creates the planner record). Every other column is reached by itself (repair request -> work
+ * order). The backend enforces the same rule. */
 export function canMoveByHand(from: CrmTaskStatus, to: CrmTaskStatus): boolean {
   if (from === to) return false;
-  return to === "refused" || (from === "refused" && to === "control");
+  if (to === "refused") return true;
+  if (to === "control") return from === "refused" || from === "inspection";
+  return to === "inspection" && from === "control";
 }
 
 /** "16.11.2026" or "16.11.2026 - 18.11.2026" from the planner's date-only inspection stage. */

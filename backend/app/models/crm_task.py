@@ -72,6 +72,14 @@ class CrmTask(Base):
     # с - по (одинаковые, если осмотр в один день). Для показа на карточке.
     inspection_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     inspection_end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Запись планировщика, с которой связана карточка в «Записан на осмотр»: кузовной (BodyCar) или
+    # слесарный (WorkshopJob). Возврат из «Записан на осмотр» в «На контроле» удаляет её.
+    body_car_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("body_cars.id", ondelete="SET NULL"), nullable=True
+    )
+    workshop_job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workshop_jobs.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Последняя запланированная дата следующего действия (контакта) - от неё, а не от
     # status_changed_at, считаются розовый и красный сроки в «На контроле». История - в

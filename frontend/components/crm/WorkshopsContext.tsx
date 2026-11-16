@@ -32,9 +32,15 @@ export function useEmployees(): EmployeesValue {
 type ControlTasksValue = {
   byPhone: Record<string, CrmTask>;
   register: (task: CrmTask) => void;
+  /** Opens the board with this card highlighted (the rest dimmed). */
+  show: (task: CrmTask) => void;
 };
 
-const ControlTasksContext = createContext<ControlTasksValue>({ byPhone: {}, register: () => {} });
+const ControlTasksContext = createContext<ControlTasksValue>({
+  byPhone: {},
+  register: () => {},
+  show: () => {},
+});
 
 export const ControlTasksProvider = ControlTasksContext.Provider;
 

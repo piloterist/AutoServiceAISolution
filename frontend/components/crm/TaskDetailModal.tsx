@@ -139,12 +139,21 @@ function TaskDetail({
     }
   };
 
+  // The planner opens on the record's цех and day with the record found (as the car search does):
+  // the id is matched by the planner's search box, the rest of the records are dimmed.
+  const plannerHref =
+    task.planner_record_id && task.workshop_id
+      ? `/planner?workshop=${task.workshop_id}&zn=${encodeURIComponent(task.planner_record_id)}${
+          task.inspection_date ? `&date=${task.inspection_date}` : ""
+        }`
+      : null;
+
   const link = (label: string, number: string | null, id: string | null | undefined) =>
     number && (
       <div className="task-detail-row">
         <span className="task-detail-label">{label}</span>
         {id ? (
-          <a href={`/work-orders/${id}`} target="_blank" rel="noopener noreferrer" className="task-detail-link">
+          <a href={`/work-orders/${id}`} className="task-detail-link task-detail-linkbtn">
             {number} ↗
           </a>
         ) : (
@@ -211,6 +220,14 @@ function TaskDetail({
                 создана {formatMoment(task.inspection_at, true)}
                 {task.inspection_date &&
                   `, осмотр ${formatInspection(task.inspection_date, task.inspection_end_date)}`}
+                {plannerHref && (
+                  <>
+                    {" "}
+                    <a href={plannerHref} className="task-detail-link task-detail-linkbtn">
+                      Запись на осмотр ↗
+                    </a>
+                  </>
+                )}
               </span>
             </div>
           )}

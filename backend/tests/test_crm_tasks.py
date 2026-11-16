@@ -742,3 +742,98 @@ def test_counter_uses_the_planned_date(db_session) -> None:
         actor_name="Тест",
     )
     assert service.overdue_count(db_session, workshop_id=workshop.id).warn_count == 0
+
+
+# ---- «Записан на осмотр» руками: запись в планировщике цеха карточки ------------------
+
+
+def _manual_job(db: Session, workshop: Workshop, *, created_at: datetime):
+    from datetime import time
+
+    from app.models.workshop_job import WorkshopJob
+
+    job = WorkshopJob(
+        workshop_id=workshop.id,
+        car_description="Kia Rio",
+        phone=RAW_PHONE,
+        job_date=date(2026, 11, 18),
+        post_number=1,
+        start_time=time(10),
+        end_time=time(11),
+        created_at=created_at,
+    )
+    db.add(job)
+    db.commit()
+    return job
+
+
+def test_manual_move_to_inspection_links_a_body_car(db_session) -> None:
+    workshop = _workshop(db_session)
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), workshop.id)
+    # Запись, созданная в диалоге доски: сразу ПОСЛЕ звонка, но без привязки по телефону.
+    car = _body_car(db_session, workshop, created_at=_now(), phone="123")
+
+    moved = service.move_task(
+        db_session, task.id, "inspection", reason=None, body_car_id=car.id, actor_name="Тест"
+    )
+
+    assert moved.status == "inspection"
+    assert moved.body_car_id == car.id
+    assert moved.inspection_date == date(2026, 11, 16)
+    assert moved.car_description == "Opel Astra"
+
+
+def test_manual_move_to_inspection_needs_a_record_of_the_same_workshop(db_session) -> None:
+    workshop = _workshop(db_session)
+    other = _workshop(db_session, name="Другой")
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), workshop.id)
+
+    with pytest.raises(service.CrmTaskInvalid):
+        service.move_task(db_session, task.id, "inspection", reason=None, actor_name="Тест")
+    foreign = _body_car(db_session, other, created_at=_now())
+    with pytest.raises(service.CrmTaskInvalid):
+        service.move_task(
+            db_session, task.id, "inspection", reason=None, body_car_id=foreign.id, actor_name="Т"
+        )
+
+
+def test_back_to_control_deletes_the_planner_record_but_refusal_keeps_it(db_session) -> None:
+    workshop = _workshop(db_session)
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), workshop.id)
+    car = _body_car(db_session, workshop, created_at=_now(), phone="123")
+    service.move_task(
+        db_session, task.id, "inspection", reason=None, body_car_id=car.id, actor_name="Тест"
+    )
+
+    service.move_task(db_session, task.id, "control", reason=None, actor_name="Тест")
+    db_session.expire_all()
+    assert db_session.get(BodyCar, car.id) is None
+    refreshed = db_session.get(CrmTask, task.id)
+    assert refreshed.status == "control"
+    assert refreshed.body_car_id is None and refreshed.inspection_date is None
+
+    keep = _body_car(db_session, workshop, created_at=_now(), phone="123")
+    service.move_task(
+        db_session, task.id, "inspection", reason=None, body_car_id=keep.id, actor_name="Тест"
+    )
+    service.move_task(db_session, task.id, "refused", reason="Дорого", actor_name="Тест")
+    service.move_task(db_session, task.id, "control", reason=None, actor_name="Тест")
+    db_session.expire_all()
+    assert db_session.get(BodyCar, keep.id) is not None
+
+
+def test_manual_inspection_for_a_mechanical_workshop_uses_the_job(db_session) -> None:
+    from app.models.workshop_job import WorkshopJob
+
+    workshop = _workshop(db_session, "Слесарный")
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), workshop.id)
+    job = _manual_job(db_session, workshop, created_at=_now())
+
+    moved = service.move_task(
+        db_session, task.id, "inspection", reason=None, workshop_job_id=job.id, actor_name="Тест"
+    )
+    assert moved.status == "inspection" and moved.inspection_date == date(2026, 11, 18)
+
+    service.move_task(db_session, task.id, "control", reason=None, actor_name="Тест")
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, job.id) is None

@@ -14,7 +14,15 @@ import {
 } from "@/components/crm/columns";
 import { TaskDetailModal } from "@/components/crm/TaskDetailModal";
 import { AdminModal } from "@/components/settings/AdminModal";
-import type { CrmTask, CrmTaskListResponse, CrmTaskStatus, Employee, Workshop } from "@/lib/backend-api";
+import { InspectionBookingDialog } from "@/components/crm/InspectionBookingDialog";
+import type {
+  CrmTask,
+  CrmTaskListResponse,
+  CrmTaskStatus,
+  Employee,
+  SlesarkaStatus,
+  Workshop,
+} from "@/lib/backend-api";
 
 const REFRESH_MS = 60_000;
 const ALL_WORKSHOPS = "";
@@ -29,8 +37,9 @@ function formatAge(iso: string, now: number): string {
   return "меньше часа";
 }
 
-function cardClass(task: CrmTask): string {
+function cardClass(task: CrmTask, highlightId: string | null): string {
   const classes = ["task-card"];
+  if (highlightId) classes.push(task.id === highlightId ? "task-card--focus" : "task-card--dim");
   if (task.alert === "warn") classes.push("task-card--warn");
   if (task.alert === "overdue") classes.push("task-card--overdue");
   return classes.join(" ");
@@ -46,6 +55,10 @@ export function TaskBoard({
   initialWorkshopId,
   employees,
   initialEmployeeId,
+  slesarkaStatuses,
+  fivesystemsApiEnabled,
+  highlightId = null,
+  onClearHighlight,
   active = true,
 }: {
   workshops: Workshop[];
@@ -54,6 +67,12 @@ export function TaskBoard({
   employees: Employee[];
   /** The user's own employee; null ("Все") for Админ / Управляющий. */
   initialEmployeeId?: string | null;
+  /** For the planner's record form opened by dragging a card to «Записан на осмотр». */
+  slesarkaStatuses: SlesarkaStatus[];
+  fivesystemsApiEnabled: boolean;
+  /** A card shown from the calls' status button: it stays bright, the others are dimmed. */
+  highlightId?: string | null;
+  onClearHighlight?: () => void;
   /** The board's tab is the one shown. The tabs stay mounted, so a card put on control from "Звонки"
    * would not show up until the next poll: every switch to the board reloads it, and the periodic
    * poll runs only while it is visible. */
@@ -83,6 +102,8 @@ export function TaskBoard({
   const [dragId, setDragId] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<CrmTaskStatus | null>(null);
   const [refusing, setRefusing] = useState<CrmTask | null>(null);
+  // Dragged from «На контроле» to «Записан на осмотр»: the planner's record form of its цех.
+  const [booking, setBooking] = useState<CrmTask | null>(null);
   // Клик по карточке открывает окно лида: звонки, ссылки, комментарии.
   const [opened, setOpened] = useState<CrmTask | null>(null);
   const [reason, setReason] = useState("");
@@ -117,6 +138,18 @@ export function TaskBoard({
     return () => clearInterval(timer);
   }, [load, active]);
 
+  // A highlighted card must be visible: drop the filters, and bring it into view once loaded.
+  useEffect(() => {
+    if (!highlightId) return;
+    setWorkshopId(ALL_WORKSHOPS);
+    setEmployeeId(ALL_WORKSHOPS);
+  }, [highlightId]);
+  const highlightedReady = highlightId ? (data?.items.some((t) => t.id === highlightId) ?? false) : false;
+  useEffect(() => {
+    if (!highlightId || !highlightedReady || !active) return;
+    document.getElementById(`task-card-${highlightId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightId, highlightedReady, active]);
+
   const byColumn = useMemo(() => {
     const groups = new Map<CrmTaskStatus, CrmTask[]>(COLUMNS.map((c) => [c.key, []]));
     for (const task of data?.items ?? []) groups.get(task.status)?.push(task);
@@ -135,12 +168,17 @@ export function TaskBoard({
       prev ? { ...prev, items: prev.items.map((task) => (task.id === updated.id ? updated : task)) } : prev,
     );
 
-  const move = async (task: CrmTask, target: CrmTaskStatus, moveReason?: string): Promise<string | null> => {
+  const move = async (
+    task: CrmTask,
+    target: CrmTaskStatus,
+    moveReason?: string,
+    link?: { body_car_id?: string; workshop_job_id?: string },
+  ): Promise<string | null> => {
     try {
       const res = await fetch(`/api/crm-tasks/${task.id}/move`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: target, reason: moveReason ?? null }),
+        body: JSON.stringify({ status: target, reason: moveReason ?? null, ...link }),
       });
       const body = (await res.json()) as CrmTask & { error?: string };
       if (!res.ok) return body.error ?? "Не удалось перенести задачу";
@@ -163,6 +201,14 @@ export function TaskBoard({
       setDialogError(null);
       setRefusing(task);
       return;
+    }
+    if (column.key === "inspection") {
+      setError(null);
+      setBooking(task);
+      return;
+    }
+    if (column.key === "control" && task.status === "inspection" && task.planner_record) {
+      if (!window.confirm("Запись в планировщике будет удалена. Вернуть на контроль?")) return;
     }
     const failure = await move(task, column.key);
     setError(failure);
@@ -188,6 +234,14 @@ export function TaskBoard({
 
   return (
     <div className="task-board">
+      {highlightId && (
+        <div className="task-board-highlight">
+          Показана задача по звонку, остальные приглушены.
+          <button type="button" className="admin-btn" onClick={onClearHighlight}>
+            Показать все
+          </button>
+        </div>
+      )}
       <div className="task-board-toolbar">
         <label className="task-board-filter">
           Цех
@@ -284,7 +338,8 @@ export function TaskBoard({
                   {tasks.map((task) => (
                     <article
                       key={task.id}
-                      className={cardClass(task)}
+                      id={`task-card-${task.id}`}
+                      className={cardClass(task, highlightId)}
                       onClick={() => setOpened(task)}
                       draggable
                       onDragStart={(event) => {
@@ -346,6 +401,20 @@ export function TaskBoard({
           })}
         </div>
       )}
+
+      <InspectionBookingDialog
+        task={booking}
+        workshop={workshops.find((w) => w.id === booking?.workshop_id) ?? null}
+        employees={employees}
+        statuses={slesarkaStatuses}
+        fivesystemsApiEnabled={fivesystemsApiEnabled}
+        onClose={() => setBooking(null)}
+        onMove={async (task, link) => {
+          const failure = await move(task, "inspection", undefined, link);
+          if (!failure) setBooking(null);
+          return failure;
+        }}
+      />
 
       <TaskDetailModal
         task={opened}

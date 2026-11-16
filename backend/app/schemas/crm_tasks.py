@@ -30,6 +30,10 @@ class CrmTaskOut(BaseModel):
     inspection_at: datetime | None = None
     inspection_date: date | None = None
     inspection_end_date: date | None = None
+    # С карточкой связана запись планировщика: возврат в «На контроле» её удалит.
+    planner_record: bool = False
+    # Id записи планировщика (кузовной - BodyCar, слесарный - WorkshopJob): ссылка на неё.
+    planner_record_id: uuid.UUID | None = None
     created_by_name: str
     moved_by_name: str | None
     # Окраска карточки в «На контроле»: розовая / красная (сроки - в настройках); иначе None.
@@ -59,6 +63,10 @@ class CrmTaskCreateOut(BaseModel):
 
 class CrmTaskMoveIn(BaseModel):
     status: TaskStatus
+    # Перенос в «Записан на осмотр»: запись, только что созданная в планировщике цеха карточки
+    # (кузовной - body_car_id, слесарный - workshop_job_id).
+    body_car_id: uuid.UUID | None = None
+    workshop_job_id: uuid.UUID | None = None
     # Обязательна при переносе в «Отказ».
     reason: str | None = None
 

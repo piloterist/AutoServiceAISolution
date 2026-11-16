@@ -4156,6 +4156,7 @@ table.bt {
   font-size: 0.78rem;
   font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 /* Wraps the badge when a transcript exists at all (see
@@ -7777,6 +7778,37 @@ main:has(.cockpit-page) {
 }
 
 /* «На контроле» дольше розового / красного срока (Настройки -> Общие) */
+.task-card--dim {
+  opacity: 0.3;
+  filter: grayscale(0.6);
+}
+
+.task-card--focus {
+  box-shadow: 0 0 0 3px var(--col), 0 6px 20px color-mix(in srgb, var(--col) 45%, transparent);
+}
+
+.task-board-highlight {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.task-detail-linkbtn {
+  display: inline-block;
+  padding: 0.15rem 0.65rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.task-detail-linkbtn:hover {
+  background: var(--accent);
+  color: var(--surface);
+}
+
 .task-card--warn {
   background: color-mix(in srgb, #ff4da6 18%, var(--surface));
   border-color: color-mix(in srgb, #ff4da6 50%, var(--border));
