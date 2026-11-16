@@ -1004,3 +1004,49 @@ def test_workshop_cannot_change_while_a_planner_record_is_linked(db_session) -> 
             actor_id=None,
             actor_name="Тест",
         )
+
+
+def test_a_work_order_made_before_the_manual_inspection_booking_still_counts(db_session) -> None:
+    workshop = _workshop(db_session)
+    call_at = _now() - timedelta(hours=3)
+    task = _task(db_session, _call(db_session, at=call_at), workshop.id)
+    # Заказ-наряд создан после звонка, но раньше, чем карточку перетащили в «Записан на осмотр».
+    order = _document(db_session, doc_type="work_order", created=_now() - timedelta(hours=2))
+    car = _body_car(db_session, workshop, created_at=_now(), phone="123")
+    service.move_task(
+        db_session, task.id, "inspection", reason=None, body_car_id=car.id, actor_name="Тест"
+    )
+    assert _status(db_session, task) == "work_order"
+    assert task.work_order_number == order.external_number
+
+
+def test_a_work_order_is_compared_with_the_call_time_only(db_session) -> None:
+    workshop = _workshop(db_session)
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=3)), workshop.id)
+    before_call = _document(
+        db_session, doc_type="work_order", created=_now() - timedelta(hours=4), phone=RAW_PHONE
+    )
+    assert _status(db_session, task) == "control"  # до звонка - прошлое клиента
+    assert before_call.external_number
+    # Позже звонка, хотя раньше любых ручных перемещений: считается.
+    service.move_task(db_session, task.id, "refused", reason="Дорого", actor_name="Тест")
+    service.move_task(db_session, task.id, "control", reason=None, actor_name="Тест")
+    order = _document(db_session, doc_type="work_order", created=_now() - timedelta(hours=2))
+    assert _status(db_session, task) == "work_order"
+    assert task.work_order_number == order.external_number
+
+
+def test_a_refused_work_order_is_left_out_of_the_chain(db_session) -> None:
+    workshop = _workshop(db_session)
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=3)), workshop.id)
+    refused = _document(db_session, doc_type="work_order", created=_now() - timedelta(hours=2))
+    refused.status = "Отказ"
+    db_session.commit()
+    assert _status(db_session, task) == "control"  # заказ-наряд в «Отказе» не подтягивается
+
+    # Обычный заказ-наряд после звонка приоритетнее: карточка сразу в «Заказ-наряд».
+    order = _document(db_session, doc_type="work_order", created=_now() - timedelta(hours=1))
+    order.status = "В работе"
+    db_session.commit()
+    assert _status(db_session, task) == "work_order"
+    assert task.work_order_number == order.external_number

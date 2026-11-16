@@ -241,6 +241,21 @@ def _host_of(url: str | None) -> str | None:
     return host.removeprefix("www.") if host else None
 
 
+_UA_SITE = re.compile(r"https?://[^\s;)]+")
+
+
+def site_from_meta(meta: dict[str, Any] | None) -> str | None:
+    """The site's host: Origin, else Referer, else the URL a WordPress server-side post puts in its
+    User-Agent ("WordPress/6.x; https://pan-motors.ru") - the usual case, the form is posted from
+    the site's own PHP, not from the visitor's browser."""
+    if not meta:
+        return None
+    if meta.get("site"):
+        return meta["site"]
+    found = _UA_SITE.search(meta.get("user_agent") or "")
+    return _host_of(found.group(0)) if found else None
+
+
 def request_meta_from(headers: Mapping[str, str], client_host: str | None) -> dict[str, Any]:
     """Which site sent the lead: Origin / Referer of the intake request (a browser form post sets
     them; a server-side post from the site's own backend may not, then the IP tells the hosting
@@ -256,6 +271,7 @@ def request_meta_from(headers: Mapping[str, str], client_host: str | None) -> di
         "ip": forwarded or headers.get("x-real-ip") or client_host,
         "user_agent": (headers.get("user-agent") or "")[:300] or None,
     }
+    meta["site"] = site_from_meta(meta)
     return {key: value for key, value in meta.items() if value}
 
 

@@ -89,7 +89,7 @@ def _lead_out(item: leads_service.LeadWithStatus) -> WebsiteLeadOut:
         photos=lead.photos,
         raw_payload=lead.raw_payload,
         request_meta=lead.request_meta,
-        site=(lead.request_meta or {}).get("site"),
+        site=leads_service.site_from_meta(lead.request_meta),
         created_at=lead.created_at,
         status=item.status,
         matched_work_order_id=item.matched_work_order_id,

@@ -774,3 +774,25 @@ def test_site_falls_back_to_the_referer_and_old_leads_have_none(
     }
     assert sites["9001112234"] == "third-site.ru"
     assert sites["9005556677"] is None
+
+
+def test_site_is_taken_from_the_wordpress_user_agent(client, db_session, auth_headers) -> None:
+    _enable_intake(db_session)
+    response = client.post(
+        INTAKE_URL,
+        json={"user_phone": "+7 (900) 111-22-35"},
+        headers={
+            "Authorization": "Bearer test-intake-token",
+            "User-Agent": "WordPress/7.1.3; https://pan-motors.ru",
+        },
+    )
+    assert response.status_code == 201
+    lead = db_session.get(WebsiteLead, uuid.UUID(response.json()["id"]))
+    assert lead.request_meta["site"] == "pan-motors.ru"
+    # A lead stored before this rule (no "site" in the meta) still shows its site on read.
+    db_session.query(WebsiteLead).filter(WebsiteLead.id == lead.id).update(
+        {"request_meta": {"user_agent": "WordPress/7.1.3; https://second-site.ru"}}
+    )
+    db_session.commit()
+    listed = client.get(LEADS_URL, headers=auth_headers).json()["leads"]
+    assert listed[0]["site"] == "second-site.ru"

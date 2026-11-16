@@ -57,6 +57,8 @@ from app.services.settings_service import get_app_settings
 
 _MSK = timezone(timedelta(hours=3))
 INSPECTION_STAGE = "Осмотр"
+# Статус заказ-наряда в 1С, при котором он не считается (клиент отказался): WorkOrder.status.
+REFUSED_ORDER_STATUS = "отказ"
 # Карточки, за которыми ещё следит автоматика.
 ACTIVE_STATUSES = (TASK_STATUS_CONTROL, TASK_STATUS_INSPECTION, TASK_STATUS_THINKING)
 
@@ -253,6 +255,7 @@ def sync_tasks(db: Session) -> None:
         return
 
     earliest = min(_cutoff(task) for task in tasks)
+    earliest_call = min(_aware(task.call_at) for task in tasks)
     wanted = {task.phone for task in tasks}
 
     # Записи кузовного цеха с этапом «Осмотр».
@@ -280,11 +283,13 @@ def sync_tasks(db: Session) -> None:
         .where(
             WorkOrder.phone.is_not(None),
             WorkOrder.doc_type.in_((DOC_TYPE_REPAIR_REQUEST, DOC_TYPE_WORK_ORDER)),
-            created > earliest,
+            created > earliest_call,
         )
         .order_by(created),
         execution_options={"include_repair_requests": True},
     ).scalars():
+        if (doc.status or "").strip().lower() == REFUSED_ORDER_STATUS:
+            continue  # заказ-наряд в статусе «Отказ» в цепочку не входит
         bucket = requests_by_phone if doc.doc_type == DOC_TYPE_REPAIR_REQUEST else orders_by_phone
         for phone in set(phone_numbers(doc.phone)) & wanted:
             bucket.setdefault(phone, []).append(doc)
@@ -297,7 +302,9 @@ def sync_tasks(db: Session) -> None:
     before = {task.id: task.status for task in tasks}
     for task in tasks:
         cutoff = _cutoff(task)
-        order = first_after(orders_by_phone.get(task.phone, []), cutoff)
+        # Заказ-наряд сравнивается только со временем звонка, а не с ручными перемещениями: они
+        # приходят из 1С с задержкой (иногда после того, как карточку уже двигали руками).
+        order = first_after(orders_by_phone.get(task.phone, []), _aware(task.call_at))
         if order is not None:
             task.status = TASK_STATUS_WORK_ORDER
             task.status_changed_at = now
