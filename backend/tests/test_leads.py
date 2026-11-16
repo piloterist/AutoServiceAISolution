@@ -731,3 +731,46 @@ def test_lead_work_order_match_uses_real_creation_date_not_import_time(
     (item,) = leads_service.list_leads(db_session)
 
     assert item.matched_work_order_number == "NEW"
+
+
+def test_intake_records_which_site_sent_the_lead(client, db_session, auth_headers) -> None:
+    _enable_intake(db_session)
+    response = client.post(
+        INTAKE_URL,
+        json={"user_phone": "+7 (900) 111-22-33", "page_url": "/kuzovnoy_remont/quiz/"},
+        headers={
+            "Authorization": "Bearer test-intake-token",
+            "Origin": "https://www.second-site.ru",
+            "X-Forwarded-For": "203.0.113.7, 10.0.0.1",
+            "User-Agent": "Mozilla/5.0 test",
+        },
+    )
+    assert response.status_code == 201
+    lead = db_session.get(WebsiteLead, uuid.UUID(response.json()["id"]))
+    assert lead.request_meta["site"] == "second-site.ru"
+    assert lead.request_meta["ip"] == "203.0.113.7"
+
+    listed = client.get(LEADS_URL, headers=auth_headers).json()["leads"]
+    assert listed[0]["site"] == "second-site.ru"
+    assert listed[0]["request_meta"]["origin"] == "https://www.second-site.ru"
+
+
+def test_site_falls_back_to_the_referer_and_old_leads_have_none(
+    client, db_session, auth_headers
+) -> None:
+    _enable_intake(db_session)
+    client.post(
+        INTAKE_URL,
+        json={"user_phone": "+7 (900) 111-22-34"},
+        headers={
+            "Authorization": "Bearer test-intake-token",
+            "Referer": "https://third-site.ru/kuzovnoy_remont/quiz/",
+        },
+    )
+    _lead(db_session, phone="9005556677")  # без метаданных, как до этого обновления
+    sites = {
+        lead["phone"]: lead["site"]
+        for lead in client.get(LEADS_URL, headers=auth_headers).json()["leads"]
+    }
+    assert sites["9001112234"] == "third-site.ru"
+    assert sites["9005556677"] is None

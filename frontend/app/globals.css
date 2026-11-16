@@ -8145,6 +8145,23 @@ main:has(.cockpit-page) {
   min-width: 11rem;
 }
 
+.task-detail-assign {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 34rem;
+}
+
+.task-detail-assign label {
+  font-weight: 600;
+}
+
+.task-detail-assign select {
+  padding: 0.55rem 0.7rem;
+  font-size: 1rem;
+}
+
 .task-detail-edit {
   display: flex;
   flex-direction: column;

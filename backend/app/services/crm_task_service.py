@@ -651,6 +651,61 @@ def add_comment(
     return comment
 
 
+def update_assignment(
+    db: Session,
+    task_id: uuid.UUID,
+    *,
+    workshop_id: uuid.UUID | None,
+    employee_id: uuid.UUID | None,
+    actor_id: uuid.UUID | None,
+    actor_name: str,
+) -> CrmTask:
+    """Меняет цех и сотрудника карточки (правила те же, что при взятии на контроль: цех обязателен,
+    сотрудник - из этого цеха или без цеха в справочнике). Карточку с записью в планировщике
+    перенести в другой цех нельзя: запись осталась бы в прежнем."""
+    task = get_task(db, task_id)
+    if workshop_id is None:
+        raise CrmTaskInvalid("Выберите цех")
+    workshop = db.get(Workshop, workshop_id)
+    if workshop is None:
+        raise CrmTaskInvalid("Цех не найден")
+    employee = None
+    if employee_id is not None:
+        employee = db.get(Employee, employee_id)
+        if employee is None:
+            raise CrmTaskInvalid("Сотрудник не найден")
+        if employee.workshop_id is not None and employee.workshop_id != workshop_id:
+            raise CrmTaskInvalid("Сотрудник не работает в выбранном цехе")
+    if workshop_id != task.workshop_id and (
+        task.body_car_id is not None or task.workshop_job_id is not None
+    ):
+        raise CrmTaskInvalid(
+            "У карточки есть запись в планировщике прежнего цеха: сначала верните её "
+            "в «На контроле» (запись удалится) или оставьте цех"
+        )
+
+    def label(shop_id: uuid.UUID | None) -> str | None:
+        shop = db.get(Workshop, shop_id) if shop_id else None
+        department = db.get(Department, shop.department_id) if shop else None
+        return f"{department.name if department else '?'} — {shop.workshop_type}" if shop else None
+
+    def person(emp_id: uuid.UUID | None) -> str | None:
+        emp = db.get(Employee, emp_id) if emp_id else None
+        return emp.full_name if emp else None
+
+    changes: dict = {}
+    if workshop_id != task.workshop_id:
+        changes["workshop_label"] = {"old": label(task.workshop_id), "new": label(workshop_id)}
+    if employee_id != task.employee_id:
+        changes["employee_name"] = {"old": person(task.employee_id), "new": person(employee_id)}
+    task.workshop_id = workshop_id
+    task.employee_id = employee.id if employee else None
+    _log(db, task, changes, actor_id=actor_id, actor_name=actor_name)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
 def _sync_next_action(db: Session, task: CrmTask) -> None:
     """Действует последнее созданное запланированное действие; нет ни одного - плана нет."""
     latest = db.scalar(

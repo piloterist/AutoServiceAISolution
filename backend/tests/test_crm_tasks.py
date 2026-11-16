@@ -937,3 +937,70 @@ def test_automatic_moves_are_logged_as_the_system(db_session) -> None:
     rows = _log_rows(db_session, task)
     assert rows[-1].actor_name == service.SYSTEM_ACTOR
     assert rows[-1].changes["status"] == {"old": "На контроле", "new": "Записан на осмотр"}
+
+
+def test_workshop_and_employee_can_be_changed(db_session) -> None:
+    mine = _workshop(db_session, "Кузовной", "Каховка")
+    other = _workshop(db_session, "Слесарный", "Север")
+    petrov = _employee(db_session, mine, "Петров П.П.")
+    sidorov = _employee(db_session, other, "Сидоров С.С.")
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), mine.id)
+
+    service.update_assignment(
+        db_session,
+        task.id,
+        workshop_id=mine.id,
+        employee_id=petrov.id,
+        actor_id=None,
+        actor_name="Оксана",
+    )
+    assert db_session.get(CrmTask, task.id).employee_id == petrov.id
+    with pytest.raises(service.CrmTaskInvalid):  # сотрудник из другого цеха
+        service.update_assignment(
+            db_session,
+            task.id,
+            workshop_id=mine.id,
+            employee_id=sidorov.id,
+            actor_id=None,
+            actor_name="Оксана",
+        )
+    with pytest.raises(service.CrmTaskInvalid):  # цех обязателен
+        service.update_assignment(
+            db_session,
+            task.id,
+            workshop_id=None,
+            employee_id=None,
+            actor_id=None,
+            actor_name="Оксана",
+        )
+    moved = service.update_assignment(
+        db_session,
+        task.id,
+        workshop_id=other.id,
+        employee_id=sidorov.id,
+        actor_id=None,
+        actor_name="Оксана",
+    )
+    assert (moved.workshop_id, moved.employee_id) == (other.id, sidorov.id)
+    last = _log_rows(db_session, task)[-1]
+    assert last.changes["employee_name"] == {"old": "Петров П.П.", "new": "Сидоров С.С."}
+    assert "workshop_label" in last.changes
+
+
+def test_workshop_cannot_change_while_a_planner_record_is_linked(db_session) -> None:
+    mine = _workshop(db_session, "Кузовной", "Каховка")
+    other = _workshop(db_session, "Слесарный", "Север")
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), mine.id)
+    car = _body_car(db_session, mine, created_at=_now(), phone="123")
+    service.move_task(
+        db_session, task.id, "inspection", reason=None, body_car_id=car.id, actor_name="Тест"
+    )
+    with pytest.raises(service.CrmTaskInvalid):
+        service.update_assignment(
+            db_session,
+            task.id,
+            workshop_id=other.id,
+            employee_id=None,
+            actor_id=None,
+            actor_name="Тест",
+        )

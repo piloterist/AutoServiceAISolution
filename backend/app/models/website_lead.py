@@ -67,6 +67,11 @@ class WebsiteLead(Base):
     # form today.
     raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
+    # Origin / Referer / IP / User-Agent of the intake request (null for leads that arrived before
+    # this was recorded): the only way to tell which of the several sites sent the lead, since the
+    # form payload itself carries just a path (page_url), never a host.
+    request_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )

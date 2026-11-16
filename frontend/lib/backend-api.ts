@@ -1664,6 +1664,9 @@ export type WebsiteLead = {
   name: string | null;
   photos: string[] | null;
   raw_payload: Record<string, unknown>;
+  // Origin / Referer / IP / User-Agent of the intake request; `site` = host of Origin or Referer.
+  request_meta: Record<string, string> | null;
+  site: string | null;
   created_at: string;
   status: LeadStatus;
   // The first ЗН on this same phone created after the lead itself - see
@@ -2515,6 +2518,14 @@ export function moveCrmTask(
   actor: Actor,
 ): Promise<CrmTask> {
   return backendPost<CrmTask>(`/api/v1/crm-tasks/${id}/move`, payload, actorHeaders(actor));
+}
+
+export function assignCrmTask(
+  id: string,
+  payload: { workshop_id: string | null; employee_id: string | null },
+  actor: Actor,
+): Promise<CrmTask> {
+  return backendPatch<CrmTask>(`/api/v1/crm-tasks/${id}`, payload, actorHeaders(actor));
 }
 
 export function getCrmTaskDetail(id: string): Promise<CrmTaskDetail> {

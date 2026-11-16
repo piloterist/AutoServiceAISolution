@@ -38,6 +38,9 @@ class WebsiteLeadOut(BaseModel):
     name: str | None
     photos: list[str] | None
     raw_payload: dict
+    # Origin / Referer / IP of the intake request, and the site's host derived from it.
+    request_meta: dict | None = None
+    site: str | None = None
     created_at: datetime
     status: Literal["open", "resolved", "stale"]
     # The first ЗН on this same phone created after the lead itself - see

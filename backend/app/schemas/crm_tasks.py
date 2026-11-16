@@ -55,6 +55,11 @@ class CrmTaskCreateIn(BaseModel):
     employee_id: uuid.UUID | None = None
 
 
+class CrmTaskAssignIn(BaseModel):
+    workshop_id: uuid.UUID | None = None
+    employee_id: uuid.UUID | None = None
+
+
 class CrmTaskCreateOut(BaseModel):
     task: CrmTaskOut
     # False - этот телефон уже на контроле, вернулась существующая карточка.

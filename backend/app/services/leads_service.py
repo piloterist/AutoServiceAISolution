@@ -29,6 +29,7 @@ import binascii
 import re
 import secrets
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -230,7 +231,37 @@ class LeadRejected(Exception):
     """A submitted lead has no usable phone number - see create_lead."""
 
 
-def create_lead(db: Session, payload: dict[str, Any]) -> WebsiteLead:
+def _host_of(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        host = urlparse(url).hostname
+    except ValueError:
+        return None
+    return host.removeprefix("www.") if host else None
+
+
+def request_meta_from(headers: Mapping[str, str], client_host: str | None) -> dict[str, Any]:
+    """Which site sent the lead: Origin / Referer of the intake request (a browser form post sets
+    them; a server-side post from the site's own backend may not, then the IP tells the hosting
+    apart), the sender's IP (the first X-Forwarded-For entry behind our proxy) and User-Agent.
+    `site` is the host of Origin, else of Referer."""
+    forwarded = headers.get("x-forwarded-for", "").split(",")[0].strip()
+    origin = headers.get("origin") or None
+    referer = headers.get("referer") or None
+    meta: dict[str, Any] = {
+        "site": _host_of(origin) or _host_of(referer),
+        "origin": origin,
+        "referer": referer,
+        "ip": forwarded or headers.get("x-real-ip") or client_host,
+        "user_agent": (headers.get("user-agent") or "")[:300] or None,
+    }
+    return {key: value for key, value in meta.items() if value}
+
+
+def create_lead(
+    db: Session, payload: dict[str, Any], request_meta: dict[str, Any] | None = None
+) -> WebsiteLead:
     phone = _normalize_phone(payload.get("user_phone"))
     if len(phone) < 10:
         raise LeadRejected("user_phone is missing or too short")
@@ -265,6 +296,7 @@ def create_lead(db: Session, payload: dict[str, Any]) -> WebsiteLead:
         name=(str(payload.get("user_name")).strip() or None) if payload.get("user_name") else None,
         photos=photos,
         raw_payload=stored_payload,
+        request_meta=request_meta or None,
     )
     db.add(lead)
     db.commit()

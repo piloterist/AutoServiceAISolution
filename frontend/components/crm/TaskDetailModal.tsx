@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
+import { employeesOfWorkshop, useEmployees, useWorkshops, workshopLabel } from "@/components/crm/WorkshopsContext";
 import { columnOf, formatDate, formatInspection, formatMoment, formatPhone } from "@/components/crm/columns";
 import { AdminModal } from "@/components/settings/AdminModal";
 import { CallEventsTable } from "@/components/telephony/TelephonyStatsView";
@@ -76,6 +77,13 @@ function TaskDetail({
   // «Запланировать действие»: пусто по умолчанию; с датой комментарий обязателен.
   const [nextDate, setNextDate] = useState("");
   const [saving, setSaving] = useState(false);
+  // «Цех» и «Сотрудник» карточки: кнопка «Изменить» открывает выбор, «Сохранить» применяет.
+  const workshops = useWorkshops();
+  const { employees } = useEmployees();
+  const [assigning, setAssigning] = useState(false);
+  const [assignWorkshop, setAssignWorkshop] = useState("");
+  const [assignEmployee, setAssignEmployee] = useState("");
+  const [assignError, setAssignError] = useState<string | null>(null);
   // Редактирование запланированного действия из истории.
   const [editId, setEditId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState("");
@@ -153,6 +161,36 @@ function TaskDetail({
           task.inspection_date ? `&date=${task.inspection_date}` : ""
         }`
       : null;
+
+  const startAssign = () => {
+    setAssignWorkshop(task.workshop_id ?? "");
+    setAssignEmployee(task.employee_id ?? "");
+    setAssignError(null);
+    setAssigning(true);
+  };
+
+  const saveAssign = async () => {
+    setSaving(true);
+    setAssignError(null);
+    try {
+      const res = await fetch(`/api/crm-tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workshop_id: assignWorkshop, employee_id: assignEmployee || null }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Не удалось сохранить");
+      }
+      setAssigning(false);
+      await loadDetail();
+      onChanged();
+    } catch (err) {
+      setAssignError(err instanceof Error ? err.message : "Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const saveAction = async () => {
     if (!editId) return;
@@ -238,17 +276,73 @@ function TaskDetail({
               <span>{formatDate(task.next_action_date)}</span>
             </div>
           )}
-          {task.employee_name && (
-            <div className="task-detail-row">
-              <span className="task-detail-label">Сотрудник</span>
-              <span>{task.employee_name}</span>
+          {assigning ? (
+            <div className="task-detail-assign">
+              <label htmlFor={`task-assign-workshop-${task.id}`}>Цех</label>
+              <select
+                id={`task-assign-workshop-${task.id}`}
+                value={assignWorkshop}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setAssignWorkshop(next);
+                  // Сотрудник остаётся, только если работает в новом цехе (или цех ему не указан).
+                  const keep = employees.find((e) => e.id === assignEmployee);
+                  if (keep?.workshop_id && keep.workshop_id !== next) setAssignEmployee("");
+                }}
+              >
+                <option value="">Выберите цех…</option>
+                {workshops.map((workshop) => (
+                  <option key={workshop.id} value={workshop.id}>
+                    {workshopLabel(workshop)}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor={`task-assign-employee-${task.id}`}>Сотрудник</label>
+              <select
+                id={`task-assign-employee-${task.id}`}
+                value={assignEmployee}
+                disabled={!assignWorkshop}
+                onChange={(event) => setAssignEmployee(event.target.value)}
+              >
+                <option value="">Не выбран</option>
+                {employeesOfWorkshop(employees, assignWorkshop || null).map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.full_name}
+                    {employee.specialty ? ` — ${employee.specialty}` : ""}
+                  </option>
+                ))}
+              </select>
+              {assignError && <p className="admin-form-error">{assignError}</p>}
+              <div className="request-control-actions">
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-primary"
+                  disabled={saving || !assignWorkshop}
+                  onClick={() => void saveAssign()}
+                >
+                  {saving ? "Сохраняем…" : "Сохранить"}
+                </button>
+                <button type="button" className="admin-btn" onClick={() => setAssigning(false)}>
+                  Отмена
+                </button>
+              </div>
             </div>
-          )}
-          {task.workshop_label && (
-            <div className="task-detail-row">
-              <span className="task-detail-label">Цех</span>
-              <span>{task.workshop_label}</span>
-            </div>
+          ) : (
+            <>
+              <div className="task-detail-row">
+                <span className="task-detail-label">Сотрудник</span>
+                <span>{task.employee_name ?? "не выбран"}</span>
+              </div>
+              <div className="task-detail-row">
+                <span className="task-detail-label">Цех</span>
+                <span>
+                  {task.workshop_label ?? "—"}{" "}
+                  <button type="button" className="admin-btn" onClick={startAssign}>
+                    Изменить
+                  </button>
+                </span>
+              </div>
+            </>
           )}
           <div className="task-detail-row">
             <span className="task-detail-label">Звонок</span>

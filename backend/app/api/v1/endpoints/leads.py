@@ -20,6 +20,7 @@ from fastapi import (
     Depends,
     Header,
     HTTPException,
+    Request,
     Response,
     status,
 )
@@ -87,6 +88,8 @@ def _lead_out(item: leads_service.LeadWithStatus) -> WebsiteLeadOut:
         name=lead.name,
         photos=lead.photos,
         raw_payload=lead.raw_payload,
+        request_meta=lead.request_meta,
+        site=(lead.request_meta or {}).get("site"),
         created_at=lead.created_at,
         status=item.status,
         matched_work_order_id=item.matched_work_order_id,
@@ -99,6 +102,7 @@ def _lead_out(item: leads_service.LeadWithStatus) -> WebsiteLeadOut:
 
 @router.post("/intake", status_code=status.HTTP_201_CREATED)
 def intake_lead(
+    request: Request,
     background_tasks: BackgroundTasks,
     payload: dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
@@ -127,7 +131,13 @@ def intake_lead(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid intake token")
 
     try:
-        lead = leads_service.create_lead(db, payload)
+        lead = leads_service.create_lead(
+            db,
+            payload,
+            leads_service.request_meta_from(
+                request.headers, request.client.host if request.client else None
+            ),
+        )
     except LeadRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)

@@ -256,13 +256,22 @@ function _fieldEntries(
   });
 }
 
+// What the intake request told us about the sender (backend leads_service.request_meta_from).
+const META_LABELS: Record<string, string> = {
+  site: "Сайт",
+  origin: "Origin",
+  referer: "Referer",
+  ip: "IP отправителя",
+  user_agent: "User-Agent",
+};
+
 function LeadDetail({ lead }: { lead: WebsiteLead }) {
   const entries = _fieldEntries(lead);
   const pageUrl = typeof lead.raw_payload.page_url === "string" ? lead.raw_payload.page_url : null;
 
   return (
     <tr className="leads-detail-row">
-      <td colSpan={7}>
+      <td colSpan={8}>
         <div className="leads-detail-card">
           {lead.photos && lead.photos.length > 0 && (
             <div className="leads-photo-grid">
@@ -284,7 +293,7 @@ function LeadDetail({ lead }: { lead: WebsiteLead }) {
                 >
                   <span className="detail-label">{label}</span>
                   {key === "page_url" && pageUrl ? (
-                    <a href={`https://pan-motors.ru${pageUrl}`} target="_blank" rel="noreferrer">
+                    <a href={`https://${lead.site ?? "pan-motors.ru"}${pageUrl}`} target="_blank" rel="noreferrer">
                       {value}
                     </a>
                   ) : (
@@ -295,6 +304,16 @@ function LeadDetail({ lead }: { lead: WebsiteLead }) {
             </div>
           ) : (
             <p className="admin-hint">Дополнительных данных нет</p>
+          )}
+          {lead.request_meta && (
+            <div className="leads-detail-grid">
+              {Object.entries(lead.request_meta).map(([key, value]) => (
+                <div className="leads-detail-field" key={key}>
+                  <span className="detail-label">{META_LABELS[key] ?? key}</span>
+                  <span>{value}</span>
+                </div>
+              ))}
+            </div>
           )}
           <div className="leads-calls-section">
             <span className="detail-label">Звонки с этим номером</span>
@@ -359,6 +378,7 @@ export function LeadsView({
             <th>Телефон</th>
             <th>Имя</th>
             <th>Источник</th>
+            <th>Сайт</th>
             <th>Статус</th>
             <th>Заказ-наряд</th>
             <th>Фото</th>
@@ -376,6 +396,7 @@ export function LeadsView({
                 <td className="num">{formatPhone(lead.phone)}</td>
                 <td>{lead.name ?? "—"}</td>
                 <td>{sourceLabel(lead.source)}</td>
+                <td>{lead.site ?? "—"}</td>
                 <td>
                   <span className={`lead-status lead-status--${lead.status}`}>{STATUS_LABELS[lead.status]}</span>
                 </td>
@@ -398,7 +419,7 @@ export function LeadsView({
           ))}
           {filtered.length === 0 && (
             <tr>
-              <td colSpan={7} className="admin-empty-row">
+              <td colSpan={8} className="admin-empty-row">
                 Заявок нет
               </td>
             </tr>

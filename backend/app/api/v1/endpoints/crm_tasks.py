@@ -19,6 +19,7 @@ from app.models.employee import Employee
 from app.schemas.crm_tasks import (
     CrmTaskActionIn,
     CrmTaskActionOut,
+    CrmTaskAssignIn,
     CrmTaskCommentIn,
     CrmTaskCommentOut,
     CrmTaskCreateIn,
@@ -161,6 +162,37 @@ def create_task(
             employees=_employee_names(db),
         ),
         created=created,
+    )
+
+
+@router.patch("/{task_id}", response_model=CrmTaskOut)
+def assign_task(
+    task_id: uuid.UUID,
+    payload: CrmTaskAssignIn,
+    who: tuple[uuid.UUID | None, str] = Depends(actor),
+    db: Session = Depends(get_db),
+) -> CrmTaskOut:
+    """Сменить цех и сотрудника карточки."""
+    try:
+        task = service.update_assignment(
+            db,
+            task_id,
+            workshop_id=payload.workshop_id,
+            employee_id=payload.employee_id,
+            actor_id=who[0],
+            actor_name=who[1],
+        )
+    except service.CrmTaskError as exc:
+        raise _http_error(exc) from exc
+    settings = get_app_settings(db)
+    return _out(
+        task,
+        _workshop_labels(db),
+        settings.crm_task_warn_days,
+        settings.crm_task_overdue_days,
+        datetime.now(UTC),
+        service.comment_counts(db, [task.id]).get(task.id, 0),
+        _employee_names(db),
     )
 
 
