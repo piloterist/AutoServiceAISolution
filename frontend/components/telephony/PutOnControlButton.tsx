@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 
-import { employeesOfWorkshop, useEmployees, useWorkshops, workshopLabel } from "@/components/crm/WorkshopsContext";
+import {
+  employeesOfWorkshop,
+  phoneKey,
+  useControlTasks,
+  useEmployees,
+  useWorkshops,
+  workshopLabel,
+} from "@/components/crm/WorkshopsContext";
 import { AdminModal } from "@/components/settings/AdminModal";
 import type { CrmTask, CrmTaskStatus } from "@/lib/backend-api";
 
@@ -22,9 +29,12 @@ const COLUMN_TITLES: Record<CrmTaskStatus, string> = {
  * уже ведётся, новая карточка не создаётся - кнопка так и говорит. */
 export function PutOnControlButton({
   callId,
+  client,
   callWorkshopId,
 }: {
   callId: string;
+  /** The caller's phone: if a card for it is already in work, the button shows its column. */
+  client?: string | null;
   /** The цех the call was routed to (telephony settings), preselected in the dialog. */
   callWorkshopId?: string | null;
 }) {
@@ -39,6 +49,9 @@ export function PutOnControlButton({
   // already exists after the call.
   const [column, setColumn] = useState<CrmTaskStatus>("control");
 
+  const { byPhone, register } = useControlTasks();
+  const existing = byPhone[phoneKey(client)] ?? null;
+
   const employeeOptions = employeesOfWorkshop(employees, workshopId || null);
 
   // Preselect the user's own employee when they work in the chosen цех; otherwise nobody.
@@ -48,8 +61,13 @@ export function PutOnControlButton({
       : "";
 
   const openDialog = () => {
-    const initialWorkshop =
+    let initialWorkshop =
       callWorkshopId && workshops.some((w) => w.id === callWorkshopId) ? callWorkshopId : "";
+    // A call without a цех: take the цех of the user's own employee, so the form fills itself.
+    if (!initialWorkshop && currentEmployeeId) {
+      const own = employees.find((e) => e.id === currentEmployeeId);
+      if (own?.workshop_id && workshops.some((w) => w.id === own.workshop_id)) initialWorkshop = own.workshop_id;
+    }
     setWorkshopId(initialWorkshop);
     setEmployeeId(initialWorkshop ? preselectEmployee(initialWorkshop) : "");
     setError(null);
@@ -72,6 +90,7 @@ export function PutOnControlButton({
       const body = (await res.json()) as { task?: CrmTask; created?: boolean; error?: string };
       if (!res.ok || !body.task) throw new Error(body.error ?? "Не удалось взять на контроль");
       setColumn(body.task.status);
+      register(body.task);
       setState(body.created ? "added" : "already");
       setOpen(false);
     } catch (err) {
@@ -80,17 +99,14 @@ export function PutOnControlButton({
     }
   };
 
-  if (state === "added" || state === "already") {
+  // The phone is already on the board: the button is the card's column (same colour as there).
+  if (existing) {
     return (
       <span
-        className="call-control-done"
-        title={
-          state === "added"
-            ? `Добавлено на «Доску задач», столбец «${COLUMN_TITLES[column]}»`
-            : `Этот телефон уже на доске, столбец «${COLUMN_TITLES[column]}»`
-        }
+        className={`call-control-status task-column--${existing.status}`}
+        title={`На «Доске задач», столбец «${COLUMN_TITLES[existing.status]}»`}
       >
-        {state === "added" ? `${COLUMN_TITLES[column]} ✓` : "Уже на доске"}
+        {COLUMN_TITLES[existing.status]}
       </span>
     );
   }

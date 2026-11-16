@@ -1,14 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { TaskBoard } from "@/components/crm/TaskBoard";
-import { EmployeesProvider, WorkshopsProvider } from "@/components/crm/WorkshopsContext";
+import {
+  ControlTasksProvider,
+  EmployeesProvider,
+  WorkshopsProvider,
+  phoneKey,
+} from "@/components/crm/WorkshopsContext";
 import { LeadsView } from "@/components/leads/LeadsView";
 import { WorkOrdersTable } from "@/components/WorkOrdersTable";
 import { ConversionView } from "@/components/telephony/ConversionView";
 import { TelephonyStatsView } from "@/components/telephony/TelephonyStatsView";
-import type { Employee, SourceSummaryResponse, WebsiteLead, Workshop } from "@/lib/backend-api";
+import type { CrmTask, CrmTaskListResponse, Employee, SourceSummaryResponse, WebsiteLead, Workshop } from "@/lib/backend-api";
 
 type TabKey = "board" | "calls" | "conversion" | "leads" | "requests";
 
@@ -75,6 +80,36 @@ export function TelephonyTabs({
   // The requests table fetches the work orders list (heavy) - only once its tab is first opened.
   const [requestsOpened, setRequestsOpened] = useState(initialTab === "requests");
 
+  // Cards in work by phone: the "На контроль" button of a call shows the card's column instead.
+  // Reloaded on every tab change (the board moves cards around).
+  const [controlTasks, setControlTasks] = useState<Record<string, CrmTask>>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/crm-tasks", { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<CrmTaskListResponse>) : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        const next: Record<string, CrmTask> = {};
+        for (const task of data.items) {
+          if (task.status === "control" || task.status === "inspection" || task.status === "thinking") {
+            next[phoneKey(task.phone)] = task;
+          }
+        }
+        setControlTasks(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+  const registerTask = useCallback((task: CrmTask) => {
+    setControlTasks((prev) => ({ ...prev, [phoneKey(task.phone)]: task }));
+  }, []);
+  const controlValue = useMemo(
+    () => ({ byPhone: controlTasks, register: registerTask }),
+    [controlTasks, registerTask],
+  );
+
   const selectTab = (key: TabKey) => {
     setTab(key);
     if (key === "conversion") setConversionOpened(true);
@@ -85,6 +120,7 @@ export function TelephonyTabs({
   return (
     <WorkshopsProvider value={workshops}>
       <EmployeesProvider value={{ employees, currentEmployeeId }}>
+      <ControlTasksProvider value={controlValue}>
       <div className="admin-tabs">
         {TABS.map((t) => (
           <button
@@ -137,6 +173,7 @@ export function TelephonyTabs({
           <WorkOrdersTable requestsMode />
         </div>
       )}
+      </ControlTasksProvider>
       </EmployeesProvider>
     </WorkshopsProvider>
   );

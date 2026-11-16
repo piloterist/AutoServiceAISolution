@@ -358,7 +358,11 @@ export function CallEventsTable({
                 <span className="call-actions">
                   <CallRecordingPlayer callId={event.call_id} hasRecording={event.has_recording} />
                   {showControl && (
-                    <PutOnControlButton callId={event.call_id} callWorkshopId={event.workshop_id} />
+                    <PutOnControlButton
+                      callId={event.call_id}
+                      client={event.client}
+                      callWorkshopId={event.workshop_id}
+                    />
                   )}
                 </span>
               </td>

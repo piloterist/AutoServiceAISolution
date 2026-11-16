@@ -4249,6 +4249,18 @@ table.bt {
   cursor: default;
 }
 
+.call-control-status {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--col);
+  background: color-mix(in srgb, var(--col) 16%, transparent);
+  color: var(--col);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .call-control-done {
   color: var(--ok);
   font-size: 0.8rem;
@@ -7674,7 +7686,7 @@ main:has(.cockpit-page) {
   transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
-.task-column--control { --col: #3b82f6; }
+.task-column--control { --col: #6b7280; }
 .task-column--inspection { --col: #8b5cf6; }
 .task-column--thinking { --col: #f59e0b; }
 .task-column--refused { --col: #ef4444; }
