@@ -17,7 +17,12 @@ export async function PATCH(request: NextRequest, { params }: Ctx) {
     if (!body.comment?.trim()) {
       return NextResponse.json({ error: "Укажите комментарий к запланированному действию" }, { status: 422 });
     }
-    return NextResponse.json(await updateCrmTaskAction(id, actionId, { planned_date: body.planned_date, comment: body.comment }));
+    return NextResponse.json(await updateCrmTaskAction(
+        id,
+        actionId,
+        { planned_date: body.planned_date, comment: body.comment },
+        { id: user.id, fullName: user.fullName },
+      ));
   } catch (err) {
     return cashErrorResponse(err);
   }
@@ -28,7 +33,7 @@ export async function DELETE(_request: NextRequest, { params }: Ctx) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
-    await deleteCrmTaskAction(id, actionId);
+    await deleteCrmTaskAction(id, actionId, { id: user.id, fullName: user.fullName });
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     return cashErrorResponse(err);

@@ -872,3 +872,68 @@ def test_planned_action_can_be_edited_and_deleted(client, db_session, auth_heade
     db_session.expire_all()
     assert db_session.get(CrmTask, task.id).next_action_date is None
     assert client.delete(last, headers=auth_headers).status_code == 404
+
+
+def _log_rows(db: Session, task: CrmTask):
+    from sqlalchemy import select
+
+    from app.models.schedule_audit_log import ScheduleAuditLog
+
+    return list(
+        db.scalars(
+            select(ScheduleAuditLog)
+            .where(
+                ScheduleAuditLog.entity_id == task.id, ScheduleAuditLog.entity_type == "crm_task"
+            )
+            .order_by(ScheduleAuditLog.created_at)
+        )
+    )
+
+
+def test_everything_that_happens_to_a_card_is_logged(db_session) -> None:
+    workshop = _workshop(db_session)
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), workshop.id)
+    rows = _log_rows(db_session, task)
+    assert [r.action for r in rows] == ["create"]
+    assert rows[0].changes["status"]["new"] == "На контроле"
+
+    service.add_comment(
+        db_session,
+        task.id,
+        "Перезвонить",
+        next_action_date=date(2026, 11, 22),
+        actor_id=None,
+        actor_name="Оксана",
+    )
+    action = service.list_actions(db_session, task.id)[0]
+    service.update_action(
+        db_session,
+        task.id,
+        action.id,
+        planned_date=date(2026, 11, 23),
+        comment="Позже",
+        actor_id=None,
+        actor_name="Оксана",
+    )
+    service.delete_action(db_session, task.id, action.id, actor_id=None, actor_name="Оксана")
+    service.move_task(db_session, task.id, "refused", reason="Дорого", actor_name="Оксана")
+
+    rows = _log_rows(db_session, task)
+    assert len(rows) == 5
+    comment_row, edit_row, delete_row, refuse_row = rows[1:]
+    assert comment_row.changes["planned_date"] == {"old": None, "new": "22.11.2026"}
+    assert edit_row.changes["planned_date"] == {"old": "22.11.2026", "new": "23.11.2026"}
+    assert delete_row.changes["planned_date"] == {"old": "23.11.2026", "new": None}
+    assert refuse_row.changes["status"] == {"old": "На контроле", "new": "Отказ"}
+    assert refuse_row.changes["refuse_reason"]["new"] == "Дорого"
+    assert refuse_row.actor_name == "Оксана"
+
+
+def test_automatic_moves_are_logged_as_the_system(db_session) -> None:
+    workshop = _workshop(db_session)
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), workshop.id)
+    _body_car(db_session, workshop, created_at=_now())
+    service.sync_tasks(db_session)
+    rows = _log_rows(db_session, task)
+    assert rows[-1].actor_name == service.SYSTEM_ACTOR
+    assert rows[-1].changes["status"] == {"old": "На контроле", "new": "Записан на осмотр"}

@@ -45,11 +45,12 @@ from app.models.crm_task import (
     CrmTaskAction,
     CrmTaskComment,
 )
+from app.models.department import Department
 from app.models.employee import Employee
 from app.models.work_order import DOC_TYPE_REPAIR_REQUEST, DOC_TYPE_WORK_ORDER, WorkOrder
 from app.models.workshop import Workshop
 from app.models.workshop_job import WorkshopJob
-from app.services import planner_service
+from app.services import audit_log_service, planner_service
 from app.services.request_control_service import _aware
 from app.services.request_control_service import _phones as phone_numbers
 from app.services.settings_service import get_app_settings
@@ -60,6 +61,53 @@ INSPECTION_STAGE = "Осмотр"
 ACTIVE_STATUSES = (TASK_STATUS_CONTROL, TASK_STATUS_INSPECTION, TASK_STATUS_THINKING)
 
 Alert = Literal["warn", "overdue"]
+
+# Журнал (Настройки -> Логи, schedule_audit_log): всё, что происходит с карточкой, - создание,
+# переходы по столбцам (руками и автоматически), комментарии, запланированные действия.
+LOG_ENTITY = "crm_task"
+SYSTEM_ACTOR = "Система (автоматически)"
+STATUS_TITLES = {
+    TASK_STATUS_CONTROL: "На контроле",
+    TASK_STATUS_INSPECTION: "Записан на осмотр",
+    TASK_STATUS_THINKING: "Думает",
+    TASK_STATUS_REFUSED: "Отказ",
+    TASK_STATUS_WORK_ORDER: "Заказ-наряд",
+}
+
+
+def _fmt_date(value: date | None) -> str | None:
+    return value.strftime("%d.%m.%Y") if value else None
+
+
+def _fmt_phone(phone: str) -> str:
+    if len(phone) == 10:
+        return f"+7 {phone[:3]} {phone[3:6]}-{phone[6:8]}-{phone[8:]}"
+    return phone
+
+
+def _log(
+    db: Session,
+    task: CrmTask,
+    changes: dict,
+    *,
+    action: str = "update",
+    actor_id: uuid.UUID | None,
+    actor_name: str,
+) -> None:
+    """Запись в журнал (без commit - его делает вызывающий). Пустое изменение не пишется."""
+    if not changes:
+        return
+    context = _fmt_phone(task.phone) + (f" · {task.client_name}" if task.client_name else "")
+    audit_log_service.record_change(
+        db,
+        entity_type=LOG_ENTITY,
+        entity_id=task.id,
+        action=action,
+        changes=changes,
+        actor_user_id=actor_id,
+        actor_name=actor_name,
+        car_description=context,
+    )
 
 
 class CrmTaskError(Exception):
@@ -135,6 +183,23 @@ def create_from_call(
         created_by_name=actor_name,
     )
     db.add(task)
+    db.flush()
+    workshop = db.get(Workshop, workshop_id)
+    department = db.get(Department, workshop.department_id) if workshop else None
+    created = {
+        "phone": _fmt_phone(call.client),
+        "workshop_label": f"{department.name if department else '?'} — {workshop.workshop_type}",
+        "employee_name": employee.full_name if employee_id is not None else None,
+        "status": STATUS_TITLES[TASK_STATUS_CONTROL],
+    }
+    _log(
+        db,
+        task,
+        {key: {"old": None, "new": value} for key, value in created.items() if value},
+        action="create",
+        actor_id=actor_id,
+        actor_name=actor_name,
+    )
     db.commit()
     # Запись в планировщике / заявка / заказ-наряд, уже появившиеся после звонка, сразу ставят
     # карточку в нужный столбец (а не «На контроле» до следующего чтения доски).
@@ -229,6 +294,7 @@ def sync_tasks(db: Session) -> None:
 
     now = datetime.now(UTC)
     changed = False
+    before = {task.id: task.status for task in tasks}
     for task in tasks:
         cutoff = _cutoff(task)
         order = first_after(orders_by_phone.get(task.phone, []), cutoff)
@@ -290,6 +356,21 @@ def sync_tasks(db: Session) -> None:
                 task.client_name = task.client_name or request.customer_name
                 changed = True
 
+    for task in tasks:
+        if task.status == before[task.id]:
+            continue
+        found = {
+            "status": {"old": STATUS_TITLES[before[task.id]], "new": STATUS_TITLES[task.status]}
+        }
+        if task.status == TASK_STATUS_INSPECTION:
+            found["inspection_date"] = {"old": None, "new": _fmt_date(task.inspection_date)}
+        if task.request_number and task.status == TASK_STATUS_THINKING:
+            found["request_number"] = {"old": None, "new": task.request_number}
+        if task.work_order_number and task.status == TASK_STATUS_WORK_ORDER:
+            found["work_order_number"] = {"old": None, "new": task.work_order_number}
+        _log(db, task, found, actor_id=None, actor_name=SYSTEM_ACTOR)
+        changed = True
+
     if changed:
         db.commit()
 
@@ -337,6 +418,8 @@ def move_task(
         raise CrmTaskInvalid("Укажите причину отказа")
 
     was_status = task.status
+    had_record = task.body_car_id is not None or task.workshop_job_id is not None
+    old_next_action = task.next_action_date
     now = datetime.now(UTC)
     task.status = target
     task.status_changed_at = now
@@ -369,6 +452,18 @@ def move_task(
                 author_name=actor_name,
             )
         )
+    moved = {"status": {"old": STATUS_TITLES[was_status], "new": STATUS_TITLES[target]}}
+    if target == TASK_STATUS_REFUSED:
+        moved["refuse_reason"] = {"old": None, "new": reason_text}
+    if to_inspection:
+        moved["inspection_date"] = {"old": None, "new": _fmt_date(task.inspection_date)}
+        moved["planner_record"] = {"old": None, "new": "создана в планировщике"}
+    if back_to_control:
+        if was_status == TASK_STATUS_INSPECTION and had_record:
+            moved["planner_record"] = {"old": "запись в планировщике", "new": "удалена"}
+        if old_next_action is not None:
+            moved["planned_date"] = {"old": _fmt_date(old_next_action), "new": None}
+    _log(db, task, moved, actor_id=actor_id, actor_name=actor_name)
     db.commit()
     db.refresh(task)
     return task
@@ -517,6 +612,7 @@ def add_comment(
     действия - это ещё и запланированное действие: комментарий тогда обязателен, а розовый и
     красный сроки карточки считаются от новой даты."""
     task = get_task(db, task_id)
+    previous_plan = task.next_action_date
     text = text.strip()
     if not text:
         raise CrmTaskInvalid(
@@ -543,6 +639,13 @@ def add_comment(
             )
         )
         task.next_action_date = next_action_date
+    logged = {"comment": {"old": None, "new": text}}
+    if next_action_date is not None:
+        logged["planned_date"] = {
+            "old": _fmt_date(previous_plan),
+            "new": _fmt_date(next_action_date),
+        }
+    _log(db, task, logged, actor_id=actor_id, actor_name=actor_name)
     db.commit()
     db.refresh(comment)
     return comment
@@ -572,6 +675,8 @@ def update_action(
     *,
     planned_date: date,
     comment: str,
+    actor_id: uuid.UUID | None = None,
+    actor_name: str = "Неизвестно",
 ) -> CrmTaskAction:
     """Меняет дату и комментарий запланированного действия; окраска считается от новой даты, если
     это действующее (последнее) действие. Запись в истории комментариев остаётся как была."""
@@ -580,23 +685,44 @@ def update_action(
     comment = comment.strip()
     if not comment:
         raise CrmTaskInvalid("Укажите комментарий к запланированному действию")
+    edits = {}
+    if action.planned_date != planned_date:
+        edits["planned_date"] = {
+            "old": _fmt_date(action.planned_date),
+            "new": _fmt_date(planned_date),
+        }
+    if action.comment != comment:
+        edits["comment"] = {"old": action.comment, "new": comment}
     action.planned_date = planned_date
     action.comment = comment
     db.flush()
     _sync_next_action(db, task)
+    _log(db, task, edits, actor_id=actor_id, actor_name=actor_name)
     db.commit()
     db.refresh(action)
     return action
 
 
-def delete_action(db: Session, task_id: uuid.UUID, action_id: uuid.UUID) -> None:
+def delete_action(
+    db: Session,
+    task_id: uuid.UUID,
+    action_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+    actor_name: str = "Неизвестно",
+) -> None:
     """Удаляет запланированное действие; действующим становится предыдущее, а если его нет -
     сроки снова считаются от перевода в столбец."""
     task = get_task(db, task_id)
     action = _get_action(db, task_id, action_id)
+    removed = {
+        "planned_date": {"old": _fmt_date(action.planned_date), "new": None},
+        "comment": {"old": action.comment, "new": None},
+    }
     db.delete(action)
     db.flush()
     _sync_next_action(db, task)
+    _log(db, task, removed, actor_id=actor_id, actor_name=actor_name)
     db.commit()
 
 

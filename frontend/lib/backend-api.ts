@@ -2525,12 +2525,17 @@ export function updateCrmTaskAction(
   id: string,
   actionId: string,
   payload: { planned_date: string; comment: string },
+  actor: Actor,
 ): Promise<CrmTaskAction> {
-  return backendPatch<CrmTaskAction>(`/api/v1/crm-tasks/${id}/actions/${actionId}`, payload);
+  return backendPatch<CrmTaskAction>(
+    `/api/v1/crm-tasks/${id}/actions/${actionId}`,
+    payload,
+    actorHeaders(actor),
+  );
 }
 
-export function deleteCrmTaskAction(id: string, actionId: string): Promise<void> {
-  return backendDelete(`/api/v1/crm-tasks/${id}/actions/${actionId}`);
+export function deleteCrmTaskAction(id: string, actionId: string, actor: Actor): Promise<void> {
+  return backendDelete(`/api/v1/crm-tasks/${id}/actions/${actionId}`, actorHeaders(actor));
 }
 
 export function addCrmTaskComment(

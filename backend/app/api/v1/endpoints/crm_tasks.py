@@ -256,11 +256,18 @@ def update_task_action(
     task_id: uuid.UUID,
     action_id: uuid.UUID,
     payload: CrmTaskActionIn,
+    who: tuple[uuid.UUID | None, str] = Depends(actor),
     db: Session = Depends(get_db),
 ) -> CrmTaskActionOut:
     try:
         action = service.update_action(
-            db, task_id, action_id, planned_date=payload.planned_date, comment=payload.comment
+            db,
+            task_id,
+            action_id,
+            planned_date=payload.planned_date,
+            comment=payload.comment,
+            actor_id=who[0],
+            actor_name=who[1],
         )
     except service.CrmTaskError as exc:
         raise _http_error(exc) from exc
@@ -268,9 +275,14 @@ def update_task_action(
 
 
 @router.delete("/{task_id}/actions/{action_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task_action(task_id: uuid.UUID, action_id: uuid.UUID, db: Session = Depends(get_db)):
+def delete_task_action(
+    task_id: uuid.UUID,
+    action_id: uuid.UUID,
+    who: tuple[uuid.UUID | None, str] = Depends(actor),
+    db: Session = Depends(get_db),
+):
     try:
-        service.delete_action(db, task_id, action_id)
+        service.delete_action(db, task_id, action_id, actor_id=who[0], actor_name=who[1])
     except service.CrmTaskError as exc:
         raise _http_error(exc) from exc
 
