@@ -356,7 +356,7 @@ export function TaskBoard({
                       {task.client_name && <div className="task-card-line">{task.client_name}</div>}
                       {task.car_description && <div className="task-card-line">{task.car_description}</div>}
                       {task.status === "control" && task.next_action_date && (
-                        <div className="task-card-line task-card-next">
+                        <div className="task-card-line">
                           Следующее действие: {formatDate(task.next_action_date)}
                         </div>
                       )}
@@ -375,7 +375,7 @@ export function TaskBoard({
                         <div className="task-card-line">Заказ-наряд: {task.work_order_number}</div>
                       )}
                       {task.refuse_reason && (
-                        <div className="task-card-line task-card-reason">Причина: {task.refuse_reason}</div>
+                        <div className="task-card-line">Причина: {task.refuse_reason}</div>
                       )}
                       <div className="task-card-meta">
                         Звонок {formatMoment(task.call_at)}

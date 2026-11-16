@@ -7828,17 +7828,12 @@ main:has(.cockpit-page) {
   font-variant-numeric: tabular-nums;
 }
 
+/* Всё в карточке, кроме номера телефона, одного цвета и шрифта. */
 .task-card-line {
-  margin-top: 0.25rem;
-  font-weight: 500;
-}
-
-.task-card-reason {
-  padding: 0.3rem 0.5rem;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--down) 12%, transparent);
-  color: var(--down);
-  font-weight: 600;
+  margin-top: 0.3rem;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 400;
 }
 
 .task-card-meta {
@@ -8271,7 +8266,3 @@ a.task-detail-navbtn:hover {
   resize: vertical;
 }
 
-.task-card-next {
-  color: var(--accent);
-  font-weight: 700;
-}
