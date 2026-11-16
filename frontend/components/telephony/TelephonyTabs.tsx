@@ -104,6 +104,7 @@ export function TelephonyTabs({
           initialWorkshopId={boardWorkshopId}
           employees={employees}
           initialEmployeeId={boardEmployeeId}
+          active={tab === "board"}
         />
       </div>
       <div hidden={tab !== "calls"}>

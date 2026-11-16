@@ -46,6 +46,7 @@ export function TaskBoard({
   initialWorkshopId,
   employees,
   initialEmployeeId,
+  active = true,
 }: {
   workshops: Workshop[];
   /** The user's own цех or the one from a deep link (planner badge); "Все" if none. */
@@ -53,6 +54,10 @@ export function TaskBoard({
   employees: Employee[];
   /** The user's own employee; null ("Все") for Админ / Управляющий. */
   initialEmployeeId?: string | null;
+  /** The board's tab is the one shown. The tabs stay mounted, so a card put on control from "Звонки"
+   * would not show up until the next poll: every switch to the board reloads it, and the periodic
+   * poll runs only while it is visible. */
+  active?: boolean;
 }) {
   const [workshopId, setWorkshopId] = useState(
     initialWorkshopId && workshops.some((w) => w.id === initialWorkshopId) ? initialWorkshopId : ALL_WORKSHOPS,
@@ -106,10 +111,11 @@ export function TaskBoard({
   }, [workshopId, employeeId, showArchived]);
 
   useEffect(() => {
+    if (!active) return;
     void load();
     const timer = setInterval(() => void load(), REFRESH_MS);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, active]);
 
   const byColumn = useMemo(() => {
     const groups = new Map<CrmTaskStatus, CrmTask[]>(COLUMNS.map((c) => [c.key, []]));
