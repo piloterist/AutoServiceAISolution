@@ -631,7 +631,7 @@ def test_colours_count_from_the_latest_planned_date(db_session) -> None:
     _aged(db_session, task, 10)  # без плана давно красная
     assert service.alert_for(task, 1, 3, _now()) == "overdue"
 
-    # Контакт на 17.11: до конца 17.11 белая, с 18.11 розовая, с 20.11 красная.
+    # Контакт на 17.11: до 17.11 белая, с 17.11 розовая, красная через overdue-warn = 2 дня.
     service.add_comment(
         db_session,
         task.id,
@@ -641,12 +641,12 @@ def test_colours_count_from_the_latest_planned_date(db_session) -> None:
         actor_name="Тест",
     )
     assert service.alert_for(task, 1, 3, _msk(16, 12)) is None
-    assert service.alert_for(task, 1, 3, _msk(17, 23, 59)) is None
-    assert service.alert_for(task, 1, 3, _msk(18, 0, 0)) == "warn"
-    assert service.alert_for(task, 1, 3, _msk(19, 12)) == "warn"
-    assert service.alert_for(task, 1, 3, _msk(20, 0, 0)) == "overdue"
+    assert service.alert_for(task, 1, 3, _msk(16, 23, 59)) is None
+    assert service.alert_for(task, 1, 3, _msk(17, 0, 0)) == "warn"
+    assert service.alert_for(task, 1, 3, _msk(18, 12)) == "warn"
+    assert service.alert_for(task, 1, 3, _msk(19, 0, 0)) == "overdue"
 
-    # 20.11 действие перенесли на 25.11: снова белая до конца 25.11, розовая с 26.11.
+    # 20.11 действие перенесли на 25.11: снова белая до 25.11, розовая с 25.11.
     service.add_comment(
         db_session,
         task.id,
@@ -656,8 +656,8 @@ def test_colours_count_from_the_latest_planned_date(db_session) -> None:
         actor_name="Тест",
     )
     assert service.alert_for(task, 1, 3, _msk(20, 10)) is None
-    assert service.alert_for(task, 1, 3, _msk(25, 23, 59)) is None
-    assert service.alert_for(task, 1, 3, _msk(26, 0, 0)) == "warn"
+    assert service.alert_for(task, 1, 3, _msk(24, 23, 59)) is None
+    assert service.alert_for(task, 1, 3, _msk(25, 0, 0)) == "warn"
 
 
 def test_a_planned_action_needs_a_comment(client, db_session, auth_headers) -> None:
@@ -837,3 +837,38 @@ def test_manual_inspection_for_a_mechanical_workshop_uses_the_job(db_session) ->
     service.move_task(db_session, task.id, "control", reason=None, actor_name="Тест")
     db_session.expire_all()
     assert db_session.get(WorkshopJob, job.id) is None
+
+
+def test_planned_action_can_be_edited_and_deleted(client, db_session, auth_headers) -> None:
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)))
+    for text, day in (("Первый план", "2026-11-17"), ("Перенос", "2026-11-25")):
+        client.post(
+            f"/api/v1/crm-tasks/{task.id}/comments",
+            json={"text": text, "next_action_date": day},
+            headers=auth_headers,
+        )
+    detail = client.get(f"/api/v1/crm-tasks/{task.id}", headers=auth_headers).json()
+    newest, oldest = detail["actions"]  # новые сверху
+
+    # Правка действующего действия двигает дату карточки.
+    url = f"/api/v1/crm-tasks/{task.id}/actions/{newest['id']}"
+    edited = client.patch(
+        url, json={"planned_date": "2026-11-30", "comment": "Позже"}, headers=auth_headers
+    )
+    assert edited.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(CrmTask, task.id).next_action_date == date(2026, 11, 30)
+    bad = client.patch(
+        url, json={"planned_date": "2026-11-30", "comment": " "}, headers=auth_headers
+    )
+    assert bad.status_code == 422
+
+    # Удаление действующего: действует предыдущее; удаление всех - плана нет.
+    assert client.delete(url, headers=auth_headers).status_code == 204
+    db_session.expire_all()
+    assert db_session.get(CrmTask, task.id).next_action_date == date(2026, 11, 17)
+    last = f"/api/v1/crm-tasks/{task.id}/actions/{oldest['id']}"
+    assert client.delete(last, headers=auth_headers).status_code == 204
+    db_session.expire_all()
+    assert db_session.get(CrmTask, task.id).next_action_date is None
+    assert client.delete(last, headers=auth_headers).status_code == 404

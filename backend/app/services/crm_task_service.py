@@ -421,16 +421,25 @@ def _delete_planner_record(
 
 
 def alert_for(task: CrmTask, warn_days: int, overdue_days: int, now: datetime) -> Alert | None:
-    """Окраска карточки: только в «На контроле». Сроки идут от запланированной даты следующего
-    действия (с начала этого дня по Москве), а если её нет - от перевода в столбец; пока
-    запланированная дата в будущем, карточка не окрашена."""
+    """Окраска карточки: только в «На контроле».
+
+    Без запланированного действия: розовая через warn_days дней после перевода в столбец, красная
+    через overdue_days. С запланированным действием: розовая уже с начала запланированного дня (по
+    Москве) - пора действовать, красная - позже на тот же промежуток (overdue_days - warn_days),
+    что и без плана. До запланированного дня карточка не окрашена."""
     if task.status != TASK_STATUS_CONTROL:
         return None
     if task.next_action_date is not None:
-        since = datetime.combine(task.next_action_date, time.min, tzinfo=_MSK)
-    else:
-        since = _aware(task.status_changed_at)
-    age = now - since
+        planned = datetime.combine(task.next_action_date, time.min, tzinfo=_MSK)
+        if now < planned:
+            return None
+        if (
+            now - planned >= timedelta(days=max(overdue_days - warn_days, 0))
+            and overdue_days > warn_days
+        ):
+            return "overdue"
+        return "warn"
+    age = now - _aware(task.status_changed_at)
     if age >= timedelta(days=overdue_days):
         return "overdue"
     if age >= timedelta(days=warn_days):
@@ -537,6 +546,58 @@ def add_comment(
     db.commit()
     db.refresh(comment)
     return comment
+
+
+def _sync_next_action(db: Session, task: CrmTask) -> None:
+    """Действует последнее созданное запланированное действие; нет ни одного - плана нет."""
+    latest = db.scalar(
+        select(CrmTaskAction)
+        .where(CrmTaskAction.task_id == task.id)
+        .order_by(CrmTaskAction.created_at.desc())
+    )
+    task.next_action_date = latest.planned_date if latest is not None else None
+
+
+def _get_action(db: Session, task_id: uuid.UUID, action_id: uuid.UUID) -> CrmTaskAction:
+    action = db.get(CrmTaskAction, action_id)
+    if action is None or action.task_id != task_id:
+        raise CrmTaskNotFound("Запланированное действие не найдено")
+    return action
+
+
+def update_action(
+    db: Session,
+    task_id: uuid.UUID,
+    action_id: uuid.UUID,
+    *,
+    planned_date: date,
+    comment: str,
+) -> CrmTaskAction:
+    """Меняет дату и комментарий запланированного действия; окраска считается от новой даты, если
+    это действующее (последнее) действие. Запись в истории комментариев остаётся как была."""
+    task = get_task(db, task_id)
+    action = _get_action(db, task_id, action_id)
+    comment = comment.strip()
+    if not comment:
+        raise CrmTaskInvalid("Укажите комментарий к запланированному действию")
+    action.planned_date = planned_date
+    action.comment = comment
+    db.flush()
+    _sync_next_action(db, task)
+    db.commit()
+    db.refresh(action)
+    return action
+
+
+def delete_action(db: Session, task_id: uuid.UUID, action_id: uuid.UUID) -> None:
+    """Удаляет запланированное действие; действующим становится предыдущее, а если его нет -
+    сроки снова считаются от перевода в столбец."""
+    task = get_task(db, task_id)
+    action = _get_action(db, task_id, action_id)
+    db.delete(action)
+    db.flush()
+    _sync_next_action(db, task)
+    db.commit()
 
 
 def list_actions(db: Session, task_id: uuid.UUID) -> list[CrmTaskAction]:

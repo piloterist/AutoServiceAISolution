@@ -17,6 +17,7 @@ from app.db.session import get_db
 from app.models.crm_task import CrmTask
 from app.models.employee import Employee
 from app.schemas.crm_tasks import (
+    CrmTaskActionIn,
     CrmTaskActionOut,
     CrmTaskCommentIn,
     CrmTaskCommentOut,
@@ -238,6 +239,40 @@ def read_task(task_id: uuid.UUID, db: Session = Depends(get_db)) -> CrmTaskDetai
             for action in service.list_actions(db, task.id)
         ],
     )
+
+
+def _action_out(action) -> CrmTaskActionOut:
+    return CrmTaskActionOut(
+        id=action.id,
+        planned_date=action.planned_date,
+        comment=action.comment,
+        author_name=action.author_name,
+        created_at=action.created_at,
+    )
+
+
+@router.patch("/{task_id}/actions/{action_id}", response_model=CrmTaskActionOut)
+def update_task_action(
+    task_id: uuid.UUID,
+    action_id: uuid.UUID,
+    payload: CrmTaskActionIn,
+    db: Session = Depends(get_db),
+) -> CrmTaskActionOut:
+    try:
+        action = service.update_action(
+            db, task_id, action_id, planned_date=payload.planned_date, comment=payload.comment
+        )
+    except service.CrmTaskError as exc:
+        raise _http_error(exc) from exc
+    return _action_out(action)
+
+
+@router.delete("/{task_id}/actions/{action_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task_action(task_id: uuid.UUID, action_id: uuid.UUID, db: Session = Depends(get_db)):
+    try:
+        service.delete_action(db, task_id, action_id)
+    except service.CrmTaskError as exc:
+        raise _http_error(exc) from exc
 
 
 @router.post("/{task_id}/comments", response_model=CrmTaskCommentOut)

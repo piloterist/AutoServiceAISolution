@@ -94,6 +94,11 @@ class CrmTaskCommentIn(BaseModel):
     next_action_date: date | None = None
 
 
+class CrmTaskActionIn(BaseModel):
+    planned_date: date
+    comment: str
+
+
 class CrmTaskActionOut(BaseModel):
     id: uuid.UUID
     planned_date: date

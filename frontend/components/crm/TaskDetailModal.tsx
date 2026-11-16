@@ -75,6 +75,11 @@ function TaskDetail({
   // «Запланировать действие»: пусто по умолчанию; с датой комментарий обязателен.
   const [nextDate, setNextDate] = useState("");
   const [saving, setSaving] = useState(false);
+  // Редактирование запланированного действия из истории.
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editText, setEditText] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const [commentError, setCommentError] = useState<string | null>(null);
 
   const loadDetail = useCallback(async (): Promise<CrmTaskDetail> => {
@@ -147,6 +152,47 @@ function TaskDetail({
           task.inspection_date ? `&date=${task.inspection_date}` : ""
         }`
       : null;
+
+  const saveAction = async () => {
+    if (!editId) return;
+    setSaving(true);
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/crm-tasks/${task.id}/actions/${editId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planned_date: editDate, comment: editText }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Не удалось сохранить");
+      }
+      setEditId(null);
+      await loadDetail();
+      onChanged();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeAction = async (actionId: string) => {
+    if (!window.confirm("Удалить запланированное действие?")) return;
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/crm-tasks/${task.id}/actions/${actionId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Не удалось удалить");
+      }
+      if (editId === actionId) setEditId(null);
+      await loadDetail();
+      onChanged();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Не удалось удалить");
+    }
+  };
 
   const link = (label: string, number: string | null, id: string | null | undefined) =>
     number && (
@@ -283,7 +329,7 @@ function TaskDetail({
             {nextDate && !text.trim()
               ? "С датой комментарий обязателен - напишите его выше."
               : task.next_action_date
-                ? `Сейчас запланировано на ${formatDate(task.next_action_date)}: розовый и красный сроки считаются от этой даты.`
+                ? `Сейчас запланировано на ${formatDate(task.next_action_date)}: в этот день карточка станет розовой.`
                 : "Пусто - сроки считаются от перевода на контроль."}
           </span>
         </div>
@@ -318,9 +364,46 @@ function TaskDetail({
                 </span>
                 {index === 0 && <span className="task-detail-comment-stage">действует</span>}
               </div>
-              <p>{action.comment}</p>
+              {editId === action.id ? (
+                <div className="task-detail-plan">
+                  <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
+                  <textarea rows={2} value={editText} onChange={(event) => setEditText(event.target.value)} />
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-primary"
+                    disabled={saving || !editDate || !editText.trim()}
+                    onClick={() => void saveAction()}
+                  >
+                    Сохранить
+                  </button>
+                  <button type="button" className="admin-btn" onClick={() => setEditId(null)}>
+                    Отмена
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <p>{action.comment}</p>
+                  <div className="request-control-actions">
+                    <button
+                      type="button"
+                      className="admin-btn"
+                      onClick={() => {
+                        setEditId(action.id);
+                        setEditDate(action.planned_date);
+                        setEditText(action.comment);
+                      }}
+                    >
+                      Изменить
+                    </button>
+                    <button type="button" className="admin-btn" onClick={() => void removeAction(action.id)}>
+                      Удалить
+                    </button>
+                  </div>
+                </>
+              )}
             </li>
           ))}
+          {actionError && <li className="admin-form-error">{actionError}</li>}
         </ul>
       )}
 
