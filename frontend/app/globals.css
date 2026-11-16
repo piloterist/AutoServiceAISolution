@@ -8134,8 +8134,37 @@ main:has(.cockpit-page) {
   font-weight: 600;
 }
 
-.task-detail-plan input[type="date"] {
-  padding: 0.4rem 0.6rem;
+.task-detail-plan .date-input,
+.task-detail-edit .date-input {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1.05rem;
+  color: var(--text);
+  background: var(--surface);
+  min-width: 11rem;
+}
+
+.task-detail-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.task-detail-edit label {
+  font-weight: 600;
+}
+
+.task-detail-edit .date-input {
+  align-self: flex-start;
+}
+
+.task-detail-edit textarea {
+  width: 100%;
+  min-height: 8rem;
+  font-size: 1rem;
+  resize: vertical;
 }
 
 .task-card-next {

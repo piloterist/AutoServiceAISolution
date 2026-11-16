@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { DateInput } from "@/components/DateInput";
 import { columnOf, formatDate, formatInspection, formatMoment, formatPhone } from "@/components/crm/columns";
 import { AdminModal } from "@/components/settings/AdminModal";
 import { CallEventsTable } from "@/components/telephony/TelephonyStatsView";
@@ -314,12 +315,7 @@ function TaskDetail({
         <h4 className="task-detail-heading">Запланировать действие</h4>
         <div className="task-detail-plan">
           <label htmlFor={`task-next-date-${task.id}`}>Дата контакта</label>
-          <input
-            id={`task-next-date-${task.id}`}
-            type="date"
-            value={nextDate}
-            onChange={(event) => setNextDate(event.target.value)}
-          />
+          <DateInput id={`task-next-date-${task.id}`} value={nextDate} onChange={setNextDate} />
           {nextDate && (
             <button type="button" className="admin-btn" onClick={() => setNextDate("")}>
               Очистить
@@ -365,9 +361,17 @@ function TaskDetail({
                 {index === 0 && <span className="task-detail-comment-stage">действует</span>}
               </div>
               {editId === action.id ? (
-                <div className="task-detail-plan">
-                  <input type="date" value={editDate} onChange={(event) => setEditDate(event.target.value)} />
-                  <textarea rows={2} value={editText} onChange={(event) => setEditText(event.target.value)} />
+                <div className="task-detail-edit">
+                  <label htmlFor={`task-edit-date-${action.id}`}>Дата контакта</label>
+                  <DateInput id={`task-edit-date-${action.id}`} value={editDate} onChange={setEditDate} />
+                  <label htmlFor={`task-edit-text-${action.id}`}>Комментарий</label>
+                  <textarea
+                    id={`task-edit-text-${action.id}`}
+                    rows={6}
+                    value={editText}
+                    onChange={(event) => setEditText(event.target.value)}
+                  />
+                  <div className="request-control-actions">
                   <button
                     type="button"
                     className="admin-btn admin-btn-primary"
@@ -379,6 +383,7 @@ function TaskDetail({
                   <button type="button" className="admin-btn" onClick={() => setEditId(null)}>
                     Отмена
                   </button>
+                  </div>
                 </div>
               ) : (
                 <>
