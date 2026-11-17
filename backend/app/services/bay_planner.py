@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, time
+from decimal import Decimal
 
 import structlog
 from sqlalchemy import select
@@ -52,6 +53,9 @@ STATUS_CANCELLED = "Отмена"
 PLATE_PREFIX = 6  # регион в плане часто не указан - сверяем только основную часть номера
 SLOT_MINUTES = 30
 AUTO_WORK_DESCRIPTION = "Создано автоматически: машина заехала в бокс"
+# Запись в плане автоматически не создаётся, если номер распознан с меньшей уверенностью.
+MIN_CONFIDENCE_FOR_NEW_JOB = Decimal("0.70")
+LOW_CONFIDENCE_NOTE = "запись в планировщике не создана: номер распознан с уверенностью ниже 70 %"
 
 
 class IssueNotFound(Exception):
@@ -244,6 +248,11 @@ def on_entry(db: Session, event: BayEvent) -> None:
         job = _find_planned_job(db, workshop, bay.sort_order, moment, plate_prefix(event.plate))
         if job is not None:
             _start_job(db, job, event)
+        elif event.ocr_confidence is not None and event.ocr_confidence < MIN_CONFIDENCE_FOR_NEW_JOB:
+            # Номер, скорее всего, прочитан неверно: записи на несуществующую машину не плодим.
+            event.note = (
+                f"{event.note}; {LOW_CONFIDENCE_NOTE}" if event.note else LOW_CONFIDENCE_NOTE
+            )
         else:
             job = _create_job(db, workshop, bay.sort_order, moment, event)
         if job is not None:

@@ -306,11 +306,15 @@ export function TaskBoard({
             return (
               <section
                 key={column.key}
-                className={
-                  overColumn === column.key && canDrop(column)
-                    ? `task-column task-column--${column.key} task-column--over`
-                    : `task-column task-column--${column.key}`
-                }
+                className={[
+                  "task-column",
+                  `task-column--${column.key}`,
+                  // Пока тащим карточку, подходящие столбцы подсвечены на всю высоту.
+                  dragId && canDrop(column) ? "task-column--target" : "",
+                  overColumn === column.key && canDrop(column) ? "task-column--over" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 onDragOver={(event) => {
                   if (!canDrop(column)) return;
                   event.preventDefault();

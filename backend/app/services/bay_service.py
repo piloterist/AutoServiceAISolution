@@ -364,6 +364,26 @@ def list_bay_cards(db: Session, workshop_id: uuid.UUID | None = None) -> list[di
 # ---- events -----------------------------------------------------------------
 
 
+# Въезд на том же боксе в течение этого срока после выезда не считается: это та же машина, у
+# которой выезд зафиксировался раньше времени (опустили подъёмник, закрыли номер), а не новая.
+REENTRY_GRACE = timedelta(minutes=2)
+REENTRY_NOTE = "повторный въезд менее чем через 2 минуты после выезда: не учтён"
+
+
+def _is_quick_reentry(db: Session, bay_id: uuid.UUID, occurred_at: datetime) -> bool:
+    previous_exit = db.scalars(
+        select(BayEvent)
+        .where(
+            BayEvent.bay_id == bay_id,
+            BayEvent.event_type == EVENT_EXIT_CONFIRMED,
+            BayEvent.occurred_at <= occurred_at,
+        )
+        .order_by(BayEvent.occurred_at.desc())
+        .limit(1)
+    ).first()
+    return previous_exit is not None and occurred_at - previous_exit.occurred_at <= REENTRY_GRACE
+
+
 def record_event(
     db: Session,
     bay_id: uuid.UUID,
@@ -396,8 +416,13 @@ def record_event(
             "confirmed" if source == "manual" else REVIEW_NEEDS if needs_review else "auto"
         ),
     )
+    skip_interval = False
     if event_type == EVENT_ENTRY_CONFIRMED:
         event.work_order_id = _work_order_id_for_plate(db, event.plate)
+        # Только автоматические события: ручной ввод оператора всегда считается.
+        if source == "auto" and _is_quick_reentry(db, bay.id, occurred_at):
+            skip_interval = True
+            event.note = f"{event.note}; {REENTRY_NOTE}" if event.note else REENTRY_NOTE
     if image is not None:
         path = _event_path(bay.id, event.id)
         if _upload(db, bay.id, path, image, overwrite=False):
@@ -406,7 +431,8 @@ def record_event(
     db.flush()
 
     if event_type == EVENT_ENTRY_CONFIRMED:
-        _open_interval(db, event)
+        if not skip_interval:
+            _open_interval(db, event)
     elif event_type == EVENT_EXIT_CONFIRMED:
         _close_interval(db, event)
     db.commit()

@@ -342,3 +342,60 @@ def test_body_workshop_gets_issues_but_no_planner_records(
     assert db_session.scalars(select(WorkshopJob)).all() == []
     assert len(db_session.scalars(select(BayIssue)).all()) == 1
     assert db_session.scalars(select(BayOccupancy)).first().workshop_job_id is None
+
+
+def _event_with_confidence(client, headers, bay, kind, plate, confidence, at):
+    body = {
+        "event_type": kind,
+        "plate": plate,
+        "ocr_confidence": confidence,
+        "occurred_at": at.isoformat(),
+    }
+    response = client.post(f"/api/v1/bays/{bay}/events", json=body, headers=headers)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_a_low_confidence_entry_does_not_create_a_planner_record(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Е479АР77", 0.25, moment(15, 46)
+    )
+    assert db_session.scalars(select(WorkshopJob)).all() == []
+
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "Е479АР77", 0.25, moment(16, 30)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Е747АО997", 0.93, moment(17, 0)
+    )
+    jobs = db_session.scalars(select(WorkshopJob)).all()
+    assert len(jobs) == 1 and jobs[0].plate == "Е747АО997"
+
+
+def test_a_re_entry_within_two_minutes_of_an_exit_is_not_counted(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Е747АО997", 0.93, moment(12, 0)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "Е747АО997", 0.93, moment(15, 46, 7)
+    )
+    quick = _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Е479АР77", 0.9, moment(15, 46, 50)
+    )
+    assert "не учтён" in quick["note"]
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "Е479АР77", 0.9, moment(15, 47, 15)
+    )
+
+    assert len(db_session.scalars(select(BayOccupancy)).all()) == 1  # только настоящий заезд
+    assert len(db_session.scalars(select(WorkshopJob)).all()) == 1
+
+    # Через три минуты после выезда въезд считается как обычно.
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Х123ХХ77", 0.9, moment(15, 51)
+    )
+    assert len(db_session.scalars(select(BayOccupancy)).all()) == 2

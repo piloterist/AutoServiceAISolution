@@ -7668,7 +7668,10 @@ main:has(.cockpit-page) {
   display: grid;
   grid-template-columns: repeat(5, minmax(250px, 1fr));
   gap: 1rem;
-  align-items: start;
+  /* Все столбцы одной высоты - по самому длинному и не короче экрана: бросать карточку можно в
+     любое место столбца, а не только рядом с его карточками. */
+  align-items: stretch;
+  min-height: calc(100vh - 14rem);
   overflow-x: auto;
   padding: 0.25rem 0.1rem 0.75rem;
 }
@@ -7692,6 +7695,13 @@ main:has(.cockpit-page) {
 .task-column--thinking { --col: #f59e0b; }
 .task-column--refused { --col: #ef4444; }
 .task-column--work_order { --col: #10b981; }
+
+/* Столбцы, куда можно бросить перетаскиваемую карточку: подсвечены цветом на всю высоту. */
+.task-column--target {
+  border-style: dashed;
+  border-color: var(--col);
+  background: color-mix(in srgb, var(--col) 14%, var(--surface2));
+}
 
 .task-column--over {
   border-color: var(--col);
