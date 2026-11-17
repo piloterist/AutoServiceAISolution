@@ -246,17 +246,23 @@ def test_planner_record_before_the_call_or_other_stage_or_phone_is_ignored(db_se
 def test_repair_request_moves_only_from_inspection(db_session) -> None:
     workshop = _workshop(db_session)
     task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=6)))
-    _document(db_session, doc_type="repair_request", created=_now() - timedelta(hours=5))
+    request = _document(
+        db_session, doc_type="repair_request", created=_now() - timedelta(hours=5), number="ЭП-1"
+    )
     assert _status(db_session, task) == "control"  # без осмотра заявка не двигает
 
+    # Заявка создана после звонка, но до записи на осмотр: всё равно считается.
     _body_car(db_session, workshop, created_at=_now() - timedelta(hours=4))
-    assert _status(db_session, task) == "inspection"  # заявка была раньше осмотра - не считается
-
-    request = _document(
-        db_session, doc_type="repair_request", created=_now() - timedelta(hours=1), number="ЭП-1"
-    )
     assert _status(db_session, task) == "thinking"
     assert task.request_number == request.external_number
+
+
+def test_a_repair_request_before_the_call_does_not_count(db_session) -> None:
+    workshop = _workshop(db_session)
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=3)))
+    _document(db_session, doc_type="repair_request", created=_now() - timedelta(hours=5))
+    _body_car(db_session, workshop, created_at=_now() - timedelta(hours=1))
+    assert _status(db_session, task) == "inspection"  # заявка была до звонка: прошлое клиента
 
 
 def test_work_order_moves_from_any_active_column(db_session) -> None:

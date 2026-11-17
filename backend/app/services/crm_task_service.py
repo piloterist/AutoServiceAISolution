@@ -425,8 +425,9 @@ def sync_tasks(db: Session) -> None:
                 changed = True
 
         if task.status == TASK_STATUS_INSPECTION:
-            since = max(cutoff, _aware(task.inspection_at)) if task.inspection_at else cutoff
-            request = first_after(requests_by_phone.get(task.phone, []), since)
+            # Как и заказ-наряд, заявка на ремонт сравнивается только со временем звонка: её могли
+            # создать до записи на осмотр, и выгружается она из 1С с задержкой.
+            request = first_after(requests_by_phone.get(task.phone, []), _aware(task.call_at))
             if request is not None:
                 task.status = TASK_STATUS_THINKING
                 task.status_changed_at = now
