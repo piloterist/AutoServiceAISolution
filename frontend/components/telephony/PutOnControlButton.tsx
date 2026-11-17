@@ -29,10 +29,13 @@ const COLUMN_TITLES: Record<CrmTaskStatus, string> = {
  * уже ведётся, новая карточка не создаётся - кнопка так и говорит. */
 export function PutOnControlButton({
   callId,
+  leadId,
   client,
   callWorkshopId,
 }: {
-  callId: string;
+  /** The call to take under control - or, for «Заявки с сайта», the lead (`leadId`). */
+  callId?: string;
+  leadId?: string;
   /** The caller's phone: if a card for it is already in work, the button shows its column. */
   client?: string | null;
   /** The цех the call was routed to (telephony settings), preselected in the dialog. */
@@ -93,7 +96,12 @@ export function PutOnControlButton({
       const res = await fetch("/api/crm-tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ call_id: callId, workshop_id: workshopId, employee_id: employeeId || null }),
+        body: JSON.stringify({
+          call_id: callId ?? null,
+          lead_id: leadId ?? null,
+          workshop_id: workshopId,
+          employee_id: employeeId || null,
+        }),
       });
       const body = (await res.json()) as { task?: CrmTask; created?: boolean; error?: string };
       if (!res.ok || !body.task) throw new Error(body.error ?? "Не удалось взять на контроль");
@@ -146,9 +154,9 @@ export function PutOnControlButton({
         }}
       >
         <div className="call-control-dialog" onClick={(event) => event.stopPropagation()}>
-          <label htmlFor={`call-control-workshop-${callId}`}>Цех</label>
+          <label htmlFor={`call-control-workshop-${callId ?? leadId}`}>Цех</label>
           <select
-            id={`call-control-workshop-${callId}`}
+            id={`call-control-workshop-${callId ?? leadId}`}
             value={workshopId}
             onChange={(event) => {
               setWorkshopId(event.target.value);
@@ -163,9 +171,9 @@ export function PutOnControlButton({
               </option>
             ))}
           </select>
-          <label htmlFor={`call-control-employee-${callId}`}>Сотрудник</label>
+          <label htmlFor={`call-control-employee-${callId ?? leadId}`}>Сотрудник</label>
           <select
-            id={`call-control-employee-${callId}`}
+            id={`call-control-employee-${callId ?? leadId}`}
             value={employeeId}
             disabled={!workshopId}
             onChange={(event) => setEmployeeId(event.target.value)}

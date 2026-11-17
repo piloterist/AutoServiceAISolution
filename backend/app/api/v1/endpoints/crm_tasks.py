@@ -16,6 +16,7 @@ from app.api.v1.endpoints.planner import actor
 from app.db.session import get_db
 from app.models.crm_task import CrmTask
 from app.models.employee import Employee
+from app.models.website_lead import WebsiteLead
 from app.schemas.crm_tasks import (
     CrmTaskActionIn,
     CrmTaskActionOut,
@@ -25,12 +26,13 @@ from app.schemas.crm_tasks import (
     CrmTaskCreateIn,
     CrmTaskCreateOut,
     CrmTaskDetailOut,
+    CrmTaskLeadOut,
     CrmTaskListResponse,
     CrmTaskMoveIn,
     CrmTaskOut,
     CrmTaskOverdueCountOut,
 )
-from app.services import admin_service
+from app.services import admin_service, leads_service
 from app.services import crm_task_service as service
 from app.services.settings_service import get_app_settings
 
@@ -68,6 +70,8 @@ def _out(
     return CrmTaskOut(
         id=task.id,
         phone=task.phone,
+        source="lead" if task.lead_id else "call",
+        lead_id=task.lead_id,
         status=task.status,
         status_changed_at=task.status_changed_at,
         call_at=task.call_at,
@@ -141,14 +145,26 @@ def create_task(
     db: Session = Depends(get_db),
 ) -> CrmTaskCreateOut:
     try:
-        task, created = service.create_from_call(
-            db,
-            payload.call_id,
-            workshop_id=payload.workshop_id,
-            employee_id=payload.employee_id,
-            actor_id=who[0],
-            actor_name=who[1],
-        )
+        if (payload.call_id is None) == (payload.lead_id is None):
+            raise service.CrmTaskInvalid("Укажите звонок или заявку")
+        if payload.lead_id is not None:
+            task, created = service.create_from_lead(
+                db,
+                payload.lead_id,
+                workshop_id=payload.workshop_id,
+                employee_id=payload.employee_id,
+                actor_id=who[0],
+                actor_name=who[1],
+            )
+        else:
+            task, created = service.create_from_call(
+                db,
+                payload.call_id,
+                workshop_id=payload.workshop_id,
+                employee_id=payload.employee_id,
+                actor_id=who[0],
+                actor_name=who[1],
+            )
     except service.CrmTaskError as exc:
         raise _http_error(exc) from exc
     settings = get_app_settings(db)
@@ -260,6 +276,21 @@ def read_task(task_id: uuid.UUID, db: Session = Depends(get_db)) -> CrmTaskDetai
         request_id=request_id,
         work_order_id=work_order_id,
         comments=[_comment_out(comment) for comment in comments],
+        lead=(
+            CrmTaskLeadOut(
+                id=lead.id,
+                source=lead.source,
+                phone=lead.phone,
+                name=lead.name,
+                photos=lead.photos,
+                raw_payload=lead.raw_payload,
+                request_meta=lead.request_meta,
+                site=leads_service.site_from_meta(lead.request_meta),
+                created_at=lead.created_at,
+            )
+            if (lead := db.get(WebsiteLead, task.lead_id) if task.lead_id else None)
+            else None
+        ),
         actions=[
             CrmTaskActionOut(
                 id=action.id,

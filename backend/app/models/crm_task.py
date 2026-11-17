@@ -40,6 +40,11 @@ class CrmTask(Base):
     call_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("telephony_calls.id", ondelete="SET NULL"), nullable=True
     )
+    # Заявка с сайта, с которой задачу взяли на контроль (вместо звонка): тогда call_at - время
+    # заявки, и всё остальное работает так же.
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("website_leads.id", ondelete="SET NULL"), nullable=True
+    )
     call_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # Цех звонка (telephony_calls.workshop_id) - по нему фильтруется доска и счётчик планировщика.
     workshop_id: Mapped[uuid.UUID | None] = mapped_column(

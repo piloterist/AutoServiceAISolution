@@ -378,7 +378,7 @@ export function TaskBoard({
                         <div className="task-card-line">Причина: {task.refuse_reason}</div>
                       )}
                       <div className="task-card-meta">
-                        Звонок {formatMoment(task.call_at)}
+                        {task.source === "lead" ? "Заявка с сайта" : "Звонок"} {formatMoment(task.call_at)}
                         {task.status === "control" && <> · на контроле {formatAge(task.status_changed_at, now)}</>}
                       </div>
                       {task.employee_name && <div className="task-card-meta">Сотрудник: {task.employee_name}</div>}

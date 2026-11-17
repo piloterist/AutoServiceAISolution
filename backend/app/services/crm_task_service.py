@@ -47,6 +47,7 @@ from app.models.crm_task import (
 )
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.website_lead import WebsiteLead
 from app.models.work_order import DOC_TYPE_REPAIR_REQUEST, DOC_TYPE_WORK_ORDER, WorkOrder
 from app.models.workshop import Workshop
 from app.models.workshop_job import WorkshopJob
@@ -135,38 +136,46 @@ class OverdueCount:
 # ---- создание ------------------------------------------------------------------
 
 
-def create_from_call(
-    db: Session,
-    call_id: uuid.UUID,
-    *,
-    workshop_id: uuid.UUID | None,
-    employee_id: uuid.UUID | None = None,
-    actor_id: uuid.UUID | None,
-    actor_name: str,
-) -> tuple[CrmTask, bool]:
-    """Берёт телефон звонка на контроль в выбранном цехе (цех обязателен: по нему карточка
-    попадает в фильтр доски и в счётчик планировщика). Если этот телефон уже ведётся (карточка не
-    в «Отказе» и не в «Заказ-наряде») - возвращает её, ничего не создавая (created=False)."""
+def _check_assignment(
+    db: Session, workshop_id: uuid.UUID | None, employee_id: uuid.UUID | None
+) -> Employee | None:
+    """Цех обязателен (по нему карточка попадает в фильтр доски и в счётчик планировщика);
+    сотрудник - из этого цеха или без цеха в справочнике."""
     if workshop_id is None:
         raise CrmTaskInvalid("Выберите цех")
     if db.get(Workshop, workshop_id) is None:
         raise CrmTaskInvalid("Цех не найден")
-    if employee_id is not None:
-        employee = db.get(Employee, employee_id)
-        if employee is None:
-            raise CrmTaskInvalid("Сотрудник не найден")
-        # Сотрудник без цеха (в справочнике цех не указан) подходит к любому цеху.
-        if employee.workshop_id is not None and employee.workshop_id != workshop_id:
-            raise CrmTaskInvalid("Сотрудник не работает в выбранном цехе")
-    call = db.get(CallRecord, call_id)
-    if call is None:
-        raise CrmTaskNotFound("Звонок не найден")
-    if not call.client:
-        raise CrmTaskInvalid("У звонка нет номера клиента")
+    if employee_id is None:
+        return None
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        raise CrmTaskInvalid("Сотрудник не найден")
+    # Сотрудник без цеха (в справочнике цех не указан) подходит к любому цеху.
+    if employee.workshop_id is not None and employee.workshop_id != workshop_id:
+        raise CrmTaskInvalid("Сотрудник не работает в выбранном цехе")
+    return employee
 
+
+def _open_task(
+    db: Session,
+    *,
+    phone: str,
+    at: datetime,
+    call_id: uuid.UUID | None,
+    lead_id: uuid.UUID | None,
+    client_name: str | None,
+    kind: str,
+    workshop_id: uuid.UUID,
+    employee: Employee | None,
+    actor_id: uuid.UUID | None,
+    actor_name: str,
+) -> tuple[CrmTask, bool]:
+    """Одна карточка на телефон: если он уже ведётся (карточка не в «Отказе» и не в «Заказ-наряде»),
+    возвращает её (created=False). Иначе создаёт в «На контроле»; запись в планировщике, заявка или
+    заказ-наряд, уже появившиеся после звонка / заявки, сразу ставят её в нужный столбец."""
     existing = db.scalar(
         select(CrmTask)
-        .where(CrmTask.phone == call.client, CrmTask.status.in_(ACTIVE_STATUSES))
+        .where(CrmTask.phone == phone, CrmTask.status.in_(ACTIVE_STATUSES))
         .order_by(CrmTask.created_at)
     )
     if existing is not None:
@@ -174,11 +183,13 @@ def create_from_call(
 
     now = datetime.now(UTC)
     task = CrmTask(
-        phone=call.client,
-        call_id=call.id,
-        call_at=call.occurred_at,
+        phone=phone,
+        call_id=call_id,
+        lead_id=lead_id,
+        call_at=at,
+        client_name=client_name,
         workshop_id=workshop_id,
-        employee_id=employee_id,
+        employee_id=employee.id if employee else None,
         status=TASK_STATUS_CONTROL,
         status_changed_at=now,
         created_by_id=actor_id,
@@ -189,9 +200,10 @@ def create_from_call(
     workshop = db.get(Workshop, workshop_id)
     department = db.get(Department, workshop.department_id) if workshop else None
     created = {
-        "phone": _fmt_phone(call.client),
+        "phone": _fmt_phone(phone),
+        "task_source": kind,
         "workshop_label": f"{department.name if department else '?'} — {workshop.workshop_type}",
-        "employee_name": employee.full_name if employee_id is not None else None,
+        "employee_name": employee.full_name if employee else None,
         "status": STATUS_TITLES[TASK_STATUS_CONTROL],
     }
     _log(
@@ -203,11 +215,70 @@ def create_from_call(
         actor_name=actor_name,
     )
     db.commit()
-    # Запись в планировщике / заявка / заказ-наряд, уже появившиеся после звонка, сразу ставят
-    # карточку в нужный столбец (а не «На контроле» до следующего чтения доски).
     sync_tasks(db)
     db.refresh(task)
     return task, True
+
+
+def create_from_call(
+    db: Session,
+    call_id: uuid.UUID,
+    *,
+    workshop_id: uuid.UUID | None,
+    employee_id: uuid.UUID | None = None,
+    actor_id: uuid.UUID | None,
+    actor_name: str,
+) -> tuple[CrmTask, bool]:
+    """Берёт телефон звонка на контроль в выбранном цехе."""
+    employee = _check_assignment(db, workshop_id, employee_id)
+    call = db.get(CallRecord, call_id)
+    if call is None:
+        raise CrmTaskNotFound("Звонок не найден")
+    if not call.client:
+        raise CrmTaskInvalid("У звонка нет номера клиента")
+    return _open_task(
+        db,
+        phone=call.client,
+        at=call.occurred_at,
+        call_id=call.id,
+        lead_id=None,
+        client_name=None,
+        kind="Звонок",
+        workshop_id=workshop_id,
+        employee=employee,
+        actor_id=actor_id,
+        actor_name=actor_name,
+    )
+
+
+def create_from_lead(
+    db: Session,
+    lead_id: uuid.UUID,
+    *,
+    workshop_id: uuid.UUID | None,
+    employee_id: uuid.UUID | None = None,
+    actor_id: uuid.UUID | None,
+    actor_name: str,
+) -> tuple[CrmTask, bool]:
+    """Берёт телефон заявки с сайта на контроль. Время заявки - точка отсчёта (как время звонка):
+    заказ-наряд, заявка на ремонт и запись в планировщике ищутся позже него."""
+    employee = _check_assignment(db, workshop_id, employee_id)
+    lead = db.get(WebsiteLead, lead_id)
+    if lead is None:
+        raise CrmTaskNotFound("Заявка не найдена")
+    return _open_task(
+        db,
+        phone=lead.phone,
+        at=lead.created_at,
+        call_id=None,
+        lead_id=lead.id,
+        client_name=lead.name,
+        kind="Заявка с сайта",
+        workshop_id=workshop_id,
+        employee=employee,
+        actor_id=actor_id,
+        actor_name=actor_name,
+    )
 
 
 # ---- автоматика ------------------------------------------------------------------

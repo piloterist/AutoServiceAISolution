@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
+import { LeadInfo, sourceLabel } from "@/components/leads/LeadInfo";
 import { employeesOfWorkshop, useEmployees, useWorkshops, workshopLabel } from "@/components/crm/WorkshopsContext";
 import { columnOf, formatDate, formatInspection, formatMoment, formatPhone } from "@/components/crm/columns";
 import { AdminModal } from "@/components/settings/AdminModal";
@@ -83,6 +84,7 @@ function TaskDetail({
   const [comments, setComments] = useState<CrmTaskComment[]>([]);
   const [actions, setActions] = useState<CrmTaskAction[]>([]);
   const [callsOpen, setCallsOpen] = useState(false);
+  const [leadOpen, setLeadOpen] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [text, setText] = useState("");
@@ -344,7 +346,7 @@ function TaskDetail({
               </select>
             </div>
             <div className="task-detail-row">
-              <span className="task-detail-label">Звонок</span>
+              <span className="task-detail-label">{task.source === "lead" ? "Заявка с сайта" : "Звонок"}</span>
               <span>{formatMoment(task.call_at, true)}</span>
             </div>
             <div className="task-detail-row">
@@ -409,6 +411,25 @@ function TaskDetail({
         )}
         {detailError && <p className="admin-form-error">{detailError}</p>}
       </div>
+
+      {detail?.lead && (
+        <>
+          <button
+            type="button"
+            className="task-detail-toggle"
+            aria-expanded={leadOpen}
+            onClick={() => setLeadOpen((prev) => !prev)}
+          >
+            {leadOpen ? "▾" : "▸"} Заявка с сайта · {sourceLabel(detail.lead.source)}
+            {detail.lead.photos && detail.lead.photos.length > 0 ? ` · фото: ${detail.lead.photos.length}` : ""}
+          </button>
+          {leadOpen && (
+            <div className="leads-detail-card">
+              <LeadInfo lead={detail.lead} />
+            </div>
+          )}
+        </>
+      )}
 
       <button
         type="button"

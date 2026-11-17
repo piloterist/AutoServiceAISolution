@@ -15,6 +15,7 @@ from app.models.call_record import CallRecord
 from app.models.crm_task import CrmTask
 from app.models.department import Department
 from app.models.employee import Employee
+from app.models.website_lead import WebsiteLead
 from app.models.work_order import WorkOrder
 from app.models.workshop import Workshop
 from app.services import crm_task_service as service
@@ -1050,3 +1051,83 @@ def test_a_refused_work_order_is_left_out_of_the_chain(db_session) -> None:
     db_session.commit()
     assert _status(db_session, task) == "work_order"
     assert task.work_order_number == order.external_number
+
+
+# ---- задачи с заявок с сайта ---------------------------------------------------------
+
+
+def _lead(db: Session, *, phone: str = PHONE, at: datetime | None = None) -> WebsiteLead:
+    lead = WebsiteLead(
+        source="quiz_body",
+        phone=phone,
+        name="Иван",
+        photos=["/api/leads/x/photos/a.jpg"],
+        raw_payload={"auto_marka": "Opel Astra", "quiz_budget": "50000"},
+        request_meta={"user_agent": "WordPress/7.1; https://pan-motors.ru"},
+    )
+    if at is not None:
+        lead.created_at = at
+    db.add(lead)
+    db.commit()
+    return lead
+
+
+def test_a_lead_can_be_put_on_control(client, db_session, auth_headers) -> None:
+    workshop = _workshop(db_session)
+    lead = _lead(db_session, at=_now() - timedelta(hours=1))
+    created = client.post(
+        "/api/v1/crm-tasks",
+        json={"lead_id": str(lead.id), "workshop_id": str(workshop.id)},
+        headers=auth_headers,
+    )
+    assert created.status_code == 200
+    body = created.json()
+    assert body["created"] is True
+    assert (body["task"]["source"], body["task"]["lead_id"]) == ("lead", str(lead.id))
+    assert body["task"]["client_name"] == "Иван"
+
+    detail = client.get(f"/api/v1/crm-tasks/{body['task']['id']}", headers=auth_headers).json()
+    assert detail["lead"]["source"] == "quiz_body"
+    assert detail["lead"]["photos"] == ["/api/leads/x/photos/a.jpg"]
+    assert detail["lead"]["raw_payload"]["auto_marka"] == "Opel Astra"
+    assert detail["lead"]["site"] == "pan-motors.ru"
+    # Один телефон - одна карточка: вторая заявка / звонок с этим номером её не дублирует.
+    again = client.post(
+        "/api/v1/crm-tasks",
+        json={"lead_id": str(lead.id), "workshop_id": str(workshop.id)},
+        headers=auth_headers,
+    )
+    assert again.json()["created"] is False
+
+
+def test_either_a_call_or_a_lead_is_required(client, db_session, auth_headers) -> None:
+    workshop = _workshop(db_session)
+    lead = _lead(db_session)
+    call = _call(db_session, at=_now())
+    both = client.post(
+        "/api/v1/crm-tasks",
+        json={
+            "lead_id": str(lead.id),
+            "call_id": str(call.id),
+            "workshop_id": str(workshop.id),
+        },
+        headers=auth_headers,
+    )
+    neither = client.post(
+        "/api/v1/crm-tasks", json={"workshop_id": str(workshop.id)}, headers=auth_headers
+    )
+    assert both.status_code == neither.status_code == 422
+
+
+def test_a_lead_task_follows_the_chain_from_the_lead_time(db_session) -> None:
+    workshop = _workshop(db_session)
+    lead = _lead(db_session, at=_now() - timedelta(hours=3))
+    task, created = service.create_from_lead(
+        db_session, lead.id, workshop_id=workshop.id, actor_id=None, actor_name="Тест"
+    )
+    assert created and task.call_id is None and task.lead_id == lead.id
+    order = _document(db_session, doc_type="work_order", created=_now() - timedelta(hours=1))
+    assert _status(db_session, task) == "work_order"
+    assert task.work_order_number == order.external_number
+    log = _log_rows(db_session, task)[0]
+    assert log.changes["task_source"]["new"] == "Заявка с сайта"

@@ -21,11 +21,23 @@ export async function POST(request: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   try {
-    const body = (await request.json()) as { call_id?: string; workshop_id?: string; employee_id?: string | null };
-    if (!body.call_id) return NextResponse.json({ error: "Не указан звонок" }, { status: 422 });
+    const body = (await request.json()) as {
+      call_id?: string | null;
+      lead_id?: string | null;
+      workshop_id?: string;
+      employee_id?: string | null;
+    };
+    if (!body.call_id && !body.lead_id) {
+      return NextResponse.json({ error: "Не указан звонок или заявка" }, { status: 422 });
+    }
     if (!body.workshop_id) return NextResponse.json({ error: "Выберите цех" }, { status: 422 });
     return NextResponse.json(
-      await createCrmTask(body.call_id, body.workshop_id, body.employee_id || null, { id: user.id, fullName: user.fullName }),
+      await createCrmTask(
+        { callId: body.call_id, leadId: body.lead_id },
+        body.workshop_id,
+        body.employee_id || null,
+        { id: user.id, fullName: user.fullName },
+      ),
     );
   } catch (err) {
     return cashErrorResponse(err);

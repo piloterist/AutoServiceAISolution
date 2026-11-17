@@ -49,6 +49,7 @@ const FIELD_LABELS: Record<string, string> = {
   comment: "Комментарий",
   work_order_number: "Заказ-наряд",
   // Задачи CRM
+  task_source: "Источник задачи",
   workshop_label: "Цех",
   employee_name: "Сотрудник",
   planned_date: "Дата контакта",

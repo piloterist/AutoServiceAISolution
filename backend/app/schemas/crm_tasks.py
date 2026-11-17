@@ -12,6 +12,9 @@ TaskStatus = Literal["control", "inspection", "thinking", "refused", "work_order
 class CrmTaskOut(BaseModel):
     id: uuid.UUID
     phone: str
+    # Откуда взята на контроль: звонок или заявка с сайта (call_at - время того или другого).
+    source: Literal["call", "lead"] = "call"
+    lead_id: uuid.UUID | None = None
     status: TaskStatus
     status_changed_at: datetime
     call_at: datetime
@@ -48,7 +51,9 @@ class CrmTaskListResponse(BaseModel):
 
 
 class CrmTaskCreateIn(BaseModel):
-    call_id: uuid.UUID
+    # Ровно одно из двух: звонок или заявка с сайта.
+    call_id: uuid.UUID | None = None
+    lead_id: uuid.UUID | None = None
     # Обязателен: без цеха на контроль не взять (проверяет сервис, чтобы ответ был «Выберите цех»).
     workshop_id: uuid.UUID | None = None
     # Необязателен; обязан работать в выбранном цехе.
@@ -112,6 +117,20 @@ class CrmTaskActionOut(BaseModel):
     created_at: datetime
 
 
+class CrmTaskLeadOut(BaseModel):
+    """Заявка с сайта, с которой взята задача: поля формы, фото, откуда пришла."""
+
+    id: uuid.UUID
+    source: str
+    phone: str
+    name: str | None
+    photos: list[str] | None
+    raw_payload: dict
+    request_meta: dict | None = None
+    site: str | None = None
+    created_at: datetime
+
+
 class CrmTaskDetailOut(BaseModel):
     """Окно лида: карточка, ссылки на заявку / заказ-наряд (если найдены) и комментарии."""
 
@@ -120,5 +139,7 @@ class CrmTaskDetailOut(BaseModel):
     work_order_id: uuid.UUID | None
     # Новые сверху.
     comments: list[CrmTaskCommentOut]
+    # Заявка с сайта (если задача взята с неё), с полями формы и фото.
+    lead: CrmTaskLeadOut | None = None
     # История запланированных действий, новые сверху.
     actions: list[CrmTaskActionOut] = []

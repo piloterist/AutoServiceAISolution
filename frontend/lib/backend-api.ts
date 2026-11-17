@@ -2407,6 +2407,9 @@ export type CrmTaskStatus = "control" | "inspection" | "thinking" | "refused" | 
 export type CrmTask = {
   id: string;
   phone: string;
+  // Откуда взята на контроль: звонок или заявка с сайта (call_at - время того или другого).
+  source: "call" | "lead";
+  lead_id: string | null;
   status: CrmTaskStatus;
   status_changed_at: string;
   call_at: string;
@@ -2452,11 +2455,25 @@ export type CrmTaskAction = {
 };
 
 /** The lead window: the card, links to the repair request / work order and the comments (newest first). */
+export type CrmTaskLead = {
+  id: string;
+  source: string;
+  phone: string;
+  name: string | null;
+  photos: string[] | null;
+  raw_payload: Record<string, unknown>;
+  request_meta: Record<string, string> | null;
+  site: string | null;
+  created_at: string;
+};
+
 export type CrmTaskDetail = {
   task: CrmTask;
   request_id: string | null;
   work_order_id: string | null;
   comments: CrmTaskComment[];
+  /** The website lead the task was taken from (form fields, photos, site), else null. */
+  lead: CrmTaskLead | null;
   /** History of the planned actions, newest first. */
   actions: CrmTaskAction[];
 };
@@ -2495,14 +2512,19 @@ export function getCrmTaskOverdueCount(workshopId?: string | null): Promise<CrmT
 }
 
 export function createCrmTask(
-  callId: string,
+  source: { callId?: string | null; leadId?: string | null },
   workshopId: string,
   employeeId: string | null,
   actor: Actor,
 ): Promise<{ task: CrmTask; created: boolean }> {
   return backendPost<{ task: CrmTask; created: boolean }>(
     "/api/v1/crm-tasks",
-    { call_id: callId, workshop_id: workshopId, employee_id: employeeId },
+    {
+      call_id: source.callId ?? null,
+      lead_id: source.leadId ?? null,
+      workshop_id: workshopId,
+      employee_id: employeeId,
+    },
     actorHeaders(actor),
   );
 }
