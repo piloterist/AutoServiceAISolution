@@ -374,28 +374,60 @@ def test_a_low_confidence_entry_does_not_create_a_planner_record(
     assert len(jobs) == 1 and jobs[0].plate == "Е747АО997"
 
 
-def test_a_re_entry_within_two_minutes_of_an_exit_is_not_counted(
+def test_a_re_entry_within_two_minutes_cancels_the_false_exit(
     client, auth_headers, bay_id, workshop, statuses, db_session
 ) -> None:
     _event_with_confidence(
-        client, auth_headers, bay_id, "entry_confirmed", "Е747АО997", 0.93, moment(12, 0)
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.93, moment(12, 0)
     )
+    job = db_session.scalars(select(WorkshopJob)).one()
     _event_with_confidence(
-        client, auth_headers, bay_id, "exit_confirmed", "Е747АО997", 0.93, moment(15, 46, 7)
+        client, auth_headers, bay_id, "exit_confirmed", "Т652АК977", 0.93, moment(15, 46, 7)
     )
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, job.id).status_id == statuses["Готова"].id
+
+    # Через 14 секунд «въезд» другого (кривого) номера: это та же машина, выезд был ложным.
     quick = _event_with_confidence(
-        client, auth_headers, bay_id, "entry_confirmed", "Е479АР77", 0.9, moment(15, 46, 50)
+        client, auth_headers, bay_id, "entry_confirmed", "А697ТТ77", 0.9, moment(15, 46, 21)
     )
     assert "не учтён" in quick["note"]
-    _event_with_confidence(
-        client, auth_headers, bay_id, "exit_confirmed", "Е479АР77", 0.9, moment(15, 47, 15)
-    )
-
-    assert len(db_session.scalars(select(BayOccupancy)).all()) == 1  # только настоящий заезд
+    db_session.expire_all()
+    intervals = db_session.scalars(select(BayOccupancy)).all()
+    assert len(intervals) == 1 and intervals[0].ended_at is None  # бокс снова занят
+    assert db_session.get(WorkshopJob, job.id).status_id == statuses["В работе"].id
     assert len(db_session.scalars(select(WorkshopJob)).all()) == 1
 
-    # Через три минуты после выезда въезд считается как обычно.
+    # Настоящий выезд закрывает тот же заезд; следующий въезд через три минуты считается.
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "Т652АК977", 0.93, moment(15, 47, 15)
+    )
+    db_session.expire_all()
+    assert db_session.scalars(select(BayOccupancy)).one().ended_at is not None
     _event_with_confidence(
         client, auth_headers, bay_id, "entry_confirmed", "Х123ХХ77", 0.9, moment(15, 51)
+    )
+    assert len(db_session.scalars(select(BayOccupancy)).all()) == 2
+
+
+def test_an_entry_while_the_bay_is_occupied_is_ignored_unless_it_is_a_confident_new_car(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.93, moment(12, 0)
+    )
+    # Кривое чтение (ниже 70 %) и тот же номер при занятом боксе - не новая машина.
+    low = _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "А697ТТ77", 0.45, moment(12, 5)
+    )
+    same = _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.95, moment(12, 6)
+    )
+    assert "без выезда" in low["note"] and "без выезда" in same["note"]
+    assert len(db_session.scalars(select(BayOccupancy)).all()) == 1
+
+    # Уверенный другой номер: выезд, видимо, пропущен - считаем, но на проверку.
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Х123ХХ77", 0.95, moment(12, 10)
     )
     assert len(db_session.scalars(select(BayOccupancy)).all()) == 2

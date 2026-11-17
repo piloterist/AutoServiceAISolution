@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.bay import (
+    EVENT_EXIT_CONFIRMED,
     ISSUE_NO_WORK_ORDER,
     ISSUE_RESOLVED_AUTO,
     ISSUE_RESOLVED_MANUAL,
@@ -41,7 +42,13 @@ from app.models.work_order import WorkOrder
 from app.models.workshop import WORKSHOP_TYPE_MECHANICAL, Workshop
 from app.models.workshop_job import WorkshopJob
 from app.services import audit_log_service
-from app.services.bay_service import SHOP_TZ, known_plates, normalize_plate, plate_from_description
+from app.services.bay_service import (
+    REENTRY_NOTE,
+    SHOP_TZ,
+    known_plates,
+    normalize_plate,
+    plate_from_description,
+)
 from app.services.planner_service import _JOB_LOGGED_FIELDS, ENTITY_WORKSHOP_JOB, _jsonable
 
 logger = structlog.get_logger(__name__)
@@ -240,7 +247,13 @@ def on_entry(db: Session, event: BayEvent) -> None:
         select(BayOccupancy).where(BayOccupancy.entry_event_id == event.id)
     ).first()
     bay = db.get(Bay, event.bay_id)
-    if interval is None or bay is None:
+    if interval is None:
+        # Въезд не создал заезда. Если он - возвращение машины, «уехавшей» раньше времени
+        # (REENTRY_NOTE), отменяем тот выезд: бокс снова занят прежней машиной.
+        if event.note and REENTRY_NOTE in event.note:
+            _cancel_false_exit(db, event)
+        return
+    if bay is None:
         return
     workshop = db.get(Workshop, bay.workshop_id)
     if workshop is not None and workshop.workshop_type == WORKSHOP_TYPE_MECHANICAL:
@@ -261,6 +274,40 @@ def on_entry(db: Session, event: BayEvent) -> None:
                 event.work_order_id = job.work_order_id  # заказ-наряд мог быть уже в плане
     if event.work_order_id is None:
         _open_issue(db, bay, event, interval)
+    db.commit()
+
+
+def _cancel_false_exit(db: Session, event: BayEvent) -> None:
+    """Выезд, после которого машина тут же «заехала» обратно, был ложным (номер закрыли люди и
+    т. п.): интервал занятости открывается снова, запись плана возвращается в «В работе»."""
+    exit_event = db.scalars(
+        select(BayEvent)
+        .where(
+            BayEvent.bay_id == event.bay_id,
+            BayEvent.event_type == EVENT_EXIT_CONFIRMED,
+            BayEvent.occurred_at <= event.occurred_at,
+        )
+        .order_by(BayEvent.occurred_at.desc())
+        .limit(1)
+    ).first()
+    if exit_event is None:
+        return
+    interval = db.scalars(
+        select(BayOccupancy).where(BayOccupancy.exit_event_id == exit_event.id)
+    ).first()
+    if interval is None:
+        return
+    interval.ended_at = None
+    interval.exit_event_id = None
+    note = "выезд отменён: машина вернулась в кадр"
+    exit_event.note = f"{exit_event.note}; {note}" if exit_event.note else note
+    if interval.workshop_job_id is not None:
+        job = db.get(WorkshopJob, interval.workshop_job_id)
+        in_work = _status(db, STATUS_IN_WORK)
+        if job is not None and in_work is not None and job.status_id != in_work.id:
+            before = _snapshot(job)
+            job.status_id = in_work.id
+            _log(db, job, before)
     db.commit()
 
 

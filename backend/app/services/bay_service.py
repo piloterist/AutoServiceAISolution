@@ -22,7 +22,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.bay import (
@@ -281,7 +281,12 @@ def event_out(event: BayEvent | None) -> dict | None:
 def _latest_event(db: Session, bay_id: uuid.UUID, event_type: str) -> BayEvent | None:
     return db.scalars(
         select(BayEvent)
-        .where(BayEvent.bay_id == bay_id, BayEvent.event_type == event_type)
+        .where(
+            BayEvent.bay_id == bay_id,
+            BayEvent.event_type == event_type,
+            # События, которые не учтены (шум), на карточке бокса не показываем.
+            or_(BayEvent.note.is_(None), ~BayEvent.note.contains(IGNORED_MARK)),
+        )
         .order_by(BayEvent.occurred_at.desc())
         .limit(1)
     ).first()
@@ -365,12 +370,18 @@ def list_bay_cards(db: Session, workshop_id: uuid.UUID | None = None) -> list[di
 
 
 # Въезд на том же боксе в течение этого срока после выезда не считается: это та же машина, у
-# которой выезд зафиксировался раньше времени (опустили подъёмник, закрыли номер), а не новая.
+# которой выезд зафиксировался раньше времени (опустили подъёмник, номер закрыли люди), а не
+# новая. Такой выезд отменяется (интервал занятости снова открыт), а въезд не создаёт ничего.
 REENTRY_GRACE = timedelta(minutes=2)
-REENTRY_NOTE = "повторный въезд менее чем через 2 минуты после выезда: не учтён"
+IGNORED_MARK = "не учтён"
+REENTRY_NOTE = f"въезд менее чем через 2 минуты после выезда: машина не уезжала, {IGNORED_MARK}"
+OCCUPIED_NOTE = f"въезд при занятом боксе без выезда: {IGNORED_MARK}"
+# Въезд при занятом боксе с меньшей уверенностью номера (или тем же номером) - шум, а не новая
+# машина. Уверенный въезд другого номера не отбрасываем: возможно, выезд был пропущен.
+OCCUPIED_NOISE_CONFIDENCE = 0.70
 
 
-def _is_quick_reentry(db: Session, bay_id: uuid.UUID, occurred_at: datetime) -> bool:
+def _quick_reentry_exit(db: Session, bay_id: uuid.UUID, occurred_at: datetime) -> BayEvent | None:
     previous_exit = db.scalars(
         select(BayEvent)
         .where(
@@ -381,7 +392,16 @@ def _is_quick_reentry(db: Session, bay_id: uuid.UUID, occurred_at: datetime) -> 
         .order_by(BayEvent.occurred_at.desc())
         .limit(1)
     ).first()
-    return previous_exit is not None and occurred_at - previous_exit.occurred_at <= REENTRY_GRACE
+    if previous_exit is not None and occurred_at - previous_exit.occurred_at <= REENTRY_GRACE:
+        return previous_exit
+    return None
+
+
+def _is_noise_while_occupied(open_interval: BayOccupancy, event: BayEvent) -> bool:
+    if event.ocr_confidence is not None and float(event.ocr_confidence) < OCCUPIED_NOISE_CONFIDENCE:
+        return True
+    same = open_interval.plate and event.plate and open_interval.plate[:6] == event.plate[:6]
+    return bool(same)
 
 
 def record_event(
@@ -420,9 +440,22 @@ def record_event(
     if event_type == EVENT_ENTRY_CONFIRMED:
         event.work_order_id = _work_order_id_for_plate(db, event.plate)
         # Только автоматические события: ручной ввод оператора всегда считается.
-        if source == "auto" and _is_quick_reentry(db, bay.id, occurred_at):
-            skip_interval = True
-            event.note = f"{event.note}; {REENTRY_NOTE}" if event.note else REENTRY_NOTE
+        if source == "auto":
+            open_now = db.scalars(
+                select(BayOccupancy)
+                .where(BayOccupancy.bay_id == bay.id, BayOccupancy.ended_at.is_(None))
+                .order_by(BayOccupancy.started_at.desc())
+                .limit(1)
+            ).first()
+            reason = None
+            if open_now is None:
+                if _quick_reentry_exit(db, bay.id, occurred_at) is not None:
+                    reason = REENTRY_NOTE
+            elif _is_noise_while_occupied(open_now, event):
+                reason = OCCUPIED_NOTE
+            if reason:
+                skip_interval = True
+                event.note = f"{event.note}; {reason}" if event.note else reason
     if image is not None:
         path = _event_path(bay.id, event.id)
         if _upload(db, bay.id, path, image, overwrite=False):
