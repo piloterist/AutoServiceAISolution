@@ -392,6 +392,28 @@ OCCUPIED_NOISE_CONFIDENCE = 0.70
 # машины с уверенным въездом и выездом.
 SAME_CAR_NOTE = f"повторный въезд той же машины за день: {IGNORED_MARK}"
 OTHER_CAR_CONFIDENCE = 0.70
+# Другая машина между двумя въездами - только если она простояла в боксе не меньше этого: короткий
+# «заезд» - ложное срабатывание (опустили подъёмник, номер закрыли), а не реальная машина.
+OTHER_CAR_MIN_STAY = timedelta(minutes=10)
+# Номера считаются одной машиной, если из первых 6 знаков (серия и цифры, без региона) совпадают
+# хотя бы 5 на тех же позициях, то есть расходится один знак: камера путает знак (2026-11-18:
+# «С151СС41» вместо «С151СА99», уверенно, на 9 кадрах, и это принимали за новую машину). 4 из 6
+# мало: Audi «К279КО» и Ford «К679ОО» того же дня - разные машины, а совпадают ровно на 4.
+PLATE_MATCH_MIN = 5
+# Только при поиске заезда этой же машины за день (повторный въезд, между которым не было другой
+# уверенной машины на 10+ минут) достаточно 4 из 6: там ошибиться в сторону «та же машина» дешевле.
+SAME_DAY_PLATE_MATCH_MIN = 4
+
+
+def plates_match(first: str | None, second: str | None, minimum: int = PLATE_MATCH_MIN) -> bool:
+    if not first or not second:
+        return False
+    a, b = first[:6], second[:6]
+    if a == b:
+        return True
+    if len(a) < 6 or len(b) < 6:
+        return False
+    return sum(x == y for x, y in zip(a, b, strict=True)) >= minimum
 
 
 def _confident(event: BayEvent | None) -> bool:
@@ -422,14 +444,11 @@ def same_car_interval(db: Session, event: BayEvent) -> BayOccupancy | None:
     ).all()
 
     def same_car(interval: BayOccupancy) -> bool:
-        if interval.plate and interval.plate[:6] == event.plate[:6]:
-            return True
         entry = db.get(BayEvent, interval.entry_event_id)
-        return bool(
-            event.work_order_id is not None
-            and entry is not None
-            and entry.work_order_id == event.work_order_id
-        )
+        order_id = entry.work_order_id if entry is not None else None
+        if event.work_order_id is not None and order_id is not None:
+            return order_id == event.work_order_id  # у обоих известен заказ-наряд: он и решает
+        return plates_match(interval.plate, event.plate, SAME_DAY_PLATE_MATCH_MIN)
 
     prior = next((i for i in intervals if same_car(i)), None)
     if prior is None:
@@ -437,6 +456,8 @@ def same_car_interval(db: Session, event: BayEvent) -> BayOccupancy | None:
     for other in intervals:
         if other.id == prior.id or other.started_at <= prior.started_at or same_car(other):
             continue
+        if other.ended_at - other.started_at < OTHER_CAR_MIN_STAY:
+            continue  # слишком коротко для настоящей машины
         if _confident(db.get(BayEvent, other.entry_event_id)) and _confident(
             db.get(BayEvent, other.exit_event_id) if other.exit_event_id else None
         ):
@@ -489,15 +510,13 @@ def _is_other_known_car(db: Session, event: BayEvent, last_exit: BayEvent) -> bo
     if event.work_order_id is not None and prior_order_id is not None:
         if prior_order_id != event.work_order_id:
             return True
-    differs = (event.plate or "")[:6] != (prior_plate or "")[:6]
-    return differs and _is_confident_read(event)
+    return not plates_match(event.plate, prior_plate) and _is_confident_read(event)
 
 
 def _is_noise_while_occupied(open_interval: BayOccupancy, event: BayEvent) -> bool:
     if event.ocr_confidence is not None and float(event.ocr_confidence) < OCCUPIED_NOISE_CONFIDENCE:
         return True
-    same = open_interval.plate and event.plate and open_interval.plate[:6] == event.plate[:6]
-    return bool(same)
+    return plates_match(open_interval.plate, event.plate)
 
 
 def record_event(

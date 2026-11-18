@@ -663,3 +663,62 @@ def test_a_confident_other_car_between_two_entries_makes_the_second_a_new_stay(
         select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")
     ).all()
     assert len(stays) == 2
+
+
+def test_a_misread_of_the_same_plate_with_a_matching_series_is_the_same_car(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    """2026-11-18: «С151СС41» (уверенно, 96 %) вместо «С151СА99» через 6 секунд после ложного
+    выезда открывал новый заезд: номера различались одним знаком из шести."""
+    _order(db_session, "ЗН-С151", "Skoda № С151СА99 VIN C")
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "С151СА99", 0.98, moment(16, 47)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "С151СА99", 0.98, moment(18, 7, 43)
+    )
+    body = {
+        "event_type": "entry_confirmed",
+        "plate": "С151СС41",
+        "ocr_confidence": 0.96,
+        "occurred_at": moment(18, 7, 49).isoformat(),
+        "note": "прочитано: С151СС41 (первые 6 символов: 96%, кадров: 9)",
+    }
+    response = client.post(f"/api/v1/bays/{bay_id}/events", json=body, headers=auth_headers)
+    assert response.status_code == 201
+    db_session.expire_all()
+    stays = db_session.scalars(select(BayOccupancy)).all()
+    assert len(stays) == 1 and stays[0].ended_at is None  # выезд отменён, заезд продолжается
+    assert len(db_session.scalars(select(WorkshopJob)).all()) == 1
+
+
+def test_a_short_stay_of_another_car_between_two_entries_is_not_a_car(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    for kind, plate, at in (
+        ("entry_confirmed", "С151СА99", moment(10, 0)),
+        ("exit_confirmed", "С151СА99", moment(11, 0)),
+        ("entry_confirmed", "К279КО777", moment(12, 0)),
+        ("exit_confirmed", "К279КО777", moment(12, 6)),  # 6 минут: ложное срабатывание
+        ("entry_confirmed", "С151СА99", moment(15, 0)),
+    ):
+        _event_with_confidence(client, auth_headers, bay_id, kind, plate, 0.95, at)
+    db_session.expire_all()
+    stays = db_session.scalars(
+        select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")
+    ).all()
+    assert len(stays) == 1 and stays[0].ended_at is None
+
+
+def test_plates_match_allows_one_wrong_character_of_six() -> None:
+    from app.services.bay_service import plates_match
+
+    assert plates_match("С151СА99", "С151СС41")  # 5 из 6
+    assert plates_match("С151СА99", "С151СА11")  # регион не считается
+    assert not plates_match("С151СА99", "С151ТТ77")  # 4 из 6 - уже другая машина
+    assert plates_match("С151СА99", "С151ТТ77", 4)  # а при поиске заезда за день достаточно
+    assert not plates_match("К279КО777", "К679ОО777")  # Audi и Ford 18.11: ровно 4 из 6
+    assert not plates_match("С151СА99", "М149РА11")  # 2 из 6
+    assert not plates_match("С151СА99", "К279КО777")
+    assert not plates_match("С151", "С151СА99")  # короткое чтение: только точное совпадение
+    assert not plates_match(None, "С151СА99")
