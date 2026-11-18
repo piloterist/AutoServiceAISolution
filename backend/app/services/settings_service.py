@@ -52,6 +52,7 @@ def update_app_settings(
     crm_task_warn_days: int = 1,
     crm_task_overdue_days: int = 3,
     crm_task_archive_days: int = 30,
+    control_posts_enabled: bool = False,
 ) -> AppSettings:
     settings = get_app_settings(db)
     settings.insurance_repair_type = insurance_repair_type
@@ -78,6 +79,7 @@ def update_app_settings(
     settings.crm_task_warn_days = crm_task_warn_days
     settings.crm_task_overdue_days = crm_task_overdue_days
     settings.crm_task_archive_days = crm_task_archive_days
+    settings.control_posts_enabled = control_posts_enabled
     db.commit()
     db.refresh(settings)
     return settings

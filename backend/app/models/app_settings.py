@@ -173,6 +173,13 @@ class AppSettings(Base):
     crm_task_archive_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=30, server_default="30"
     )
+    # Видеоконтроль боксов. Выключено (по умолчанию): камера, считав номер, ищет запись планировщика
+    # на ВСЕХ постах цеха и, найдя, начинает её на том посту, где она создана (на посту камеры
+    # ничего не начинается); не нашла - создаёт запись на своём посту. Включено: запись ищется
+    # только на посту камеры.
+    control_posts_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

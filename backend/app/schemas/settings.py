@@ -50,6 +50,8 @@ class AppSettingsResponse(BaseModel):
     crm_task_warn_days: int
     crm_task_overdue_days: int
     crm_task_archive_days: int
+    # Видеоконтроль: пост закреплён за записью - see models/app_settings.py.
+    control_posts_enabled: bool
 
     model_config = {"from_attributes": True}
 
@@ -86,6 +88,7 @@ class AppSettingsUpdate(BaseModel):
     crm_task_warn_days: int = Field(default=1, ge=1, le=365)
     crm_task_overdue_days: int = Field(default=3, ge=1, le=365)
     crm_task_archive_days: int = Field(default=30, ge=1, le=3650)
+    control_posts_enabled: bool = False
 
     @model_validator(mode="after")
     def _check_crm_task_days(self) -> "AppSettingsUpdate":

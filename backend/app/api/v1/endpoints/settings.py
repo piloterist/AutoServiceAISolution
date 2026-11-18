@@ -51,5 +51,6 @@ def write_settings(
         crm_task_warn_days=payload.crm_task_warn_days,
         crm_task_overdue_days=payload.crm_task_overdue_days,
         crm_task_archive_days=payload.crm_task_archive_days,
+        control_posts_enabled=payload.control_posts_enabled,
     )
     return AppSettingsResponse.model_validate(settings)

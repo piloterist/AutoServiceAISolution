@@ -16,6 +16,7 @@ from app.models.work_order import WorkOrder
 from app.models.workshop import Workshop
 from app.models.workshop_job import WorkshopJob
 from app.services import bay_planner
+from app.services.settings_service import get_app_settings
 
 DAY = date(2026, 11, 2)  # понедельник
 # Москва = UTC+3: 10:00 по цеху = 07:00 UTC
@@ -142,9 +143,32 @@ def test_a_car_that_came_early_still_finds_a_later_plan_of_the_day(
     assert len(_jobs(db_session, workshop)) == 1
 
 
-def test_other_post_or_other_plate_is_not_matched(
+def _control_posts(db, enabled: bool) -> None:
+    settings = get_app_settings(db)
+    settings.control_posts_enabled = enabled
+    db.commit()
+
+
+def test_with_posts_not_controlled_the_plan_is_found_on_any_post_and_started_there(
     client, auth_headers, db_session, workshop, statuses, bay_id
 ) -> None:
+    order = _order(db_session)
+    other_post = _job(
+        db_session, workshop, statuses["Запись"], time(10), time(11), "А612СМ", post=1, order=order
+    )
+
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+
+    db_session.expire_all()
+    job = db_session.get(WorkshopJob, other_post.id)
+    assert (job.post_number, job.status_id) == (1, statuses["В работе"].id)  # осталась на посту 1
+    assert len(_jobs(db_session, workshop)) == 1  # на посту камеры ничего не создано
+
+
+def test_other_post_or_other_plate_is_not_matched_when_posts_are_controlled(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _control_posts(db_session, True)
     order = _order(db_session)
     other_post = _job(
         db_session, workshop, statuses["Запись"], time(10), time(11), "А612СМ", post=1, order=order

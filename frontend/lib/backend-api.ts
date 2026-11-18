@@ -143,6 +143,8 @@ export type AppSettings = {
   crm_task_overdue_days: number;
   // Days after which a card in "Отказ" / "Заказ-наряд" goes to the board's archive.
   crm_task_archive_days: number;
+  // Видеоконтроль: true - запись ищется только на посту камеры; false - на всех постах цеха.
+  control_posts_enabled: boolean;
   // Касса: the locked period (both inclusive, "YYYY-MM-DD") - no cash entry
   // can be created, changed or deleted on those days. Both set or both null.
   cash_lock_from: string | null;

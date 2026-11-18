@@ -104,6 +104,7 @@ export function SettingsForm({
   const [crmTaskWarnDays, setCrmTaskWarnDays] = useState(String(initialSettings.crm_task_warn_days));
   const [crmTaskOverdueDays, setCrmTaskOverdueDays] = useState(String(initialSettings.crm_task_overdue_days));
   const [crmTaskArchiveDays, setCrmTaskArchiveDays] = useState(String(initialSettings.crm_task_archive_days));
+  const [controlPostsEnabled, setControlPostsEnabled] = useState(initialSettings.control_posts_enabled ?? false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [autoMatchState, setAutoMatchState] = useState<"idle" | "running" | "done" | "error">(
     "idle",
@@ -141,6 +142,7 @@ export function SettingsForm({
           crm_task_warn_days: Number(crmTaskWarnDays) || 1,
           crm_task_overdue_days: Number(crmTaskOverdueDays) || 3,
           crm_task_archive_days: Number(crmTaskArchiveDays) || 30,
+          control_posts_enabled: controlPostsEnabled,
         } satisfies AppSettings),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -529,6 +531,26 @@ export function SettingsForm({
           от попадания карточки в столбец. Рядом с трубкой в планировщике показывается число карточек
           цеха, дошедших хотя бы до розового срока. Карточки «Отказ» и «Заказ-наряд» старше срока
           архива скрываются с доски; вернуть их можно галкой «Показать архивные».
+        </p>
+      </div>
+
+      <div className="settings-subgroup">
+        <h3 className="settings-subgroup-title">Видеоконтроль боксов</h3>
+
+        <label className="settings-checkbox">
+          <input
+            type="checkbox"
+            checked={controlPostsEnabled}
+            onChange={(event) => setControlPostsEnabled(event.target.checked)}
+          />
+          Контролировать посты
+        </label>
+
+        <p className="settings-description">
+          Выключено: камера, считав номер, ищет запись планировщика на всех постах цеха. Нашла —
+          запись начинается («В работе») на том посту, где она создана, а на посту камеры ничего не
+          начинается; не нашла — создаётся запись на посту камеры. Включено: запись ищется только
+          на том посту, где стоит камера.
         </p>
       </div>
 

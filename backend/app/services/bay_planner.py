@@ -52,6 +52,7 @@ from app.services.bay_service import (
     plate_from_description,
 )
 from app.services.planner_service import _JOB_LOGGED_FIELDS, ENTITY_WORKSHOP_JOB, _jsonable
+from app.services.settings_service import get_app_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -155,30 +156,39 @@ def _fill_from_work_order(db: Session, job: WorkshopJob, work_order_id: uuid.UUI
 
 
 def _find_planned_job(
-    db: Session, workshop: Workshop, post: int, moment: datetime, prefix: str | None
+    db: Session,
+    workshop: Workshop,
+    post: int,
+    moment: datetime,
+    prefix: str | None,
+    *,
+    any_post: bool = False,
 ) -> WorkshopJob | None:
+    """Запись плана на этот номер. any_post: искать на всех постах цеха, а не только на `post`;
+    при совпадении записи на своём и чужом посту предпочитается своя."""
     if prefix is None:
         return None
     closed = {s.id for s in (_status(db, STATUS_DONE), _status(db, STATUS_CANCELLED)) if s}
-    jobs = db.scalars(
-        select(WorkshopJob).where(
-            WorkshopJob.workshop_id == workshop.id,
-            WorkshopJob.post_number == post,
-            WorkshopJob.job_date == moment.date(),
-        )
-    ).all()
+    conditions = [
+        WorkshopJob.workshop_id == workshop.id,
+        WorkshopJob.job_date == moment.date(),
+    ]
+    if not any_post:
+        conditions.append(WorkshopJob.post_number == post)
+    jobs = db.scalars(select(WorkshopJob).where(*conditions)).all()
     candidates = [
         job for job in jobs if job.status_id not in closed and _job_prefix(db, job) == prefix
     ]
     now = _minutes(moment.time())
 
-    def distance(job: WorkshopJob) -> tuple[int, int]:
+    def distance(job: WorkshopJob) -> tuple[int, int, int]:
         start, end = _minutes(job.start_time), _minutes(job.end_time)
+        other_post = 0 if job.post_number == post else 1
         if start <= now < end:
-            return 0, 0  # идёт сейчас
+            return 0, other_post, 0  # идёт сейчас
         if start > now:
-            return 1, start - now  # приехала раньше: ближайшая впереди
-        return 2, now - end  # опоздала: последняя из прошедших
+            return 1, other_post, start - now  # приехала раньше: ближайшая впереди
+        return 2, other_post, now - end  # опоздала: последняя из прошедших
 
     return min(candidates, key=distance) if candidates else None
 
@@ -260,9 +270,17 @@ def on_entry(db: Session, event: BayEvent) -> None:
     workshop = db.get(Workshop, bay.workshop_id)
     if workshop is not None and workshop.workshop_type == WORKSHOP_TYPE_MECHANICAL:
         moment = event.occurred_at.astimezone(SHOP_TZ)
-        job = _find_planned_job(db, workshop, bay.sort_order, moment, plate_prefix(event.plate))
+        track_posts = get_app_settings(db).control_posts_enabled
+        job = _find_planned_job(
+            db,
+            workshop,
+            bay.sort_order,
+            moment,
+            plate_prefix(event.plate),
+            any_post=not track_posts,
+        )
         if job is not None:
-            _start_job(db, job, event)
+            _start_job(db, job, event)  # запись начинается на своём посту, не переезжает
         elif event.ocr_confidence is not None and event.ocr_confidence < MIN_CONFIDENCE_FOR_NEW_JOB:
             # Номер, скорее всего, прочитан неверно: записи на несуществующую машину не плодим.
             event.note = (
