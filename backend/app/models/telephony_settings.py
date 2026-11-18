@@ -144,6 +144,12 @@ class TelephonySettings(Base):
     transcript_rewrite_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Лёгкая правка расшифровки через YandexGPT (опечатки, разметка говорящих). Отдельный платный
+    # запрос на каждый звонок, не нужный для определения темы; выключена по умолчанию
+    # (2026-11-18). Не действует, если включено преобразование диалога (оно заменяет правку).
+    transcript_adapt_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     # How often services/call_transcription_relay.py re-runs (once there is
     # something to do - transcribe/classify_calls_enabled/

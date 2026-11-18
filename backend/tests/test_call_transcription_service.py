@@ -38,6 +38,7 @@ def _settings(
     classify: bool = True,
     assess: bool = False,
     rewrite: bool = False,
+    adapt: bool = False,
     poll_interval_minutes: int = 10,
 ) -> TelephonySettings:
     return TelephonySettings(
@@ -55,6 +56,7 @@ def _settings(
         yandexgpt_model="yandexgpt-lite/latest",
         assess_quality_enabled=assess,
         transcript_rewrite_enabled=rewrite,
+        transcript_adapt_enabled=adapt,
         # Generous enough that none of these tests' own (real, unmocked)
         # execution time ever trips process_pending_calls's cycle-budget
         # check - see test_process_pending_calls_stops_early_when_cycle_
@@ -555,3 +557,24 @@ def test_process_pending_calls_stops_early_when_cycle_budget_exceeded(
     db_session.refresh(second)
     assert first.transcript_status is None
     assert second.transcript_status is None
+
+
+def test_adapt_runs_only_when_its_own_setting_is_on(monkeypatch, db_session: Session) -> None:
+    """Тема определяется по исходной расшифровке; платная правка GPT - отдельная галка."""
+    calls: list[str] = []
+    _patch_happy_path(monkeypatch)
+    monkeypatch.setattr(
+        yandexgpt_client,
+        "adapt_transcript",
+        lambda client, settings, text: calls.append(text) or "Правленый текст",
+    )
+
+    off = _call(db_session, link="rec-off")
+    svc.process_pending_calls(db_session, _settings(classify=True), limit=10, now=NOW)
+    db_session.refresh(off)
+    assert calls == [] and off.transcript_text == off.transcript_text_raw
+
+    on = _call(db_session, link="rec-on")
+    svc.process_pending_calls(db_session, _settings(classify=True, adapt=True), limit=10, now=NOW)
+    db_session.refresh(on)
+    assert len(calls) == 1 and on.transcript_text == "Правленый текст"

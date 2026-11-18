@@ -267,8 +267,10 @@ def _transcribe(
         row.transcript_text = yandexgpt_client.rewrite_transcript(
             gpt_client, gpt_settings, raw_text
         )
-    else:
+    elif settings.transcript_adapt_enabled:
         row.transcript_text = yandexgpt_client.adapt_transcript(gpt_client, gpt_settings, raw_text)
+    else:
+        row.transcript_text = raw_text  # тема определяется по исходной расшифровке, без правки
     row.transcript_status = TRANSCRIPT_STATUS_TRANSCRIBED
     row.transcript_error = None
     db.commit()

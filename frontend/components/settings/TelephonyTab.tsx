@@ -36,6 +36,9 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
   const [classifyCallsEnabled, setClassifyCallsEnabled] = useState(initialSettings.classify_calls_enabled);
   const [yandexgptModel, setYandexgptModel] = useState(initialSettings.yandexgpt_model);
   const [assessQualityEnabled, setAssessQualityEnabled] = useState(initialSettings.assess_quality_enabled);
+  const [transcriptAdaptEnabled, setTranscriptAdaptEnabled] = useState(
+    initialSettings.transcript_adapt_enabled ?? false,
+  );
   const [transcriptRewriteEnabled, setTranscriptRewriteEnabled] = useState(
     initialSettings.transcript_rewrite_enabled,
   );
@@ -88,6 +91,7 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
         yandexgpt_model: yandexgptModel,
         assess_quality_enabled: assessQualityEnabled,
         transcript_rewrite_enabled: transcriptRewriteEnabled,
+        transcript_adapt_enabled: transcriptAdaptEnabled,
         transcription_poll_interval_minutes: Number(transcriptionPollIntervalMinutes) || 10,
         transcription_batch_size: Number(transcriptionBatchSize) || 20,
       });
@@ -369,6 +373,21 @@ function ConnectionForm({ initialSettings }: { initialSettings: TelephonySetting
             Для каждого отвеченного звонка с расшифровкой запрашивает у YandexGPT краткий разбор и
             оценку по 10-балльной шкале — работает независимо от определения темы выше, использует
             тот же аккаунт Yandex Cloud.
+          </p>
+
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={transcriptAdaptEnabled}
+              onChange={(e) => setTranscriptAdaptEnabled(e.target.checked)}
+            />
+            Править расшифровку (YandexGPT)
+          </label>
+          <p className="settings-description">
+            Лёгкая правка расшифровки: опечатки и разметка говорящих. Отдельный платный запрос на
+            каждый звонок; тема и оценка определяются и без неё, по исходной расшифровке SpeechKit.
+            Выключено — расшифровка остаётся как есть. Не действует, если включено преобразование
+            диалога.
           </p>
 
           <label className="settings-checkbox">
