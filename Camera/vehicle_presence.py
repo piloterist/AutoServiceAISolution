@@ -25,6 +25,9 @@ MODEL_SHA256 = "c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063
 INPUT_SIZE = 640
 VEHICLE_CLASSES = {2: "car", 5: "bus", 7: "truck"}  # номера классов COCO (с нуля)
 STRIDES = (8, 16, 32)
+# Почти чёрный кадр (свет выключен, камера слепая): «машины нет» тут ничего не значит, поэтому
+# такой кадр не доказывает пустой бокс и выезд по нему не подтверждается.
+DARK_MEAN = 15.0
 
 
 def models_dir() -> Path:
@@ -70,6 +73,7 @@ class Presence:
     present: bool
     score: float = 0.0  # уверенность лучшей найденной машины
     area: float = 0.0  # её доля площади кадра
+    dark: bool = False  # кадр слишком тёмный: present=True лишь потому, что проверить нельзя
 
 
 def _grid() -> tuple[np.ndarray, np.ndarray]:
@@ -118,6 +122,8 @@ class VehiclePresence:
 
     def _check(self, frame) -> Presence:
         height, width = frame.shape[:2]
+        if float(cv2.resize(frame, (64, 36)).mean()) < DARK_MEAN:
+            return Presence(True, dark=True)
         ratio = min(INPUT_SIZE / height, INPUT_SIZE / width)
         new_h, new_w = int(round(height * ratio)), int(round(width * ratio))
         canvas = np.full((INPUT_SIZE, INPUT_SIZE, 3), 114, np.uint8)

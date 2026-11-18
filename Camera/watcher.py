@@ -355,7 +355,11 @@ class CameraWatcher(threading.Thread):
                                 log(
                                     f"{cam[id]}: проверка выезда кадром: машина в боксе "
                                     f"{ЕСТЬ if vehicle else нет} "
-                                    f"(уверенность {found.score:.2f}, доля кадра {found.area:.2f})"
+                                    + (
+                                        "(кадр тёмный, проверить нельзя)"
+                                        if found.dark
+                                        else f"(уверенность {found.score:.2f}, доля кадра {found.area:.2f})"
+                                    )
                                 )
                     events = tracker.update(now, det, frame, vehicle=vehicle)
                     if before == EMPTY and tracker.state != EMPTY:
