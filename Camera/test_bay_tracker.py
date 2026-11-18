@@ -18,11 +18,11 @@ class Run:
     def __init__(self, tracker):
         self.tracker, self.t, self.events = tracker, 0.0, []
 
-    def feed(self, seconds, detection=None, width=None, **kw):
+    def feed(self, seconds, detection=None, width=None, vehicle=None, **kw):
         for _ in range(round(seconds / DT)):
             d = detection if detection is not None else (det(width, **kw) if width else None)
             frame = f"w{width}" if width else "empty"
-            self.events += self.tracker.update(self.t, d, frame=frame)
+            self.events += self.tracker.update(self.t, d, frame=frame, vehicle=vehicle)
             self.t += DT
 
     def approach(self, start=110, end=330, seconds=5, text="T123YX199"):
@@ -148,6 +148,38 @@ class BayTrackerTest(unittest.TestCase):
         self.assertFalse(run.events[2].result.matched)
         self.assertEqual(run.events[2].result.plate, "Т123УХ199")
 
+    def test_the_same_car_read_with_a_shorter_region_is_not_an_exit(self):
+        # Номер въезда с регионом 977, перечитанный - без последней цифры региона: та же машина.
+        run = Run(BayTracker(TrackerConfig(), known=None))
+        parked(run)
+        for width in (250, 200, 150):
+            run.feed(1.0, width=width)
+        run.feed(14, width=330, text="E560KC97")
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed"])
+        self.assertEqual(run.tracker.state, PARKED)
+
+    def test_a_plate_that_vanishes_at_large_size_is_not_an_exit_for_a_while(self):
+        run = Run(tracker())
+        parked(run)
+        for width in (300, 250, 240, 240):  # сдвинулось/закрыли, но номер всё ещё крупный
+            run.feed(1.0, width=width)
+        self.assertEqual(run.tracker.state, LEAVING)
+        run.feed(120)  # номера нет две минуты
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed"])
+        run.feed(500)  # и ещё долго: бокс правда пуст
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed", "exit_confirmed"])
+
+    def test_an_unreliable_read_of_another_plate_is_not_a_new_car(self):
+        # 2026-11-18: капот/люди закрывают номер, читается мусор на 20-47 % - раньше это давало
+        # выезд и въезд «другой машины» по кругу.
+        run = Run(tracker())
+        parked(run)
+        for width in (250, 200, 150):
+            run.feed(1.0, width=width)
+        run.feed(25, width=330, text="M511AA99", sure=0.15)
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed"])
+        self.assertEqual(run.tracker.state, PARKED)
+
     def test_restart_with_occupied_bay_does_not_repeat_the_entry(self):
         run = Run(BayTracker(TrackerConfig(), known=KNOWN, occupied_plate="Е560КС977"))
         run.feed(15, width=330)
@@ -156,6 +188,59 @@ class BayTrackerTest(unittest.TestCase):
             run.feed(1.0, width=width)
         run.feed(25)
         self.assertEqual([e.kind for e in run.events], ["exit_confirmed"])
+
+    def _leaving(self, **kw):
+        run = Run(tracker(vehicle_check=True, **kw))
+        parked(run)
+        for width in (300, 250, 200, 150, 110, 90):  # машина уезжает, номер мельчает
+            run.feed(1.0, width=width)
+        self.assertEqual(run.tracker.state, LEAVING)
+        return run
+
+    def test_a_car_still_in_the_bay_blocks_the_exit_and_returns_to_parked(self):
+        run = self._leaving()
+        run.feed(25, vehicle=True)  # номер пропал, но детектор видит машину
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed"])
+        self.assertTrue(run.tracker.exit_check_due(run.t))
+        run.feed(40, vehicle=True)  # машина стоит давно: «уезжает» было ложным
+        self.assertEqual(run.tracker.state, PARKED)
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed"])
+
+    def test_an_empty_bay_confirms_the_exit_after_several_checks(self):
+        run = self._leaving()
+        run.feed(19, vehicle=False)  # до срока выезда проверки не считаются
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed"])
+        run.feed(3, vehicle=False)
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed", "exit_confirmed"])
+        self.assertEqual(run.tracker.state, EMPTY)
+
+    def test_a_vehicle_seen_between_empty_checks_restarts_the_count(self):
+        run = self._leaving(vehicle_empty_checks=3)
+        run.feed(21)  # дошли до срока выезда, проверок ещё не было
+        run.tracker.update(run.t, None, vehicle=False)
+        run.tracker.update(run.t + 1, None, vehicle=False)
+        run.tracker.update(run.t + 2, None, vehicle=True)  # мигнуло: машина
+        run.tracker.update(run.t + 3, None, vehicle=False)
+        run.tracker.update(run.t + 4, None, vehicle=False)
+        self.assertEqual(run.tracker.state, LEAVING)
+        events = run.tracker.update(run.t + 5, None, vehicle=False)
+        self.assertEqual([e.kind for e in events], ["exit_confirmed"])
+
+    def test_a_check_that_never_answers_does_not_block_the_exit_forever(self):
+        run = self._leaving()
+        run.feed(100)  # проверка не отвечает (vehicle=None)
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed"])
+        run.feed(60)
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed", "exit_confirmed"])
+
+    def test_without_the_vehicle_check_nothing_changes(self):
+        run = Run(tracker())  # vehicle_check выключен
+        parked(run)
+        for width in (300, 250, 200, 150, 110, 90):
+            run.feed(1.0, width=width)
+        run.feed(25, vehicle=True)  # ответ игнорируется
+        self.assertEqual([e.kind for e in run.events], ["entry_confirmed", "exit_confirmed"])
+        self.assertFalse(run.tracker.exit_check_due(run.t))
 
     def test_known_plates_may_be_passed_as_a_plain_dict(self):
         run = Run(BayTracker(TrackerConfig(), known={"Е560КС977": "ЗН-1"}))

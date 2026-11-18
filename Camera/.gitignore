@@ -2,3 +2,5 @@
 .venv/
 captures/
 __pycache__/
+installer/dist/
+models/

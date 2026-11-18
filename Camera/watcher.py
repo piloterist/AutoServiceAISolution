@@ -18,6 +18,7 @@ import httpx
 import bay_events as be
 from bay_tracker import EMPTY, BayTracker, Event, TrackerConfig
 from plate_pipeline import PlatePipeline, jpeg_bytes
+from vehicle_presence import VehiclePresence, ensure_model
 from read_log import ReadLog
 from stream_check import build_url, get_password, open_capture
 
@@ -32,6 +33,7 @@ WORK_MARGIN = timedelta(minutes=30)  # кадр шлём в рабочие ча�
 HEARTBEAT_SEC = 30
 CAMERA_STALE_SEC = 20  # кадров не было столько - камера считается недоступной
 ACTIVE_HOLD_SEC = 5  # после номера или движения в боксе столько секунд держим полную частоту
+VEHICLE_CHECK_SEC = 2.0  # как часто проверяем «машина в боксе», пока выезд ждёт подтверждения
 
 
 def log(message: str) -> None:
@@ -98,6 +100,14 @@ class CameraWatcher(threading.Thread):
         }
         self.tracker_fields = {"exit_hold_sec": float(defaults.get("exit_hold_sec", 20)), **tracker_fields}
         self.roi = camera.get("detect_roi") or None
+        # Проверка кадром, что машина не осталась в боксе (vehicle_presence.py): выезд по номеру
+        # подтверждается, только когда в зоне бокса машины нет.
+        self.vehicle_check = bool(detection.get("vehicle_check", True))
+        self.vehicle_params = {
+            "min_score": float(detection.get("vehicle_min_score", 0.25)),
+            "min_area": float(detection.get("vehicle_min_area", 0.10)),
+            "zone": camera.get("vehicle_zone") or None,
+        }
         self.backend, self.headers = backend, headers
         self.outbox: deque[dict] = deque(maxlen=MAX_OUTBOX)
         self.known: dict[str, str] = {}
@@ -195,6 +205,8 @@ class CameraWatcher(threading.Thread):
             note = f"заказ-наряд {result.work_order_number}{fixed}; {note}"
         if not entry:
             note = f"выезд по треку номера; {note}"
+            if event.extra:
+                note = f"{note}; {event.extra}"
         body = {
             "event_type": event.kind,
             "plate": result.plate,
@@ -218,6 +230,24 @@ class CameraWatcher(threading.Thread):
             f"(по базе: {result.matched}, надёжно: {result.reliable}) - {result.summary}"
         )
 
+    def _load_presence(self) -> VehiclePresence | None:
+        """Детектор «машина в боксе» или None: нет модели - выезд подтверждается только по номеру."""
+        cam = self.camera["id"]
+        if not self.vehicle_check:
+            log(f"{cam}: проверка выезда кадром выключена настройкой")
+            return None
+        model = ensure_model()
+        if model is None:
+            log(f"{cam}: модель детектора машин недоступна, выезд подтверждается только по номеру")
+            return None
+        try:
+            presence = VehiclePresence(model, **self.vehicle_params)
+        except Exception as exc:  # noqa: BLE001 - сбой модели не должен останавливать наблюдение
+            log(f"{cam}: детектор машин не запустился ({type(exc).__name__}), проверка выезда кадром отключена")
+            return None
+        log(f"{cam}: проверка выезда кадром включена (машина в боксе не даст подтвердить выезд)")
+        return presence
+
     # ---- основной цикл -------------------------------------------------------------
 
     def stop(self) -> None:
@@ -227,6 +257,7 @@ class CameraWatcher(threading.Thread):
         cam = self.camera
         log(f"{cam['id']}: загружаю модели распознавания номера...")
         pipeline = PlatePipeline(roi=self.roi)
+        presence = self._load_presence()
         conn = be.connect()
         readlog = ReadLog(cam["id"])
         threading.Thread(target=self._heartbeat_loop, name="heartbeat", daemon=True).start()
@@ -240,6 +271,8 @@ class CameraWatcher(threading.Thread):
         failures = 0
         last_frame_post = 0.0
         last_processed = 0.0
+        last_vehicle_check = 0.0
+        last_vehicle_seen: bool | None = None
         active_until = 0.0
         log(f"{cam['id']}: наблюдение запущено, {self.fps:g} кадр/с, область детектора: {self.roi or 'весь кадр'}")
         with self._client() as client:
@@ -295,7 +328,10 @@ class CameraWatcher(threading.Thread):
                     if tracker is None:
                         occupied = self.occupied_plate
                         tracker = BayTracker(
-                            TrackerConfig(frame_width=float(frame.shape[1]), **self.tracker_fields),
+                            TrackerConfig(
+                                frame_width=float(frame.shape[1]),
+                                **{**self.tracker_fields, "vehicle_check": presence is not None},
+                            ),
                             known=self.known,
                             occupied_plate=occupied,
                         )
@@ -303,7 +339,25 @@ class CameraWatcher(threading.Thread):
                     tracker.known = self.known
                     before = tracker.state
                     det = pipeline.detect(frame)
-                    events = tracker.update(now, det, frame)
+                    vehicle = None
+                    if (
+                        presence is not None
+                        and det is None
+                        and now - last_vehicle_check >= VEHICLE_CHECK_SEC
+                        and tracker.exit_check_due(now)
+                    ):
+                        last_vehicle_check = now
+                        found = presence.check(frame)
+                        if found is not None:
+                            vehicle = found.present
+                            if vehicle != last_vehicle_seen:
+                                last_vehicle_seen = vehicle
+                                log(
+                                    f"{cam[id]}: проверка выезда кадром: машина в боксе "
+                                    f"{ЕСТЬ if vehicle else нет} "
+                                    f"(уверенность {found.score:.2f}, доля кадра {found.area:.2f})"
+                                )
+                    events = tracker.update(now, det, frame, vehicle=vehicle)
                     if before == EMPTY and tracker.state != EMPTY:
                         track += 1
                     if det is not None or tracker.state != EMPTY:
