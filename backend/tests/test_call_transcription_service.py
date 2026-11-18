@@ -156,9 +156,12 @@ def test_find_pending_calls_includes_classified_call_still_missing_quality_score
     classified_unassessed.topic_tag = TOPIC_SAMPLE
     db_session.commit()
 
-    pending = svc.find_pending_calls(db_session, limit=10, now=NOW)
-
+    pending = svc.find_pending_calls(db_session, limit=10, now=NOW, assess=True)
     assert [c.id for c in pending] == [classified_unassessed.id]
+
+    # With quality assessment off such rows are not work: they must not fill the batch and
+    # starve newer calls (2026-11-18).
+    assert svc.find_pending_calls(db_session, limit=10, now=NOW) == []
 
 
 def test_process_pending_calls_transcribes_and_classifies(monkeypatch, db_session: Session) -> None:

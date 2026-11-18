@@ -126,7 +126,9 @@ def _yandexgpt_settings(settings: TelephonySettings) -> YandexGPTSettings:
     )
 
 
-def find_pending_calls(db: Session, limit: int, *, now: datetime | None = None) -> list[CallRecord]:
+def find_pending_calls(
+    db: Session, limit: int, *, now: datetime | None = None, assess: bool = False
+) -> list[CallRecord]:
     """Answered calls with real talk time, from today or yesterday only
     (Moscow calendar - see MAX_CALL_AGE_DAYS), that still need
     transcribing, classifying, and/or quality-assessing - oldest first, so a
@@ -157,9 +159,17 @@ def find_pending_calls(db: Session, limit: int, *, now: datetime | None = None) 
                 or_(
                     CallRecord.transcript_status.is_(None),
                     CallRecord.transcript_status == TRANSCRIPT_STATUS_TRANSCRIBED,
-                    and_(
-                        CallRecord.transcript_status == TRANSCRIPT_STATUS_CLASSIFIED,
-                        CallRecord.quality_score.is_(None),
+                    # Classified rows matter only when quality assessment is on; otherwise they
+                    # fill the whole batch (oldest first) and starve newer calls (2026-11-18).
+                    *(
+                        [
+                            and_(
+                                CallRecord.transcript_status == TRANSCRIPT_STATUS_CLASSIFIED,
+                                CallRecord.quality_score.is_(None),
+                            )
+                        ]
+                        if assess
+                        else []
                     ),
                 ),
             )
@@ -346,7 +356,7 @@ def process_pending_calls(
     this skips is simply left for the next cycle - nothing here marks it
     failed, same as a transient per-row failure."""
     stats = ProcessStats()
-    rows = find_pending_calls(db, limit, now=now)
+    rows = find_pending_calls(db, limit, now=now, assess=settings.assess_quality_enabled)
     if not rows:
         return stats
 
