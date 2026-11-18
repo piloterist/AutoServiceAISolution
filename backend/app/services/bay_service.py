@@ -285,7 +285,13 @@ def _latest_event(db: Session, bay_id: uuid.UUID, event_type: str) -> BayEvent |
             BayEvent.bay_id == bay_id,
             BayEvent.event_type == event_type,
             # События, которые не учтены (шум), на карточке бокса не показываем.
-            or_(BayEvent.note.is_(None), ~BayEvent.note.contains(IGNORED_MARK)),
+            or_(
+                BayEvent.note.is_(None),
+                ~(
+                    BayEvent.note.contains(IGNORED_MARK)
+                    | BayEvent.note.contains(CANCELLED_EXIT_MARK)
+                ),
+            ),
         )
         .order_by(BayEvent.occurred_at.desc())
         .limit(1)
@@ -374,6 +380,8 @@ def list_bay_cards(db: Session, workshop_id: uuid.UUID | None = None) -> list[di
 # новая. Такой выезд отменяется (интервал занятости снова открыт), а въезд не создаёт ничего.
 REENTRY_GRACE = timedelta(minutes=2)
 IGNORED_MARK = "не учтён"
+# Выезд, отменённый, когда машина тут же вернулась в кадр (bay_planner._cancel_false_exit).
+CANCELLED_EXIT_MARK = "выезд отменён"
 REENTRY_NOTE = f"въезд менее чем через 2 минуты после выезда: машина не уезжала, {IGNORED_MARK}"
 OCCUPIED_NOTE = f"въезд при занятом боксе без выезда: {IGNORED_MARK}"
 # Въезд при занятом боксе с меньшей уверенностью номера (или тем же номером) - шум, а не новая

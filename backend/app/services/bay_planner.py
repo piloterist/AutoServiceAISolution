@@ -45,6 +45,7 @@ from app.models.workshop import WORKSHOP_TYPE_MECHANICAL, Workshop
 from app.models.workshop_job import WorkshopJob
 from app.services import audit_log_service
 from app.services.bay_service import (
+    CANCELLED_EXIT_MARK,
     REENTRY_NOTE,
     SHOP_TZ,
     known_plates,
@@ -319,7 +320,7 @@ def _cancel_false_exit(db: Session, event: BayEvent) -> None:
         return
     interval.ended_at = None
     interval.exit_event_id = None
-    note = "выезд отменён: машина вернулась в кадр"
+    note = f"{CANCELLED_EXIT_MARK}: машина вернулась в кадр"
     exit_event.note = f"{exit_event.note}; {note}" if exit_event.note else note
     if interval.workshop_job_id is not None:
         job = db.get(WorkshopJob, interval.workshop_job_id)

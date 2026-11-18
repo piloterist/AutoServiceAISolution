@@ -569,3 +569,22 @@ def test_a_confidently_read_different_plate_is_a_new_car_even_without_a_work_ord
     db_session.expire_all()
     intervals = db_session.scalars(select(BayOccupancy).order_by(BayOccupancy.started_at)).all()
     assert len(intervals) == 2 and intervals[0].ended_at is not None
+
+
+def test_the_bay_card_does_not_show_a_cancelled_exit(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.93, moment(12, 0)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "Т652АК977", 0.93, moment(15, 46, 7)
+    )
+    # Через 14 секунд «въезд» кривого номера: выезд ложный и отменяется.
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "А697ТТ77", 0.9, moment(15, 46, 21)
+    )
+    bays = client.get(f"/api/v1/bays?workshop_id={workshop.id}", headers=auth_headers).json()
+    card = next(b for b in bays["bays"] if b["id"] == bay_id)
+    assert card["last_exit"] is None  # единственный выезд отменён
+    assert card["last_entry"]["plate"] == "Т652АК977"
