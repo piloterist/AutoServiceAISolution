@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import { DateInput } from "@/components/DateInput";
 import { CallRecordingPlayer } from "@/components/telephony/CallRecordingPlayer";
+import { PutOnControlButton } from "@/components/telephony/PutOnControlButton";
 import {
   CallEventsTable,
   TOPIC_UNDETERMINED,
@@ -570,7 +571,14 @@ export function ConversionView({
                         <TopicCell event={call} onOpenTranscript={setTranscriptEvent} />
                       </td>
                       <td>
-                        <CallRecordingPlayer callId={call.call_id} hasRecording={call.has_recording} />
+                        <span className="call-actions">
+                          <CallRecordingPlayer callId={call.call_id} hasRecording={call.has_recording} />
+                          <PutOnControlButton
+                            callId={call.call_id}
+                            client={call.client}
+                            callWorkshopId={call.workshop_id}
+                          />
+                        </span>
                       </td>
                       <td>
                         {group.request_id ? (
