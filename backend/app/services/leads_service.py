@@ -276,7 +276,10 @@ def request_meta_from(headers: Mapping[str, str], client_host: str | None) -> di
 
 
 def create_lead(
-    db: Session, payload: dict[str, Any], request_meta: dict[str, Any] | None = None
+    db: Session,
+    payload: dict[str, Any],
+    request_meta: dict[str, Any] | None = None,
+    uploaded_photos: list[tuple[str, bytes]] | None = None,
 ) -> WebsiteLead:
     phone = _normalize_phone(payload.get("user_phone"))
     if len(phone) < 10:
@@ -298,7 +301,8 @@ def create_lead(
     # background (archive_lead_photos_from_urls), so the site's form never waits.
     lead_id = uuid.uuid4()
     disk_token = telephony_settings_service.get_telephony_settings(db).yandex_disk_token
-    inline_photos = _extract_inline_photos(payload)
+    # Фото из multipart-формы (file[]) - те же байты в руках, что и inline `photos_data`.
+    inline_photos = _extract_inline_photos(payload) + list(uploaded_photos or [])
     photos = (
         lead_photos_service.archive_photo_bytes(inline_photos, lead_id, disk_token) or None
         if inline_photos

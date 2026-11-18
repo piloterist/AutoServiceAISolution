@@ -45,6 +45,8 @@ const FIELD_LABELS: Record<string, string> = {
   quiz_budget: "Ориентир по бюджету",
   quiz_budget_sum: "Сумма бюджета",
   quiz_messenger: "Мессенджер",
+  question: "Вопрос",
+  evacuate_address: "Адрес эвакуации",
 };
 
 // Reading order for the known fields above - context (where/what form)

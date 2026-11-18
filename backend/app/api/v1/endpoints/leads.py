@@ -10,13 +10,13 @@ here still uses the normal `verify_api_token`, same as the rest of the app.
 """
 
 import mimetypes
+import re
 import uuid
 from typing import Any
 
 from fastapi import (
     APIRouter,
     BackgroundTasks,
-    Body,
     Depends,
     Header,
     HTTPException,
@@ -25,6 +25,8 @@ from fastapi import (
     status,
 )
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile
 
 from app.api.deps import verify_api_token
 from app.db.session import get_db
@@ -46,6 +48,7 @@ from app.services import (
     telephony_settings_service,
     yandex_disk_client,
 )
+from app.services.lead_intake_normalizer import normalize_site_fields
 from app.services.leads_service import LeadRejected
 from app.services.yandex_disk_client import YaDiskError
 
@@ -100,44 +103,80 @@ def _lead_out(item: leads_service.LeadWithStatus) -> WebsiteLeadOut:
 # ---- Приём с сайта (отдельная авторизация) --------------------------------
 
 
+MAX_UPLOADED_PHOTOS = 10
+MAX_PHOTO_BYTES = 12 * 1024 * 1024
+
+
+def _safe_filename(name: str, index: int) -> str:
+    """Имя файла из формы - только безопасные символы (оно попадает в путь на Яндекс.Диске и в
+    адрес фото), без каталогов."""
+    base = re.split(r"[\/]", name or "")[-1].strip()
+    cleaned = re.sub(r"[^\w.\- ]+", "_", base, flags=re.UNICODE).strip(" .")
+    return cleaned or f"photo-{index + 1}.jpg"
+
+
+async def _read_intake_body(request: Request) -> tuple[dict[str, Any], list[tuple[str, bytes]]]:
+    """Тело заявки: JSON (наш формат) или форма (urlencoded / multipart, как шлёт сайт на Webflow).
+    Из формы файлы (file[], file, любые части с файлом) отдаём отдельно, пустые поля без файла
+    пропускаем."""
+    content_type = request.headers.get("content-type", "").lower()
+    if "json" in content_type or not content_type:
+        try:
+            body = await request.json()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Body is not valid JSON"
+            ) from exc
+        if not isinstance(body, dict):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Body must be an object"
+            )
+        return body, []
+
+    form = await request.form()
+    fields: dict[str, Any] = {}
+    photos: list[tuple[str, bytes]] = []
+    for key in form.keys():
+        values = form.getlist(key)
+        files = [v for v in values if isinstance(v, UploadFile)]
+        if files:
+            for upload in files:
+                if not upload.filename or len(photos) >= MAX_UPLOADED_PHOTOS:
+                    continue
+                content = await upload.read()
+                if content and len(content) <= MAX_PHOTO_BYTES:
+                    photos.append((_safe_filename(upload.filename, len(photos)), content))
+            continue
+        fields[key] = values[0] if len(values) == 1 else list(values)
+    return fields, photos
+
+
 @router.post("/intake", status_code=status.HTTP_201_CREATED)
-def intake_lead(
+async def intake_lead(
     request: Request,
     background_tasks: BackgroundTasks,
-    payload: dict[str, Any] = Body(...),
     db: Session = Depends(get_db),
     authorization: str | None = Header(default=None),
 ) -> dict[str, str]:
-    """A plain `def` endpoint on purpose (unlike most of this router, which
-    doesn't need to care either way) - FastAPI then runs this on Starlette's
-    own request threadpool, same as every other synchronous route in this
-    app (see db/session.py's own docstring). That pool is separate from the
-    raw asyncio default executor the 4 always-on background relays (see
-    app/main.py's lifespan) share via their own `asyncio.to_thread` calls -
-    this endpoint used to `await asyncio.to_thread(...)` here too (to avoid
-    blocking the event loop while archiving photos, see lead_photos_service),
-    which put it in direct contention for that SAME shared executor: a
-    relay cycle mid-SpeechKit-poll (services/call_transcription_service._
-    transcribe's own sleep loop, now longer since the 2026-10-05 adapt_
-    transcript/full-model changes) occupies one of only
-    min(32, cpu_count+4) threads for minutes at a time, so an incoming
-    lead could queue behind it even with zero photos of its own to
-    archive - confirmed as the cause of intermittent 10-15s site-side
-    hangs reported 2026-10-06 (occurred on photo-less submissions too,
-    which ruled out archive_photos' own per-photo network calls as the
-    cause)."""
+    """Приём заявки с сайта: JSON (формат WordPress-сайта) или обычная форма / multipart (сайты
+    на Webflow и др.); имена полей приводятся к нашим (lead_intake_normalizer), фото могут
+    прийти файлами прямо в запросе.
+
+    Блокирующую работу (база, Яндекс.Диск) выполняем в `run_in_threadpool`, то есть в том же пуле
+    потоков Starlette, где идут обычные `def`-эндпоинты, а не в общем executor asyncio: его
+    занимают фоновые циклы расшифровки звонков (см. прежнее описание этого эндпоинта и
+    db/session.py), заявка с сайта не должна ждать за ними (10-15 с зависаний формы 2026-10-06)."""
     token = authorization.removeprefix("Bearer ").strip() if authorization else None
-    if not leads_service.verify_intake_token(db, token):
+    if not await run_in_threadpool(leads_service.verify_intake_token, db, token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid intake token")
 
+    raw, uploaded = await _read_intake_body(request)
+    payload = normalize_site_fields(raw)
+    meta = leads_service.request_meta_from(
+        request.headers, request.client.host if request.client else None
+    )
     try:
-        lead = leads_service.create_lead(
-            db,
-            payload,
-            leads_service.request_meta_from(
-                request.headers, request.client.host if request.client else None
-            ),
-        )
+        lead = await run_in_threadpool(leads_service.create_lead, db, payload, meta, uploaded)
     except LeadRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)

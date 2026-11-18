@@ -796,3 +796,113 @@ def test_site_is_taken_from_the_wordpress_user_agent(client, db_session, auth_he
     db_session.commit()
     listed = client.get(LEADS_URL, headers=auth_headers).json()["leads"]
     assert listed[0]["site"] == "second-site.ru"
+
+
+# ---- заявки с сайта на Webflow: форма / multipart, свои имена полей, фото файлами ----------
+
+WEBFLOW_QUIZ = {
+    "required_fields": "Phone number",
+    "Страница": "https://panmotors77.ru/quiz",
+    "Форма": "Кузов",
+    "Bamper": "on",
+    "Kapot": "on",
+    "No photo": "on",
+    "Evakuator": "Нет",
+    "Summa": "500000",
+    "Budget": "Мой бюджет",
+    "Gift": "Покраска",
+    "message": "Telegram",
+    "Phone number": "+7 (000) 000-00-00",
+}
+
+
+def _form_lead(client, data=None, files=None, headers=None):
+    return client.post(
+        INTAKE_URL,
+        data=data,
+        files=files,
+        headers={"Authorization": "Bearer test-intake-token", **(headers or {})},
+    )
+
+
+def test_a_webflow_form_is_understood_without_the_sites_field_names(client, db_session) -> None:
+    _enable_intake(db_session)
+    response = _form_lead(client, data=WEBFLOW_QUIZ)  # urlencoded
+    assert response.status_code == 201, response.text
+    lead = db_session.get(WebsiteLead, uuid.UUID(response.json()["id"]))
+    assert lead.phone == "0000000000" and lead.source == "quiz_body"
+    payload = lead.raw_payload
+    assert payload["page_url"] == "https://panmotors77.ru/quiz"
+    assert payload["form_name"] == "Кузов"
+    assert set(payload["quiz_damage"].values()) == {"Бампер", "Капот"}
+    assert (payload["quiz_budget"], payload["quiz_budget_sum"]) == ("Мой бюджет", "500000")
+    assert (payload["quiz_gift"], payload["quiz_messenger"]) == ("Покраска", "Telegram")
+    # Служебное и сопоставленное не дублируется под старыми именами.
+    for stale in ("required_fields", "Phone number", "Bamper", "Форма", "Страница"):
+        assert stale not in payload
+
+
+def test_multipart_with_an_empty_file_part_and_php_style_names_is_accepted(
+    client, db_session
+) -> None:
+    _enable_intake(db_session)
+    # PHP превращает пробелы в именах полей в подчёркивания; пустой file[] - как у браузера без фото.
+    data = {
+        "Phone_2": "8 900 111-22-33",
+        "Name_2": "Иван",
+        "advchannel": "yandex",
+        "Форма": "evacuator",
+    }
+    files = {"file[]": ("", b"", "application/octet-stream")}
+    response = _form_lead(client, data=data, files=files)
+    assert response.status_code == 201, response.text
+    lead = db_session.get(WebsiteLead, uuid.UUID(response.json()["id"]))
+    assert lead.phone == "9001112233" and lead.name == "Иван"
+    assert lead.raw_payload["adv_channel"] == "yandex"
+    assert lead.photos is None
+
+
+def test_photos_in_a_multipart_request_are_taken_without_the_files_folder_scheme(
+    client, db_session, monkeypatch
+) -> None:
+    from app.services import lead_photos_service
+
+    _enable_intake(db_session)
+    seen: dict = {}
+
+    def fake_archive(photos, lead_id, token):
+        seen["names"] = [name for name, _ in photos]
+        return [f"/api/leads/{lead_id}/photos/{name}" for name, _ in photos]
+
+    monkeypatch.setattr(lead_photos_service, "archive_photo_bytes", fake_archive)
+    files = [
+        ("file[]", ("../evil name.jpg", b"\xff\xd8jpeg-1", "image/jpeg")),
+        ("file[]", ("", b"", "application/octet-stream")),
+        ("file[]", ("second.png", b"\x89PNGdata", "image/png")),
+    ]
+    response = _form_lead(client, data={"Phone number": "+7 900 000-11-22"}, files=files)
+    assert response.status_code == 201, response.text
+    lead = db_session.get(WebsiteLead, uuid.UUID(response.json()["id"]))
+    assert seen["names"] == ["evil name.jpg", "second.png"]  # без каталога, пустой part пропущен
+    assert len(lead.photos) == 2
+
+
+def test_the_old_json_format_is_unchanged_and_a_form_without_phone_is_still_rejected(
+    client, db_session
+) -> None:
+    _enable_intake(db_session)
+    ok = client.post(
+        INTAKE_URL,
+        json={"user_phone": "+7 (900) 123-45-67", "form_name": "Рассрочка", "adv_channel": "ya"},
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+    assert ok.status_code == 201
+    lead = db_session.get(WebsiteLead, uuid.UUID(ok.json()["id"]))
+    assert lead.source == "installment" and lead.raw_payload["adv_channel"] == "ya"
+    assert _form_lead(client, data={"Name": "Без телефона"}).status_code == 422
+    assert (
+        client.post(
+            INTAKE_URL, json=["не объект"], headers={"Authorization": "Bearer test-intake-token"}
+        ).status_code
+        == 422
+    )
