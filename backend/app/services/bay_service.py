@@ -397,6 +397,33 @@ def _quick_reentry_exit(db: Session, bay_id: uuid.UUID, occurred_at: datetime) -
     return None
 
 
+_CONSENSUS = re.compile(r"первые 6 символов: (\d+)%, кадров: (\d+)")
+# Номер, считанный стабильно на многих кадрах, - реальная машина, а не мусорное чтение.
+CONSENSUS_MIN_PERCENT = 90
+CONSENSUS_MIN_FRAMES = 5
+
+
+def _is_confident_read(event: BayEvent) -> bool:
+    match = _CONSENSUS.search(event.note or "")
+    return bool(
+        match
+        and int(match.group(1)) >= CONSENSUS_MIN_PERCENT
+        and int(match.group(2)) >= CONSENSUS_MIN_FRAMES
+    )
+
+
+def _is_other_known_car(db: Session, event: BayEvent, last_exit: BayEvent) -> bool:
+    """Въезд сразу после выезда - другая машина, а не возврат уехавшей: у номера другой
+    заказ-наряд в базе либо номер стабильно считан на многих кадрах и отличается от уехавшего.
+    Заказ-наряды есть не у всех машин, поэтому одного этого признака мало."""
+    if event.work_order_id is not None:
+        exit_order_id = _work_order_id_for_plate(db, last_exit.plate)
+        if exit_order_id is not None and exit_order_id != event.work_order_id:
+            return True
+    differs = (event.plate or "")[:6] != (last_exit.plate or "")[:6]
+    return differs and _is_confident_read(event)
+
+
 def _is_noise_while_occupied(open_interval: BayOccupancy, event: BayEvent) -> bool:
     if event.ocr_confidence is not None and float(event.ocr_confidence) < OCCUPIED_NOISE_CONFIDENCE:
         return True
@@ -449,7 +476,11 @@ def record_event(
             ).first()
             reason = None
             if open_now is None:
-                if _quick_reentry_exit(db, bay.id, occurred_at) is not None:
+                last_exit = _quick_reentry_exit(db, bay.id, occurred_at)
+                # Въезд с номером, которому в базе соответствует ДРУГОЙ заказ-наряд, - это новая
+                # машина, а не возврат уехавшей (2026-11-18: Audi уехала, через минуту заехал
+                # Ford, и выезд Audi был ошибочно отменён).
+                if last_exit is not None and not _is_other_known_car(db, event, last_exit):
                     reason = REENTRY_NOTE
             elif _is_noise_while_occupied(open_now, event):
                 reason = OCCUPIED_NOTE

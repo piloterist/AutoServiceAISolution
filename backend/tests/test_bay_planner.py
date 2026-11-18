@@ -498,3 +498,50 @@ def test_a_fresh_node_or_a_manual_occupancy_is_never_closed_automatically(
     bay_planner.tick(db_session, now=moment(23, 0))
     manual = db_session.scalars(select(BayOccupancy).where(BayOccupancy.plate == "О805КТ977")).one()
     assert manual.ended_at is None
+
+
+def test_a_quick_entry_of_a_different_known_car_is_a_new_car_not_a_return(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    """2026-11-18: Audi уехала, через минуту заехал Ford с другим заказ-нарядом. Выезд Audi
+    нельзя отменять, а Ford - это новый заезд."""
+    _order(db_session, "ЗН-AUDI", "Audi № К279КО777 VIN A")
+    _order(db_session, "ЗН-FORD", "Ford № К679ОО777 VIN B")
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "К279КО777", 0.97, moment(13, 5)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "К279КО777", 0.97, moment(14, 20, 57)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "К679ОО777", 0.76, moment(14, 21, 53)
+    )
+    db_session.expire_all()
+    intervals = db_session.scalars(
+        select(BayOccupancy).order_by(BayOccupancy.started_at)
+    ).all()
+    assert len(intervals) == 2
+    assert intervals[0].ended_at is not None  # выезд Audi остался в силе
+    assert intervals[1].ended_at is None and intervals[1].plate.startswith("К679ОО")
+
+
+def test_a_confidently_read_different_plate_is_a_new_car_even_without_a_work_order(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "К279КО777", 0.97, moment(13, 5)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "К279КО777", 0.97, moment(14, 20)
+    )
+    body = {
+        "event_type": "entry_confirmed",
+        "plate": "М111ММ77",
+        "ocr_confidence": 0.9,
+        "occurred_at": moment(14, 21).isoformat(),
+        "note": "прочитано: М111ММ77 (первые 6 символов: 100%, кадров: 10)",
+    }
+    assert client.post(f"/api/v1/bays/{bay_id}/events", json=body, headers=auth_headers).status_code == 201
+    db_session.expire_all()
+    intervals = db_session.scalars(select(BayOccupancy).order_by(BayOccupancy.started_at)).all()
+    assert len(intervals) == 2 and intervals[0].ended_at is not None
