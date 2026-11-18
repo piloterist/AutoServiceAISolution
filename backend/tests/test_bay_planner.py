@@ -588,3 +588,30 @@ def test_the_bay_card_does_not_show_a_cancelled_exit(
     card = next(b for b in bays["bays"] if b["id"] == bay_id)
     assert card["last_exit"] is None  # единственный выезд отменён
     assert card["last_entry"]["plate"] == "Т652АК977"
+
+
+def test_a_quick_reentry_is_compared_with_the_car_the_exit_closed_not_the_exit_plate(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    """2026-11-18: выезд записан с криво прочитанным номером, а потом хорошо считанный номер той же
+    машины принимали за новую машину и плодили второй заезд."""
+    _order(db_session, "ЗН-С151", "Skoda № С151СА99 VIN C")
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "С151СА99", 0.98, moment(16, 47)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "С151АА11", 0.29, moment(17, 26, 30)
+    )
+    body = {
+        "event_type": "entry_confirmed",
+        "plate": "С151СА99",
+        "ocr_confidence": 0.86,
+        "occurred_at": moment(17, 28, 4).isoformat(),
+        "note": "прочитано: С151СА11 (первые 6 символов: 99%, кадров: 9)",
+    }
+    response = client.post(f"/api/v1/bays/{bay_id}/events", json=body, headers=auth_headers)
+    assert response.status_code == 201
+    db_session.expire_all()
+    intervals = db_session.scalars(select(BayOccupancy)).all()
+    assert len(intervals) == 1 and intervals[0].ended_at is None  # тот же заезд, выезд отменён
+    assert len(db_session.scalars(select(WorkshopJob)).all()) == 1

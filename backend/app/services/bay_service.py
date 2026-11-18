@@ -424,11 +424,17 @@ def _is_other_known_car(db: Session, event: BayEvent, last_exit: BayEvent) -> bo
     """Въезд сразу после выезда - другая машина, а не возврат уехавшей: у номера другой
     заказ-наряд в базе либо номер стабильно считан на многих кадрах и отличается от уехавшего.
     Заказ-наряды есть не у всех машин, поэтому одного этого признака мало."""
-    if event.work_order_id is not None:
-        exit_order_id = _work_order_id_for_plate(db, last_exit.plate)
-        if exit_order_id is not None and exit_order_id != event.work_order_id:
+    # Сравниваем с машиной, которую выезд закрыл (номер её заезда), а не с номером самого выезда:
+    # у выезда он мог быть считан криво (2026-11-18: «С151АА11» вместо «С151СА99»).
+    interval = db.scalars(
+        select(BayOccupancy).where(BayOccupancy.exit_event_id == last_exit.id)
+    ).first()
+    prior_plate = (interval.plate if interval is not None else None) or last_exit.plate
+    prior_order_id = _work_order_id_for_plate(db, prior_plate)
+    if event.work_order_id is not None and prior_order_id is not None:
+        if prior_order_id != event.work_order_id:
             return True
-    differs = (event.plate or "")[:6] != (last_exit.plate or "")[:6]
+    differs = (event.plate or "")[:6] != (prior_plate or "")[:6]
     return differs and _is_confident_read(event)
 
 
