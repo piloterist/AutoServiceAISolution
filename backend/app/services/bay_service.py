@@ -387,6 +387,61 @@ OCCUPIED_NOTE = f"въезд при занятом боксе без выезд�
 # Въезд при занятом боксе с меньшей уверенностью номера (или тем же номером) - шум, а не новая
 # машина. Уверенный въезд другого номера не отбрасываем: возможно, выезд был пропущен.
 OCCUPIED_NOISE_CONFIDENCE = 0.70
+# За один день у бокса не бывает двух заездов одной машины: повторный въезд тот же машины
+# цепляется к её заезду (выезд между ними был ложным), если между ними в боксе не было другой
+# машины с уверенным въездом и выездом.
+SAME_CAR_NOTE = f"повторный въезд той же машины за день: {IGNORED_MARK}"
+OTHER_CAR_CONFIDENCE = 0.70
+
+
+def _confident(event: BayEvent | None) -> bool:
+    return (
+        event is not None
+        and event.ocr_confidence is not None
+        and float(event.ocr_confidence) > OTHER_CAR_CONFIDENCE
+    )
+
+
+def same_car_interval(db: Session, event: BayEvent) -> BayOccupancy | None:
+    """Закрытый заезд этой же машины в этом боксе за день события, к которому надо прицепить
+    повторный въезд; None, если такого нет или между ними была другая машина (уверенно)."""
+    if not event.plate:
+        return None
+    day_start = datetime.combine(
+        event.occurred_at.astimezone(SHOP_TZ).date(), time.min, tzinfo=SHOP_TZ
+    )
+    intervals = db.scalars(
+        select(BayOccupancy)
+        .where(
+            BayOccupancy.bay_id == event.bay_id,
+            BayOccupancy.started_at >= day_start,
+            BayOccupancy.started_at <= event.occurred_at,
+            BayOccupancy.ended_at.is_not(None),
+        )
+        .order_by(BayOccupancy.started_at.desc())
+    ).all()
+
+    def same_car(interval: BayOccupancy) -> bool:
+        if interval.plate and interval.plate[:6] == event.plate[:6]:
+            return True
+        entry = db.get(BayEvent, interval.entry_event_id)
+        return bool(
+            event.work_order_id is not None
+            and entry is not None
+            and entry.work_order_id == event.work_order_id
+        )
+
+    prior = next((i for i in intervals if same_car(i)), None)
+    if prior is None:
+        return None
+    for other in intervals:
+        if other.id == prior.id or other.started_at <= prior.started_at or same_car(other):
+            continue
+        if _confident(db.get(BayEvent, other.entry_event_id)) and _confident(
+            db.get(BayEvent, other.exit_event_id) if other.exit_event_id else None
+        ):
+            return None  # между въездами была другая машина
+    return prior
 
 
 def _quick_reentry_exit(db: Session, bay_id: uuid.UUID, occurred_at: datetime) -> BayEvent | None:
@@ -489,7 +544,9 @@ def record_event(
                 .limit(1)
             ).first()
             reason = None
-            if open_now is None:
+            if open_now is None and same_car_interval(db, event) is not None:
+                reason = SAME_CAR_NOTE
+            elif open_now is None:
                 last_exit = _quick_reentry_exit(db, bay.id, occurred_at)
                 # Въезд с номером, которому в базе соответствует ДРУГОЙ заказ-наряд, - это новая
                 # машина, а не возврат уехавшей (2026-11-18: Audi уехала, через минуту заехал

@@ -615,3 +615,51 @@ def test_a_quick_reentry_is_compared_with_the_car_the_exit_closed_not_the_exit_p
     intervals = db_session.scalars(select(BayOccupancy)).all()
     assert len(intervals) == 1 and intervals[0].ended_at is None  # тот же заезд, выезд отменён
     assert len(db_session.scalars(select(WorkshopJob)).all()) == 1
+
+
+def test_the_same_car_returning_the_same_day_continues_its_stay_however_long_the_gap(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    _order(db_session, "ЗН-С151", "Skoda № С151СА99 VIN C")
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "С151СА99", 0.98, moment(10, 0)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "С151СА99", 0.98, moment(11, 0)
+    )
+    # Слабое чтение другой машины (мусор) между ними машиной не считается.
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "М511АА99", 0.47, moment(12, 0)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "М511АА99", 0.47, moment(12, 1)
+    )
+    event = _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "С151СА99", 0.98, moment(15, 0)
+    )
+    assert "не учтён" in event["note"]
+    db_session.expire_all()
+    stays = db_session.scalars(
+        select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")
+    ).all()
+    assert len(stays) == 1 and stays[0].ended_at is None and stays[0].started_at.hour == 7
+    jobs = db_session.scalars(select(WorkshopJob).where(WorkshopJob.plate == "С151СА99")).all()
+    assert len(jobs) == 1 and jobs[0].status_id == statuses["В работе"].id
+
+
+def test_a_confident_other_car_between_two_entries_makes_the_second_a_new_stay(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    for kind, plate, at in (
+        ("entry_confirmed", "С151СА99", moment(10, 0)),
+        ("exit_confirmed", "С151СА99", moment(11, 0)),
+        ("entry_confirmed", "К279КО777", moment(12, 0)),
+        ("exit_confirmed", "К279КО777", moment(13, 0)),
+        ("entry_confirmed", "С151СА99", moment(15, 0)),
+    ):
+        _event_with_confidence(client, auth_headers, bay_id, kind, plate, 0.95, at)
+    db_session.expire_all()
+    stays = db_session.scalars(
+        select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")
+    ).all()
+    assert len(stays) == 2

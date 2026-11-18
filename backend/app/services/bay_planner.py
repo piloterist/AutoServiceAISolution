@@ -47,10 +47,12 @@ from app.services import audit_log_service
 from app.services.bay_service import (
     CANCELLED_EXIT_MARK,
     REENTRY_NOTE,
+    SAME_CAR_NOTE,
     SHOP_TZ,
     known_plates,
     normalize_plate,
     plate_from_description,
+    same_car_interval,
 )
 from app.services.planner_service import _JOB_LOGGED_FIELDS, ENTITY_WORKSHOP_JOB, _jsonable
 from app.services.settings_service import get_app_settings
@@ -263,7 +265,7 @@ def on_entry(db: Session, event: BayEvent) -> None:
     if interval is None:
         # Въезд не создал заезда. Если он - возвращение машины, «уехавшей» раньше времени
         # (REENTRY_NOTE), отменяем тот выезд: бокс снова занят прежней машиной.
-        if event.note and REENTRY_NOTE in event.note:
+        if event.note and (REENTRY_NOTE in event.note or SAME_CAR_NOTE in event.note):
             _cancel_false_exit(db, event)
         return
     if bay is None:
@@ -301,22 +303,26 @@ def on_entry(db: Session, event: BayEvent) -> None:
 def _cancel_false_exit(db: Session, event: BayEvent) -> None:
     """Выезд, после которого машина тут же «заехала» обратно, был ложным (номер закрыли люди и
     т. п.): интервал занятости открывается снова, запись плана возвращается в «В работе»."""
-    exit_event = db.scalars(
-        select(BayEvent)
-        .where(
-            BayEvent.bay_id == event.bay_id,
-            BayEvent.event_type == EVENT_EXIT_CONFIRMED,
-            BayEvent.occurred_at <= event.occurred_at,
-        )
-        .order_by(BayEvent.occurred_at.desc())
-        .limit(1)
-    ).first()
-    if exit_event is None:
-        return
-    interval = db.scalars(
-        select(BayOccupancy).where(BayOccupancy.exit_event_id == exit_event.id)
-    ).first()
-    if interval is None:
+    interval = same_car_interval(db, event) if SAME_CAR_NOTE in (event.note or "") else None
+    if interval is not None:
+        exit_event = db.get(BayEvent, interval.exit_event_id) if interval.exit_event_id else None
+    else:
+        exit_event = db.scalars(
+            select(BayEvent)
+            .where(
+                BayEvent.bay_id == event.bay_id,
+                BayEvent.event_type == EVENT_EXIT_CONFIRMED,
+                BayEvent.occurred_at <= event.occurred_at,
+            )
+            .order_by(BayEvent.occurred_at.desc())
+            .limit(1)
+        ).first()
+        if exit_event is None:
+            return
+        interval = db.scalars(
+            select(BayOccupancy).where(BayOccupancy.exit_event_id == exit_event.id)
+        ).first()
+    if interval is None or exit_event is None:
         return
     interval.ended_at = None
     interval.exit_event_id = None
