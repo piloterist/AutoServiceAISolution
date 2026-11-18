@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 
 import structlog
@@ -31,10 +31,12 @@ from app.models.bay import (
     ISSUE_NO_WORK_ORDER,
     ISSUE_RESOLVED_AUTO,
     ISSUE_RESOLVED_MANUAL,
+    REVIEW_NEEDS,
     Bay,
     BayEvent,
     BayIssue,
     BayOccupancy,
+    CameraStatus,
 )
 from app.models.department import Department
 from app.models.slesarka_status import SlesarkaStatus
@@ -388,9 +390,53 @@ def _resolve_found_work_orders(db: Session) -> int:
     return resolved
 
 
+# Если узел камеры не выходил на связь дольше этого срока, открытый заезд закрывается сам: пока
+# узел выключен (ночью, сломался), он ничего не видит, а при запуске узел принимает «бокс занят»
+# за правду и не замечает, что машина уехала или стоит уже другая. После закрытия узел стартует
+# с «бокс свободен» и сам увидит то, что стоит в боксе.
+NODE_OFFLINE_CLOSE = timedelta(hours=3)
+OFFLINE_NOTE = "узел видеоконтроля не был на связи больше 3 часов: заезд закрыт автоматически"
+
+
+def _close_orphaned(db: Session, now: datetime) -> int:
+    rows = db.execute(
+        select(BayOccupancy, Bay)
+        .join(Bay, Bay.id == BayOccupancy.bay_id)
+        .where(BayOccupancy.ended_at.is_(None), Bay.camera_code.is_not(None))
+    ).all()
+    closed = 0
+    for interval, bay in rows:
+        status = db.get(CameraStatus, bay.camera_code)
+        if status is None or now - status.seen_at < NODE_OFFLINE_CLOSE:
+            continue
+        entry = db.get(BayEvent, interval.entry_event_id)
+        if entry is not None and entry.source == "manual":
+            continue  # заезд, введённый оператором руками, узел не касается
+        ended = max(status.seen_at, interval.started_at)
+        exit_event = BayEvent(
+            bay_id=bay.id,
+            event_type=EVENT_EXIT_CONFIRMED,
+            occurred_at=ended,
+            plate=interval.plate,
+            review_status=REVIEW_NEEDS,
+            source="auto",
+            note=OFFLINE_NOTE,
+        )
+        db.add(exit_event)
+        db.flush()
+        interval.ended_at = ended
+        interval.exit_event_id = exit_event.id
+        db.flush()
+        on_exit(db, exit_event)  # запись плана - «Готова»
+        closed += 1
+    return closed
+
+
 def tick(db: Session, now: datetime | None = None) -> tuple[int, int]:
     """(записей продлено, ошибок закрыто автоматически)."""
-    extended = _extend_open_jobs(db, now or datetime.now(UTC))
+    now = now or datetime.now(UTC)
+    _close_orphaned(db, now)
+    extended = _extend_open_jobs(db, now)
     resolved = _resolve_found_work_orders(db)
     db.commit()
     return extended, resolved

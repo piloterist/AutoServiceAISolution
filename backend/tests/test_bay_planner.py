@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.bay import BayIssue, BayOccupancy
+from app.models.bay import Bay, BayIssue, BayOccupancy, CameraStatus
 from app.models.department import Department
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.work_order import WorkOrder
@@ -431,3 +431,70 @@ def test_an_entry_while_the_bay_is_occupied_is_ignored_unless_it_is_a_confident_
         client, auth_headers, bay_id, "entry_confirmed", "Х123ХХ77", 0.95, moment(12, 10)
     )
     assert len(db_session.scalars(select(BayOccupancy)).all()) == 2
+
+
+def _node_seen(db, code, at):
+    db.add(CameraStatus(camera_code=code, seen_at=at, camera_ok=True, camera_ok_since=at))
+    db.commit()
+
+
+def test_an_occupancy_is_closed_when_the_node_has_been_offline_for_over_three_hours(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    db_session.get(Bay, uuid.UUID(bay_id)).camera_code = "cam2"
+    db_session.commit()
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.93, moment(18, 19)
+    )
+    _node_seen(db_session, "cam2", moment(18, 52))
+
+    # Через два с половиной часа узла нет, но это ещё не повод закрывать.
+    bay_planner.tick(db_session, now=moment(21, 20))
+    assert db_session.scalars(select(BayOccupancy)).one().ended_at is None
+
+    # Утром узел так и не отвечал: заезд закрывается временем последнего сигнала узла.
+    bay_planner.tick(db_session, now=moment(21, 0).replace(day=3, hour=6))
+    interval = db_session.scalars(select(BayOccupancy)).one()
+    assert interval.ended_at is not None
+    assert interval.ended_at.replace(tzinfo=UTC) == moment(18, 52)
+    job = db_session.scalars(select(WorkshopJob)).one()
+    assert job.status_id == statuses["Готова"].id
+
+
+def test_a_fresh_node_or_a_manual_occupancy_is_never_closed_automatically(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    db_session.get(Bay, uuid.UUID(bay_id)).camera_code = "cam2"
+    db_session.commit()
+    _node_seen(db_session, "cam2", moment(18, 52))
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.93, moment(18, 19)
+    )
+    bay_planner.tick(db_session, now=moment(20, 30))  # узел был 1 ч 38 мин назад: ждём
+    assert db_session.scalars(select(BayOccupancy)).one().ended_at is None
+
+    # Заезд, введённый оператором, при выключенном узле остаётся.
+    response = client.post(
+        f"/api/v1/bays/{bay_id}/events",
+        json={
+            "event_type": "exit_confirmed",
+            "plate": "Т652АК977",
+            "source": "manual",
+            "occurred_at": moment(19, 31).isoformat(),
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    client.post(
+        f"/api/v1/bays/{bay_id}/events",
+        json={
+            "event_type": "entry_confirmed",
+            "plate": "О805КТ977",
+            "source": "manual",
+            "occurred_at": moment(20, 0).isoformat(),
+        },
+        headers=auth_headers,
+    )
+    bay_planner.tick(db_session, now=moment(23, 0))
+    manual = db_session.scalars(select(BayOccupancy).where(BayOccupancy.plate == "О805КТ977")).one()
+    assert manual.ended_at is None
