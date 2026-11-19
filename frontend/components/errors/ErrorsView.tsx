@@ -32,20 +32,32 @@ function formatPhone(phone: string | null): string {
   return `+7 ${digits.slice(0, 3)} ${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8, 10)}`;
 }
 
+// Подписи видов ошибок видеоконтроля. Текст самой ошибки (message) приходит с бэкенда готовым;
+// новый вид без подписи здесь показывается без ярлыка, а не ломает лист.
+const ISSUE_KIND_LABEL: Record<string, string> = {
+  no_work_order: "Нет заказ-наряда",
+  no_body_plan: "Нет в плане кузовного",
+  exit_without_entry: "Выезд без въезда",
+};
+
 function IssueHead({ issue }: { issue: BayIssue }) {
+  const kindLabel = ISSUE_KIND_LABEL[issue.kind];
   return (
     <>
       <div className="errors-title">
         {issue.plate ?? "Номер не распознан"} · {issue.bay_name}
+        {kindLabel ? <span className="gate-flag gate-flag--down"> {kindLabel}</span> : null}
       </div>
       <div className="errors-sub">
-        {issue.workshop_label} · заехала {formatDateTime(issue.occurred_at)}
+        {issue.workshop_label} · {issue.kind === "exit_without_entry" ? "выехала" : "заехала"}{" "}
+        {formatDateTime(issue.occurred_at)}
       </div>
     </>
   );
 }
 
-/** Лист «Ошибки» (product ask, 2026-11-05): каждая машина в боксе должна быть с заказ-нарядом.
+/** Лист «Ошибки» (product ask, 2026-11-05): каждая машина в боксе должна быть с заказ-нарядом;
+ * у ворот кузовного - с записью в плане (2026-11-19: «нет в плане», «выезд без въезда»).
  * Нет заказ-наряда - здесь появляется ошибка; управляющий оформляет заказ-наряд (ошибка
  * закроется сама) или отмечает «Исправлено». Исправленные уходят вниз серыми. */
 export function ErrorsView({ initialIssues }: { initialIssues: BayIssue[] }) {
@@ -167,7 +179,7 @@ export function ErrorsView({ initialIssues }: { initialIssues: BayIssue[] }) {
         </>
       )}
 
-      <h2 className="errors-subtitle">Машины в боксе без заказ-наряда</h2>
+      <h2 className="errors-subtitle">Видеоконтроль: боксы и ворота</h2>
       {open.length === 0 ? (
         <p className="errors-empty">Неисправленных ошибок нет.</p>
       ) : (

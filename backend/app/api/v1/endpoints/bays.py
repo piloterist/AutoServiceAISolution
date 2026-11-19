@@ -16,9 +16,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import verify_api_token
 from app.db.session import get_db
 from app.models.bay import (
+    BAY_KIND_GATE,
     EVENT_ENTRY_CONFIRMED,
     EVENT_EXIT_CONFIRMED,
     SNAPSHOT_DONE,
+    Bay,
     BaySnapshotRequest,
 )
 from app.schemas.bays import (
@@ -32,6 +34,11 @@ from app.schemas.bays import (
     BayIssueSummary,
     BaysResponse,
     BayUpdate,
+    GateStayCreate,
+    GateStayExit,
+    GateStayOut,
+    GateStaysResponse,
+    GateStayUpdate,
     HeartbeatIn,
     KnownPlatesResponse,
     LatestFrameIn,
@@ -39,7 +46,7 @@ from app.schemas.bays import (
     SnapshotRequestOut,
     SnapshotResult,
 )
-from app.services import bay_planner, bay_service
+from app.services import bay_planner, bay_service, gate_service
 
 router = APIRouter(prefix="/bays", tags=["bays"], dependencies=[Depends(verify_api_token)])
 
@@ -70,7 +77,11 @@ def read_bays(workshop_id: uuid.UUID | None = None, db: Session = Depends(get_db
 def create_bay(payload: BayCreate, db: Session = Depends(get_db)) -> BaysResponse:
     try:
         bay_service.create_bay(
-            db, workshop_id=payload.workshop_id, name=payload.name, camera_code=payload.camera_code
+            db,
+            workshop_id=payload.workshop_id,
+            name=payload.name,
+            camera_code=payload.camera_code,
+            kind=payload.kind,
         )
     except bay_service.BayNotFound as exc:
         raise _not_found(exc) from exc
@@ -88,6 +99,72 @@ def create_default_bays(workshop_id: uuid.UUID, db: Session = Depends(get_db)) -
 
 # Static paths below are declared before the /{bay_id} ones so they are not
 # swallowed by the UUID path parameter.
+
+
+@router.get("/gate/stays", response_model=GateStaysResponse)
+def read_gate_stays(
+    workshop_id: uuid.UUID | None = None,
+    status_filter: Literal["inside", "all"] = Query("inside", alias="status"),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    db: Session = Depends(get_db),
+) -> GateStaysResponse:
+    """Кузовной цех: «Сейчас в цехе» (status=inside) и история заездов за период (status=all)."""
+    return GateStaysResponse(
+        stays=gate_service.list_stays(
+            db,
+            workshop_id=workshop_id,
+            inside_only=status_filter == "inside",
+            date_from=date_from,
+            date_to=date_to,
+        )
+    )
+
+
+@router.post("/gate/stays", response_model=GateStayOut, status_code=status.HTTP_201_CREATED)
+def create_gate_stay(payload: GateStayCreate, db: Session = Depends(get_db)) -> GateStayOut:
+    """Ручной въезд: машина без номера или заезд, которого камера не увидела."""
+    try:
+        stay = gate_service.create_manual_stay(
+            db,
+            payload.bay_id,
+            plate=payload.plate,
+            label=payload.label,
+            entered_at=payload.entered_at,
+        )
+    except bay_service.BayNotFound as exc:
+        raise _not_found(exc) from exc
+    except bay_service.InvalidEvent as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return GateStayOut(**gate_service.stay_out(db, stay))
+
+
+@router.post("/gate/stays/{stay_id}/exit", response_model=GateStayOut)
+def exit_gate_stay(
+    stay_id: uuid.UUID, payload: GateStayExit, db: Session = Depends(get_db)
+) -> GateStayOut:
+    """Ручной выезд."""
+    try:
+        stay = gate_service.exit_stay(db, stay_id, exited_at=payload.exited_at)
+    except (gate_service.StayNotFound, bay_service.BayNotFound) as exc:
+        raise _not_found(exc) from exc
+    except bay_service.InvalidEvent as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return GateStayOut(**gate_service.stay_out(db, stay))
+
+
+@router.patch("/gate/stays/{stay_id}", response_model=GateStayOut)
+def update_gate_stay(
+    stay_id: uuid.UUID, payload: GateStayUpdate, db: Session = Depends(get_db)
+) -> GateStayOut:
+    """Поправить номер или описание машины; запись плана ищется заново."""
+    try:
+        stay = gate_service.update_stay(db, stay_id, plate=payload.plate, label=payload.label)
+    except (gate_service.StayNotFound, bay_service.BayNotFound) as exc:
+        raise _not_found(exc) from exc
+    except bay_service.InvalidEvent as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return GateStayOut(**gate_service.stay_out(db, stay))
 
 
 @router.post("/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
@@ -272,6 +349,25 @@ def delete_bay(bay_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
 def create_bay_event(
     bay_id: uuid.UUID, payload: BayEventCreate, db: Session = Depends(get_db)
 ) -> BayEventOut:
+    bay = db.get(Bay, bay_id)
+    if bay is not None and bay.kind == BAY_KIND_GATE:
+        # Ворота кузовного цеха: свой разбор (много машин внутри, привязка к плану кузовного).
+        try:
+            event = gate_service.record_pass(
+                db,
+                bay_id,
+                event_type=payload.event_type,
+                plate=payload.plate,
+                ocr_confidence=payload.ocr_confidence,
+                occurred_at=payload.occurred_at,
+                note=payload.note,
+                snapshot_base64=payload.snapshot_base64,
+                source=payload.source,
+                needs_review=payload.needs_review,
+            )
+        except bay_service.InvalidEvent as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        return BayEventOut(**bay_service.event_out(event))
     try:
         event = bay_service.record_event(
             db,

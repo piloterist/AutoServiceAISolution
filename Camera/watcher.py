@@ -17,6 +17,7 @@ import httpx
 
 import bay_events as be
 from bay_tracker import EMPTY, BayTracker, Event, TrackerConfig
+from gate_tracker import GateConfig, GateTracker, MotionGate
 from plate_pipeline import PlatePipeline, jpeg_bytes
 from vehicle_presence import VehiclePresence, ensure_model
 from read_log import ReadLog
@@ -33,6 +34,8 @@ WORK_MARGIN = timedelta(minutes=30)  # кадр шлём в рабочие ча�
 HEARTBEAT_SEC = 30
 CAMERA_STALE_SEC = 20  # кадров не было столько - камера считается недоступной
 ACTIVE_HOLD_SEC = 5  # после номера или движения в боксе столько секунд держим полную частоту
+GATE_FPS = 6  # ворота: проезд длится 1-3 секунды, нужна частота выше, чем у бокса
+GATE_MOTION_HOLD_SEC = 4.0  # после движения/номера держим полную частоту (датчик движения ворот)
 VEHICLE_CHECK_SEC = 2.0  # как часто проверяем «машина в боксе», пока выезд ждёт подтверждения
 
 
@@ -91,7 +94,13 @@ class CameraWatcher(threading.Thread):
     def __init__(self, camera: dict, defaults: dict, detection: dict, backend: str, headers: dict):
         super().__init__(name=f"watch-{camera['id']}", daemon=True)
         self.camera = camera
-        self.fps = float(detection.get("fps", 3))
+        # mode = "gate": ворота кузовного цеха (машина проезжает мимо камеры, не останавливаясь),
+        # вместо слежения за боксом (BayTracker) ведётся GateTracker.
+        self.mode = camera.get("mode", "bay")
+        self.gate = self.mode == "gate"
+        self.fps = float(camera.get("fps", GATE_FPS if self.gate else detection.get("fps", 3)))
+        self.motion_threshold = float(camera.get("motion_threshold", detection.get("motion_threshold", 0)))
+        self.gate_fields = {k: v for k, v in detection.items() if k in GateConfig.__dataclass_fields__}
         # Пока в кадре нет номера и бокс пуст, достаточно редких проверок: это в разы дешевле.
         self.idle_fps = float(detection.get("idle_fps", 1))
         self.frame_every = float(detection.get("frame_every_sec", FRAME_EVERY_SEC))
@@ -203,7 +212,9 @@ class CameraWatcher(threading.Thread):
         if result.matched and result.work_order_number:
             fixed = " (номер исправлен по базе)" if result.raw and result.raw != result.plate else ""
             note = f"заказ-наряд {result.work_order_number}{fixed}; {note}"
-        if not entry:
+        if self.gate:
+            note = f"проезд ворот: {'въезд' if entry else 'выезд'}; {note}"
+        elif not entry:
             note = f"выезд по треку номера; {note}"
             if event.extra:
                 note = f"{note}; {event.extra}"
@@ -213,7 +224,8 @@ class CameraWatcher(threading.Thread):
             "ocr_confidence": min(max(result.confidence, 0.0), 1.0),
             "occurred_at": datetime.fromtimestamp(event.t).astimezone().isoformat(),
             "note": note[:500],
-            "needs_review": entry and not result.reliable,
+            # Ворота: нечитаемый или ненадёжный номер проверяет человек и у въезда, и у выезда.
+            "needs_review": (entry or self.gate) and not result.reliable,
             "source": "auto",
         }
         jpeg = jpeg_bytes(event.frame) if event.frame is not None else None
@@ -257,7 +269,8 @@ class CameraWatcher(threading.Thread):
         cam = self.camera
         log(f"{cam['id']}: загружаю модели распознавания номера...")
         pipeline = PlatePipeline(roi=self.roi)
-        presence = self._load_presence()
+        presence = None if self.gate else self._load_presence()  # ворота: проверка кадром не нужна
+        motion = MotionGate(self.motion_threshold, GATE_MOTION_HOLD_SEC) if self.gate else None
         conn = be.connect()
         readlog = ReadLog(cam["id"])
         threading.Thread(target=self._heartbeat_loop, name="heartbeat", daemon=True).start()
@@ -274,7 +287,8 @@ class CameraWatcher(threading.Thread):
         last_vehicle_check = 0.0
         last_vehicle_seen: bool | None = None
         active_until = 0.0
-        log(f"{cam['id']}: наблюдение запущено, {self.fps:g} кадр/с, область детектора: {self.roi or 'весь кадр'}")
+        kind = "ворота" if self.gate else "бокс"
+        log(f"{cam['id']}: наблюдение запущено ({kind}), {self.fps:g} кадр/с, область детектора: {self.roi or 'весь кадр'}")
         with self._client() as client:
             while not self.stop_event.is_set():
                 cap = open_capture(url)
@@ -295,7 +309,8 @@ class CameraWatcher(threading.Thread):
                         continue
                     now, frame = item
                     if (
-                        tracker is not None
+                        not self.gate  # у ворот кадры в простое не пропускаем: проезд короткий
+                        and tracker is not None
                         and tracker.state == EMPTY
                         and now > active_until
                         and now - last_processed < 1.0 / self.idle_fps
@@ -325,6 +340,12 @@ class CameraWatcher(threading.Thread):
                         failures += 1
                         if failures in (1, 10) or failures % 100 == 0:
                             log(f"{cam['id']}: бэкенд недоступен ({type(exc).__name__}), события ждут в очереди")
+                    if tracker is None and self.gate:
+                        tracker = GateTracker(
+                            GateConfig(frame_width=float(frame.shape[1]), **self.gate_fields),
+                            known=self.known,
+                        )
+                        log(f"{cam['id']}: трекер ворот запущен")
                     if tracker is None:
                         occupied = self.occupied_plate
                         tracker = BayTracker(
@@ -338,7 +359,12 @@ class CameraWatcher(threading.Thread):
                         log(f"{cam['id']}: трекер бокса запущен, бокс {'занят ' + occupied if occupied else 'свободен'}")
                     tracker.known = self.known
                     before = tracker.state
-                    det = pipeline.detect(frame)
+                    if motion is not None and not motion.active(now, frame):
+                        det = None  # в кадре тихо: номер не ищем, но след (если идёт) закончится
+                    else:
+                        det = pipeline.detect(frame)
+                    if motion is not None and det is not None:
+                        motion.note_detection(now)
                     vehicle = None
                     if (
                         presence is not None
@@ -371,6 +397,10 @@ class CameraWatcher(threading.Thread):
                     for event in events:
                         readlog.decision(track, event)
                         self._queue(event, conn)
+                    if self.gate:
+                        for note in tracker.notes:
+                            log(f"{cam['id']}: {note}")
+                        tracker.notes.clear()
                     if tracker.state != before:
                         log(f"{cam['id']}: состояние {before} -> {tracker.state}")
                     if (

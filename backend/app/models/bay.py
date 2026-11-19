@@ -50,6 +50,9 @@ REVIEW_AUTO = "auto"
 REVIEW_NEEDS = "needs_review"
 REVIEW_CONFIRMED = "confirmed"
 
+BAY_KIND_BAY = "bay"
+BAY_KIND_GATE = "gate"
+
 SNAPSHOT_PENDING = "pending"
 SNAPSHOT_DONE = "done"
 SNAPSHOT_FAILED = "failed"
@@ -71,6 +74,11 @@ class Bay(Base):
     camera_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true"
+    )
+    # "bay" - бокс (одна машина, слесарный); "gate" - ворота кузовного цеха: машина проезжает под
+    # камерой, не останавливаясь, а внутри их может быть много (GateStay, services/gate_service.py).
+    kind: Mapped[str] = mapped_column(
+        String(10), nullable=False, default=BAY_KIND_BAY, server_default=BAY_KIND_BAY
     )
 
     created_at: Mapped[datetime] = mapped_column(
@@ -160,6 +168,8 @@ class BaySnapshotRequest(Base):
 
 
 ISSUE_NO_WORK_ORDER = "no_work_order"
+ISSUE_NO_BODY_PLAN = "no_body_plan"  # въехала машина, а в плане кузовного её нет
+ISSUE_EXIT_WITHOUT_ENTRY = "exit_without_entry"  # выезд машины, которой нет в цехе
 ISSUE_RESOLVED_AUTO = "auto"
 ISSUE_RESOLVED_MANUAL = "manual"
 
@@ -191,6 +201,47 @@ class BayIssue(Base):
     resolution: Mapped[str | None] = mapped_column(String(10), nullable=True)  # auto / manual
     resolved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class GateStay(Base):
+    """Машина в кузовном цеху: от проезда ворот на въезд до проезда на выезд. Таких одновременно
+    открыто сколько угодно (5, 10 и больше), между въездом и выездом проезжают другие. Один номер
+    за период может иметь несколько заездов (выехала на покраску и вернулась) - все они привязаны
+    к одной карточке кузовного планировщика (body_car_id)."""
+
+    __tablename__ = "gate_stays"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bay_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bays.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plate: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Описание машины без номера (вводится руками): «Белый Рио, без номеров».
+    label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    entry_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bay_events.id", ondelete="SET NULL"), nullable=True
+    )
+    exited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    exit_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bay_events.id", ondelete="SET NULL"), nullable=True
+    )
+    body_car_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("body_cars.id", ondelete="SET NULL"), nullable=True
+    )
+    work_order_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("work_orders.id", ondelete="SET NULL"), nullable=True
+    )
+    review_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=REVIEW_AUTO, server_default=REVIEW_AUTO
+    )
+    source: Mapped[str] = mapped_column(
+        String(10), nullable=False, default=SOURCE_AUTO, server_default=SOURCE_AUTO
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class CameraStatus(Base):

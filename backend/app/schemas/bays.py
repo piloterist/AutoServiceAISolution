@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.bay import EVENT_TYPES
 
 BayState = Literal["free", "occupied", "review"]
+BayKind = Literal["bay", "gate"]
 
 
 class BayEventOut(BaseModel):
@@ -33,6 +34,10 @@ class BayCardOut(BaseModel):
     name: str
     camera_code: str | None
     enabled: bool
+    # "gate" - ворота кузовного цеха (много машин внутри, см. GateStayOut), inside_count - сколько
+    # машин сейчас в цеху; у обычного бокса kind="bay", inside_count=0.
+    kind: BayKind = "bay"
+    inside_count: int = 0
     state: BayState
     plate: str | None
     occupied_since: datetime | None
@@ -62,6 +67,7 @@ class BayCreate(BaseModel):
     workshop_id: uuid.UUID
     name: str = Field(min_length=1, max_length=100)
     camera_code: str | None = Field(default=None, max_length=50)
+    kind: BayKind = "bay"
 
 
 class BayUpdate(BaseModel):
@@ -172,3 +178,49 @@ class BayIssueSummary(BaseModel):
 
 class BayIssueResolveIn(BaseModel):
     note: str | None = Field(default=None, max_length=500)
+
+
+class GateStayOut(BaseModel):
+    """Машина в кузовном цеху: заезд (въезд через ворота) и, когда выехала, выезд."""
+
+    id: uuid.UUID
+    bay_id: uuid.UUID
+    bay_name: str
+    plate: str | None
+    label: str | None
+    entered_at: datetime
+    exited_at: datetime | None
+    duration_seconds: int
+    review_status: str
+    source: str
+    note: str | None
+    entry: BayEventOut | None
+    exit: BayEventOut | None
+    # Карточка кузовного планировщика этой машины (None - в плане не нашлась).
+    body_car_id: uuid.UUID | None
+    car_description: str | None
+    client_name: str | None
+    car_status: str | None
+    work_order_id: uuid.UUID | None
+    work_order_number: str | None
+    has_plan: bool
+
+
+class GateStaysResponse(BaseModel):
+    stays: list[GateStayOut]
+
+
+class GateStayCreate(BaseModel):
+    bay_id: uuid.UUID
+    plate: str | None = Field(default=None, max_length=20)
+    label: str | None = Field(default=None, max_length=200)
+    entered_at: datetime | None = None
+
+
+class GateStayExit(BaseModel):
+    exited_at: datetime | None = None
+
+
+class GateStayUpdate(BaseModel):
+    plate: str | None = Field(default=None, max_length=20)
+    label: str | None = Field(default=None, max_length=200)

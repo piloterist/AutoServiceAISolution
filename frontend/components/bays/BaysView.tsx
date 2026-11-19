@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { formatTime, linkStatus } from "@/components/bays/bay-utils";
+import { GateView } from "@/components/bays/GateView";
 import type { BayCard, Workshop } from "@/lib/backend-api";
 import { baysClient, eventSnapshotUrl, latestFrameUrl, requestImageUrl } from "@/lib/bays-client";
 
@@ -10,7 +12,6 @@ const REFRESH_MS = 10_000;
 const SNAPSHOT_POLL_MS = 1_500;
 const SNAPSHOT_TIMEOUT_MS = 60_000;
 const PAGE_SIZE = 6;
-const NODE_OFFLINE_MS = 2 * 60_000; // узел шлёт сигнал раз в ~30 секунд; тишина дольше - не на связи
 const EMPTY_AFTER_MS = 10 * 60_000; // столько бокс пуст после выезда - кадр бокса идёт во все три окна
 
 const STATE_LABEL: Record<BayCard["state"], string> = {
@@ -18,47 +19,6 @@ const STATE_LABEL: Record<BayCard["state"], string> = {
   occupied: "Занят",
   review: "Нужна проверка",
 };
-
-function formatTime(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleString("ru-RU", {
-    timeZone: "Europe/Moscow",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatSpan(ms: number): string {
-  const minutes = Math.max(Math.round(ms / 60_000), 1);
-  if (minutes < 60) return `${minutes} мин`;
-  const hours = Math.floor(minutes / 60);
-  return minutes % 60 === 0 ? `${hours} ч` : `${hours} ч ${minutes % 60} мин`;
-}
-
-type LinkKind = "none" | "unknown" | "ok" | "node" | "camera";
-
-// Состояние связи видеоконтроля бокса: узел на площадке и камера. Не «всё тихо», а явно -
-// иначе выключенный узел выглядит как спокойный бокс со старыми кадрами.
-function linkStatus(bay: BayCard, now: number): { kind: LinkKind; text: string } {
-  if (!bay.camera_code) return { kind: "none", text: "Камера не назначена" };
-  if (!bay.node_seen_at) return { kind: "unknown", text: "Узел видеоконтроля ещё не выходил на связь" };
-  const silent = now - new Date(bay.node_seen_at).getTime();
-  if (silent > NODE_OFFLINE_MS) {
-    return {
-      kind: "node",
-      text: `Узел видеоконтроля не на связи уже ${formatSpan(silent)} (с ${formatTime(bay.node_seen_at)})`,
-    };
-  }
-  if (bay.camera_ok === false && bay.camera_ok_since) {
-    return {
-      kind: "camera",
-      text: `Камера не отдаёт видео уже ${formatSpan(now - new Date(bay.camera_ok_since).getTime())}`,
-    };
-  }
-  return { kind: "ok", text: "Узел на связи, камера работает" };
-}
 
 type Lightbox = { src: string; caption: string } | null;
 
@@ -365,6 +325,15 @@ export function BaysView({
     }
   };
 
+  const createGate = async () => {
+    if (!workshopId) return;
+    try {
+      setBays((await baysClient.create(workshopId, "Ворота", "gate")).bays);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось создать ворота");
+    }
+  };
+
   const addBay = async () => {
     if (!workshopId || !newName.trim()) return;
     try {
@@ -375,10 +344,13 @@ export function BaysView({
     }
   };
 
-  const pageCount = Math.max(1, Math.ceil((bays?.length ?? 0) / PAGE_SIZE));
+  // Кузовной цех: у него ворота, а не боксы - вместо карточек показываем «Сейчас в цехе».
+  const gates = useMemo(() => bays?.filter((b) => b.kind === "gate") ?? [], [bays]);
+  const regularBays = useMemo(() => bays?.filter((b) => b.kind !== "gate") ?? [], [bays]);
+  const pageCount = Math.max(1, Math.ceil(regularBays.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
-  const pageBays = bays?.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE) ?? [];
-  const occupied = bays?.filter((b) => b.state !== "free").length ?? 0;
+  const pageBays = regularBays.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const occupied = regularBays.filter((b) => b.state !== "free").length;
 
   return (
     <div className="bays-page">
@@ -413,9 +385,9 @@ export function BaysView({
           ))}
         </div>
 
-        {bays && bays.length > 0 && (
+        {regularBays.length > 0 && (
           <div className="settings-description">
-            Занято {occupied} из {bays.length}
+            Занято {occupied} из {regularBays.length}
           </div>
         )}
         {pageCount > 1 && (
@@ -447,7 +419,11 @@ export function BaysView({
       {bays && bays.length === 0 && (
         <div className="card">
           <p>В этом цехе пока нет боксов.</p>
-          {isAdmin && workshop ? (
+          {isAdmin && workshop?.workshop_type === "Кузовной" ? (
+            <button type="button" className="admin-btn" onClick={createGate}>
+              Создать ворота (камера на въезде, машины внутри считаются списком)
+            </button>
+          ) : isAdmin && workshop ? (
             <button type="button" className="admin-btn" onClick={createDefaults}>
               Создать боксы по числу постов ({workshop.posts_count})
             </button>
@@ -457,7 +433,11 @@ export function BaysView({
         </div>
       )}
 
-      {bays && bays.length > 0 && (
+      {workshop && gates.length > 0 && (
+        <GateView workshop={workshop} gates={gates} isAdmin={isAdmin} onOpen={setLightbox} onChanged={load} />
+      )}
+
+      {regularBays.length > 0 && (
         <div className="bays-grid">
           {pageBays.map((bay) => (
             <BayTile key={bay.id} bay={bay} isAdmin={isAdmin} onOpen={setLightbox} onChanged={load} />
@@ -465,7 +445,7 @@ export function BaysView({
         </div>
       )}
 
-      {isAdmin && bays && bays.length > 0 && (
+      {isAdmin && regularBays.length > 0 && (
         <div className="bays-add card">
           <input
             type="text"

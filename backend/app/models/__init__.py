@@ -11,6 +11,7 @@ from app.models.bay import (
     BayOccupancy,
     BaySnapshotRequest,
     CameraStatus,
+    GateStay,
 )
 from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
@@ -80,6 +81,7 @@ __all__ = [
     "BayLatestFrame",
     "CameraStatus",
     "BayOccupancy",
+    "GateStay",
     "BaySnapshotRequest",
     "RepairRequestAttempt",
     "CrmTask",

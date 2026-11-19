@@ -39,6 +39,7 @@ from app.models.bay import (
     BayOccupancy,
     BaySnapshotRequest,
     CameraStatus,
+    GateStay,
 )
 from app.models.work_order import WorkOrder
 from app.models.workshop import Workshop
@@ -196,7 +197,12 @@ def get_bay(db: Session, bay_id: uuid.UUID) -> Bay:
 
 
 def create_bay(
-    db: Session, *, workshop_id: uuid.UUID, name: str, camera_code: str | None = None
+    db: Session,
+    *,
+    workshop_id: uuid.UUID,
+    name: str,
+    camera_code: str | None = None,
+    kind: str = "bay",
 ) -> Bay:
     if db.get(Workshop, workshop_id) is None:
         raise BayNotFound(f"workshop {workshop_id}")
@@ -207,7 +213,11 @@ def create_bay(
         or 0
     ) + 1
     bay = Bay(
-        workshop_id=workshop_id, name=name.strip(), camera_code=camera_code, sort_order=next_order
+        workshop_id=workshop_id,
+        name=name.strip(),
+        camera_code=camera_code,
+        sort_order=next_order,
+        kind=kind,
     )
     db.add(bay)
     db.commit()
@@ -351,6 +361,15 @@ def list_bay_cards(db: Session, workshop_id: uuid.UUID | None = None) -> list[di
                 "name": bay.name,
                 "camera_code": bay.camera_code,
                 "enabled": bay.enabled,
+                "kind": bay.kind,
+                "inside_count": (
+                    db.scalar(
+                        select(func.count())
+                        .select_from(GateStay)
+                        .where(GateStay.bay_id == bay.id, GateStay.exited_at.is_(None))
+                    )
+                    or 0
+                ),
                 "state": state,
                 "plate": plate,
                 "occupied_since": since,

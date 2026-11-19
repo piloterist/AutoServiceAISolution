@@ -3,7 +3,14 @@
 // Client-side fetch wrappers for the Боксы page, talking to the proxy routes
 // under app/api/bays/* (the client-safe counterpart to the server-only
 // functions in lib/backend-api.ts - types are reused via `import type`).
-import type { BayEvent, BayHistoryResponse, BaySnapshotRequest, BaysResponse } from "@/lib/backend-api";
+import type {
+  BayEvent,
+  BayHistoryResponse,
+  BaySnapshotRequest,
+  BaysResponse,
+  GateStay,
+  GateStaysResponse,
+} from "@/lib/backend-api";
 
 async function proxyFetch<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
   const res = await fetch(input, { cache: "no-store", ...init });
@@ -24,11 +31,11 @@ export const baysClient = {
     proxyFetch<BaysResponse>(`/api/bays/defaults?workshop_id=${encodeURIComponent(workshopId)}`, {
       method: "POST",
     }),
-  create: (workshopId: string, name: string) =>
+  create: (workshopId: string, name: string, kind: "bay" | "gate" = "bay") =>
     proxyFetch<BaysResponse>("/api/bays", {
       method: "POST",
       headers: jsonHeaders,
-      body: JSON.stringify({ workshop_id: workshopId, name }),
+      body: JSON.stringify({ workshop_id: workshopId, name, kind }),
     }),
   setCameraCode: (bayId: string, cameraCode: string) =>
     proxyFetch<BaysResponse>(`/api/bays/${bayId}`, {
@@ -47,6 +54,36 @@ export const baysClient = {
     if (params.bayId) query.set("bay_id", params.bayId);
     return proxyFetch<BayHistoryResponse>(`/api/bays/history?${query.toString()}`);
   },
+  // Ворота кузовного цеха: машины внутри (status=inside) или все заезды за период.
+  gateStays: (params: { workshopId: string; status: "inside" | "all"; dateFrom?: string; dateTo?: string }) => {
+    const query = new URLSearchParams({ workshop_id: params.workshopId, status: params.status });
+    if (params.dateFrom) query.set("date_from", params.dateFrom);
+    if (params.dateTo) query.set("date_to", params.dateTo);
+    return proxyFetch<GateStaysResponse>(`/api/bays/gate/stays?${query.toString()}`);
+  },
+  addGateStay: (payload: { bayId: string; plate?: string; label?: string; enteredAt?: string }) =>
+    proxyFetch<GateStay>("/api/bays/gate/stays", {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        bay_id: payload.bayId,
+        plate: payload.plate || null,
+        label: payload.label || null,
+        entered_at: payload.enteredAt || null,
+      }),
+    }),
+  exitGateStay: (stayId: string, exitedAt?: string) =>
+    proxyFetch<GateStay>(`/api/bays/gate/stays/${stayId}/exit`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ exited_at: exitedAt || null }),
+    }),
+  updateGateStay: (stayId: string, payload: { plate: string | null; label: string | null }) =>
+    proxyFetch<GateStay>(`/api/bays/gate/stays/${stayId}`, {
+      method: "PATCH",
+      headers: jsonHeaders,
+      body: JSON.stringify(payload),
+    }),
   requestSnapshot: (bayId: string) =>
     proxyFetch<BaySnapshotRequest>(`/api/bays/${bayId}/snapshot-requests`, { method: "POST" }),
   snapshotRequest: (requestId: string) =>

@@ -43,7 +43,7 @@ from app.models.slesarka_status import SlesarkaStatus
 from app.models.work_order import WorkOrder
 from app.models.workshop import WORKSHOP_TYPE_MECHANICAL, Workshop
 from app.models.workshop_job import WorkshopJob
-from app.services import audit_log_service
+from app.services import audit_log_service, gate_service
 from app.services.bay_service import (
     CANCELLED_EXIT_MARK,
     OFFLINE_NOTE,
@@ -535,6 +535,7 @@ def tick(db: Session, now: datetime | None = None) -> tuple[int, int]:
     _roll_over_open_jobs(db, now)
     extended = _extend_open_jobs(db, now)
     resolved = _resolve_found_work_orders(db)
+    gate_service.reconcile(db)  # кузов: машина в цеху, чья карточка плана появилась позже
     db.commit()
     return extended, resolved
 

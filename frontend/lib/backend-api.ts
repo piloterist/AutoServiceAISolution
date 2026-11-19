@@ -2241,6 +2241,10 @@ export type BayCard = {
   id: string;
   workshop_id: string;
   name: string;
+  // "gate" - ворота кузовного цеха (боксов нет, машины заезжают и выезжают): вместо карточки бокса
+  // показывается список «Сейчас в цехе» (GateView). inside_count - сколько машин сейчас внутри.
+  kind: "bay" | "gate";
+  inside_count: number;
   camera_code: string | null;
   enabled: boolean;
   state: BayState;
@@ -2281,6 +2285,36 @@ export type BayHistoryItem = {
 };
 
 export type BayHistoryResponse = { items: BayHistoryItem[] };
+
+// Ворота кузовного цеха (см. backend services/gate_service.py): заезд = машина въехала и ещё не
+// выехала. Один номер за день может иметь несколько заездов (выехала и вернулась) - все они
+// привязываются к одной записи кузовного планировщика.
+export type GateStay = {
+  id: string;
+  bay_id: string;
+  bay_name: string;
+  plate: string | null;
+  // Описание машины без номера (вводится руками).
+  label: string | null;
+  entered_at: string;
+  exited_at: string | null;
+  duration_seconds: number;
+  review_status: "auto" | "needs_review" | "confirmed";
+  source: "auto" | "manual";
+  note: string | null;
+  entry: BayEvent | null;
+  exit: BayEvent | null;
+  // Карточка кузовного планировщика, к которой привязан заезд (null - в плане её нет).
+  body_car_id: string | null;
+  car_description: string | null;
+  client_name: string | null;
+  car_status: string | null;
+  work_order_id: string | null;
+  work_order_number: string | null;
+  has_plan: boolean;
+};
+
+export type GateStaysResponse = { stays: GateStay[] };
 
 // Лист «Ошибки»: машина в боксе без заказ-наряда (см. backend services/bay_planner.py).
 export type BayIssue = {
@@ -2622,10 +2656,45 @@ export function getBayHistory(params: {
   });
 }
 
+export function getGateStays(params: {
+  workshop_id: string;
+  status: "inside" | "all";
+  date_from?: string;
+  date_to?: string;
+}): Promise<GateStaysResponse> {
+  return backendGet<GateStaysResponse>("/api/v1/bays/gate/stays", {
+    workshop_id: params.workshop_id,
+    status: params.status,
+    date_from: params.date_from ?? "",
+    date_to: params.date_to ?? "",
+  });
+}
+
+export function createGateStay(payload: {
+  bay_id: string;
+  plate?: string | null;
+  label?: string | null;
+  entered_at?: string | null;
+}): Promise<GateStay> {
+  return backendPost<GateStay>("/api/v1/bays/gate/stays", payload);
+}
+
+export function exitGateStay(id: string, payload: { exited_at?: string | null }): Promise<GateStay> {
+  return backendPost<GateStay>(`/api/v1/bays/gate/stays/${id}/exit`, payload);
+}
+
+export function updateGateStay(
+  id: string,
+  payload: { plate?: string | null; label?: string | null },
+): Promise<GateStay> {
+  return backendPatch<GateStay>(`/api/v1/bays/gate/stays/${id}`, payload);
+}
+
 export function createBay(payload: {
   workshop_id: string;
   name: string;
   camera_code?: string | null;
+  kind?: "bay" | "gate";
 }): Promise<BaysResponse> {
   return backendPost<BaysResponse>("/api/v1/bays", payload);
 }
