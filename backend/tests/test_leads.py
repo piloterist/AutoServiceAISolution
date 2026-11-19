@@ -938,3 +938,34 @@ def test_the_old_json_format_is_unchanged_and_a_form_without_phone_is_still_reje
         ).status_code
         == 422
     )
+
+
+def test_the_intake_diagnostics_say_what_photo_links_the_site_sent_and_what_came_of_them(
+    client, db_session, monkeypatch
+) -> None:
+    from app.services import lead_photos_service
+
+    _enable_intake(db_session)
+
+    def fake_archive(urls, lead_id, token, report=None):
+        report.append({"url": urls[0], "result": "bad_response", "status": 404})
+        return []
+
+    monkeypatch.setattr(lead_photos_service, "archive_photos", fake_archive)
+    good = "https://panmotors77.ru/tmp_files/crm_photos/abc/IMG_1.jpg"
+    response = client.post(
+        INTAKE_URL,
+        json={
+            "user_phone": "+7 (900) 123-45-67",
+            "photo_urls": [good, "https://panmotors77.ru/other/path.jpg"],
+        },
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+    assert response.status_code == 201, response.text
+    db_session.expire_all()
+    lead = db_session.get(WebsiteLead, uuid.UUID(response.json()["id"]))
+    intake = json.loads(lead.request_meta["intake"])
+    assert intake["photo_urls_count"] == 2 and intake["photo_urls_accepted"] == 1
+    assert intake["photo_urls_sample"][0] == good
+    assert intake["urls_asked"] == 1 and intake["urls_archived"] == 0
+    assert intake["urls_report"] == [{"url": good, "result": "bad_response", "status": 404}]

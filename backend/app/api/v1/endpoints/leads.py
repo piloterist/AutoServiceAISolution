@@ -201,6 +201,10 @@ async def intake_lead(
         request.headers, request.client.host if request.client else None
     )
     # Строкой, не объектом: карточка заявки выводит значения request_meta как текст.
+    photo_urls = leads_service.photo_urls_to_archive(payload)
+    diag.update(leads_service.photo_urls_summary(payload))
+    diag["photo_urls_accepted"] = len(photo_urls)
+    diag["has_files_folder"] = bool(payload.get("files") and payload.get("folder"))
     meta["intake"] = json.dumps(diag, ensure_ascii=False, separators=(",", ":"))
     try:
         lead = await run_in_threadpool(leads_service.create_lead, db, payload, meta, uploaded)
@@ -210,7 +214,6 @@ async def intake_lead(
         ) from exc
 
     # Photo links (copies kept by the site) are downloaded after the answer is sent.
-    photo_urls = leads_service.photo_urls_to_archive(payload)
     if photo_urls:
         background_tasks.add_task(
             leads_service.archive_lead_photos_from_urls, db.get_bind(), lead.id, photo_urls

@@ -88,7 +88,10 @@ def _ensure_and_upload(
 
 
 def archive_photos(
-    photo_urls: list[str], lead_id: uuid.UUID, yandex_disk_token: str | None
+    photo_urls: list[str],
+    lead_id: uuid.UUID,
+    yandex_disk_token: str | None,
+    report: list[dict] | None = None,
 ) -> list[str]:
     """Downloads each of the site's own (likely short-lived) photo URLs and
     re-uploads it to our own Yandex.Disk folder, returning the matching
@@ -108,7 +111,10 @@ def archive_photos(
     the same request). leads_service.create_lead now prefers
     archive_photo_bytes (the site sending photo bytes inline, no separate
     fetch - see Pan-Motors_web.md) whenever the payload has them; this
-    function is kept only as a fallback for payloads that don't."""
+    function is kept only as a fallback for payloads that don't.
+
+    `report` (optional): one entry per link - what came of it (ok / fetch_failed / bad_response /
+    upload_failed), so a lost photo can be explained from the lead itself, not from the logs."""
     if not photo_urls or not yandex_disk_token:
         return []
 
@@ -125,6 +131,7 @@ def archive_photos(
                     response = fetch_client.get(url, follow_redirects=True)
                 except httpx.HTTPError as exc:
                     logger.warning("lead_photo_fetch_failed", url=url, error=str(exc))
+                    _note(report, url, "fetch_failed", error=type(exc).__name__)
                     continue
 
                 raw_content_type = response.headers.get("content-type", "")
@@ -144,6 +151,13 @@ def archive_photos(
                         status=response.status_code,
                         content_type=content_type,
                     )
+                    _note(
+                        report,
+                        url,
+                        "bad_response",
+                        status=response.status_code,
+                        content_type=content_type,
+                    )
                     continue
 
                 try:
@@ -156,14 +170,24 @@ def archive_photos(
                         folder_ready,
                     )
                 except _FolderUnavailable:
+                    _note(report, url, "disk_folder_unavailable")
                     return archived
                 folder_ready = True
                 if uploaded:
                     archived.append(f"/api/leads/{lead_id}/photos/{filename}")
+                    _note(report, url, "ok", bytes=len(response.content))
+                else:
+                    _note(report, url, "upload_failed")
     except Exception as exc:  # noqa: BLE001 - a photo-archive bug must never reject the lead itself
         logger.error("lead_photo_archive_unexpected_error", lead_id=str(lead_id), error=str(exc))
+        _note(report, "", "unexpected_error", error=type(exc).__name__)
 
     return archived
+
+
+def _note(report: list[dict] | None, url: str, result: str, **details) -> None:
+    if report is not None:
+        report.append({"url": url[:160], "result": result, **details})
 
 
 def archive_photo_bytes(

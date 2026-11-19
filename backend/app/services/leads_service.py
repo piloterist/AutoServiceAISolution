@@ -176,6 +176,19 @@ def _site_photo_urls(payload: dict[str, Any]) -> list[str]:
     return urls
 
 
+def photo_urls_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    """Что сайт прислал в photo_urls (для диагностики): тип, число и первые ссылки."""
+    raw = payload.get("photo_urls")
+    if isinstance(raw, str):
+        raw = [part.strip() for part in raw.split(",") if part.strip()]
+    if not isinstance(raw, list):
+        return {"photo_urls_type": type(raw).__name__}
+    return {
+        "photo_urls_count": len(raw),
+        "photo_urls_sample": [str(item)[:160] for item in raw[:3]],
+    }
+
+
 def photo_urls_to_archive(payload: dict[str, Any]) -> list[str]:
     """What to download in the background after the lead is stored: the site's own
     `photo_urls`, else (older callers) the links built from `files`/`folder`.
@@ -350,13 +363,24 @@ def archive_lead_photos_from_urls(bind: Any, lead_id: uuid.UUID, urls: list[str]
             if lead is None:
                 return
             disk_token = telephony_settings_service.get_telephony_settings(db).yandex_disk_token
-            paths = lead_photos_service.archive_photos(urls, lead_id, disk_token)
+            report: list[dict[str, Any]] = []
+            paths = lead_photos_service.archive_photos(urls, lead_id, disk_token, report)
             logger.info(
                 "lead_photos_archived", lead_id=str(lead_id), asked=len(urls), archived=len(paths)
             )
             if paths:
                 lead.photos = [*(lead.photos or []), *paths]
-                db.commit()
+            # Итог по каждой ссылке - в заявку: почему фото не легло, видно без журналов.
+            try:
+                intake = json.loads((lead.request_meta or {}).get("intake") or "{}")
+            except (TypeError, ValueError):
+                intake = {}
+            intake.update(urls_asked=len(urls), urls_archived=len(paths), urls_report=report[:10])
+            lead.request_meta = {
+                **(lead.request_meta or {}),
+                "intake": json.dumps(intake, ensure_ascii=False, separators=(",", ":")),
+            }
+            db.commit()
     except Exception as exc:  # noqa: BLE001 - a photo problem must never surface anywhere
         logger.error("lead_photos_background_failed", lead_id=str(lead_id), error=str(exc))
 

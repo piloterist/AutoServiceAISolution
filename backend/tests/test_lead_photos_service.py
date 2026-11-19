@@ -269,3 +269,26 @@ def test_archive_photo_bytes_stops_after_folder_creation_fails(monkeypatch) -> N
     result = lead_photos_service.archive_photo_bytes([("img1.jpg", b"bytes")], LEAD_ID, "a-token")
 
     assert result == []
+
+
+def test_archive_photos_reports_what_came_of_each_link(monkeypatch) -> None:
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        if url.endswith("gone.jpg"):
+            return httpx.Response(404, request=_request("GET", url))
+        raise httpx.ConnectError("no route", request=_request("GET", url))
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    report: list[dict] = []
+
+    result = lead_photos_service.archive_photos(
+        ["https://pan-motors.ru/tmp_files/1/gone.jpg", "https://pan-motors.ru/tmp_files/1/b.jpg"],
+        LEAD_ID,
+        "a-token",
+        report,
+    )
+
+    assert result == []
+    assert [(r["result"], r.get("status"), r.get("error")) for r in report] == [
+        ("bad_response", 404, None),
+        ("fetch_failed", None, "ConnectError"),
+    ]
