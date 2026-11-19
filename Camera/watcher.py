@@ -178,15 +178,23 @@ class CameraWatcher(threading.Thread):
         """Раз в полминуты сообщает бэкенду: узел жив, камера отдаёт (не отдаёт) видео. Идёт в
         отдельном потоке: пока поток камеры не открывается (таймаут 30 с), узел всё равно виден."""
         code = self.camera["id"]
+        failures = 0
+        first = True  # первый сигнал сразу при старте, не через полминуты
         with self._client() as client:
-            while not self.stop_event.wait(HEARTBEAT_SEC):
+            while first or not self.stop_event.wait(HEARTBEAT_SEC):
+                first = False
                 try:
                     client.post(
                         "/api/v1/bays/heartbeat",
                         json={"camera_code": code, "camera_ok": self.camera_ok},
                     ).raise_for_status()
-                except (httpx.HTTPError, OSError):
-                    pass  # бэкенд недоступен - следующая попытка через полминуты
+                    if failures:
+                        log(f"{code}: сигнал узла на сервер снова проходит")
+                        failures = 0
+                except Exception as exc:  # noqa: BLE001 - поток сигнала не должен умирать молча
+                    failures += 1  # бэкенд недоступен или сбой: следующая попытка через полминуты
+                    if failures in (1, 10) or failures % 100 == 0:
+                        log(f"{code}: сигнал узла не доставлен ({type(exc).__name__}: {exc})")
 
     def _post_latest_frame(self, client: httpx.Client, frame) -> None:
         """Свежий кадр бокса раз в минуту: мастер видит, что в боксе происходит сейчас, и пропущенный
