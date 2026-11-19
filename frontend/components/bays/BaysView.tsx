@@ -346,7 +346,12 @@ export function BaysView({
 
   // Кузовной цех: у него ворота, а не боксы - вместо карточек показываем «Сейчас в цехе».
   const gates = useMemo(() => bays?.filter((b) => b.kind === "gate") ?? [], [bays]);
-  const regularBays = useMemo(() => bays?.filter((b) => b.kind !== "gate") ?? [], [bays]);
+  const isBodyShop = workshop?.workshop_type === "Кузовной";
+  // У кузовного цеха ворота заменяют боксы: обычные боксы (заготовка слесарного) скрываем.
+  const regularBays = useMemo(
+    () => (isBodyShop && gates.length > 0 ? [] : (bays?.filter((b) => b.kind !== "gate") ?? [])),
+    [bays, gates, isBodyShop],
+  );
   const pageCount = Math.max(1, Math.ceil(regularBays.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const pageBays = regularBays.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
@@ -416,14 +421,26 @@ export function BaysView({
         </div>
       )}
 
-      {bays && bays.length === 0 && (
+      {bays && isBodyShop && gates.length === 0 && (
+        <div className="card">
+          <p>
+            У кузового цеха нет боксов: одни ворота, а машин внутри может быть много. Камера на воротах
+            фиксирует въезд и выезд, а страница показывает список «Сейчас в цехе».
+          </p>
+          {isAdmin ? (
+            <button type="button" className="admin-btn admin-btn-primary" onClick={createGate}>
+              Создать ворота
+            </button>
+          ) : (
+            <p className="settings-description">Ворота создаёт администратор.</p>
+          )}
+        </div>
+      )}
+
+      {bays && bays.length === 0 && !isBodyShop && (
         <div className="card">
           <p>В этом цехе пока нет боксов.</p>
-          {isAdmin && workshop?.workshop_type === "Кузовной" ? (
-            <button type="button" className="admin-btn" onClick={createGate}>
-              Создать ворота (камера на въезде, машины внутри считаются списком)
-            </button>
-          ) : isAdmin && workshop ? (
+          {isAdmin && workshop ? (
             <button type="button" className="admin-btn" onClick={createDefaults}>
               Создать боксы по числу постов ({workshop.posts_count})
             </button>
