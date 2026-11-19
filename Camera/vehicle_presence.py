@@ -12,6 +12,7 @@
 import hashlib
 import os
 import tempfile
+import time
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,7 @@ import numpy as np
 MODEL_FILE = "yolox_s.onnx"
 MODEL_URL = "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.onnx"
 MODEL_SHA256 = "c5c2d13e59ae883e6af3b45daea64af4833a4951c92d116ec270d9ddbe998063"
+DOWNLOAD_BUDGET_SEC = 900.0  # общий лимит на скачивание модели за одну попытку
 INPUT_SIZE = 640
 VEHICLE_CLASSES = {2: "car", 5: "bus", 7: "truck"}  # номера классов COCO (с нуля)
 STRIDES = (8, 16, 32)
@@ -53,11 +55,14 @@ def ensure_model(download: bool = True) -> Path | None:
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, suffix=".part")
     os.close(fd)
     tmp = Path(tmp_name)
+    deadline = time.monotonic() + DOWNLOAD_BUDGET_SEC
     try:
         request = urllib.request.Request(MODEL_URL, headers={"User-Agent": "esp-camera-node"})
-        with urllib.request.urlopen(request, timeout=120) as response, tmp.open("wb") as out:
-            while chunk := response.read(1 << 20):
+        with urllib.request.urlopen(request, timeout=30) as response, tmp.open("wb") as out:
+            while chunk := response.read(1 << 18):
                 out.write(chunk)
+                if time.monotonic() > deadline:
+                    return None  # слишком медленный канал: не держим узел, повторим позже
         if _sha256(tmp) != MODEL_SHA256:
             return None
         tmp.replace(path)

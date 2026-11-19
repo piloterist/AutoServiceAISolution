@@ -36,6 +36,7 @@ CAMERA_STALE_SEC = 20  # кадров не было столько - камер�
 ACTIVE_HOLD_SEC = 5  # после номера или движения в боксе столько секунд держим полную частоту
 GATE_FPS = 6  # ворота: проезд длится 1-3 секунды, нужна частота выше, чем у бокса
 GATE_MOTION_HOLD_SEC = 4.0  # после движения/номера держим полную частоту (датчик движения ворот)
+PRESENCE_RETRY_SEC = 600  # модель детектора не скачалась: повторная попытка
 VEHICLE_CHECK_SEC = 2.0  # как часто проверяем «машина в боксе», пока выезд ждёт подтверждения
 
 
@@ -112,6 +113,7 @@ class CameraWatcher(threading.Thread):
         # Проверка кадром, что машина не осталась в боксе (vehicle_presence.py): выезд по номеру
         # подтверждается, только когда в зоне бокса машины нет.
         self.vehicle_check = bool(detection.get("vehicle_check", True))
+        self.presence: VehiclePresence | None = None  # детектор «машина в боксе», когда готов
         self.vehicle_params = {
             "min_score": float(detection.get("vehicle_min_score", 0.25)),
             "min_area": float(detection.get("vehicle_min_area", 0.10)),
@@ -250,23 +252,31 @@ class CameraWatcher(threading.Thread):
             f"(по базе: {result.matched}, надёжно: {result.reliable}) - {result.summary}"
         )
 
-    def _load_presence(self) -> VehiclePresence | None:
-        """Детектор «машина в боксе» или None: нет модели - выезд подтверждается только по номеру."""
+    def _start_presence_loader(self) -> None:
+        """Детектор «машина в боксе» готовится В ФОНЕ: модель (36 МБ) может скачиваться минутами по
+        слабому каналу площадки, а узел всё это время должен наблюдать и слать сигнал «я на связи».
+        Пока детектор не готов (или модели нет), выезд подтверждается только по номеру."""
         cam = self.camera["id"]
         if not self.vehicle_check:
             log(f"{cam}: проверка выезда кадром выключена настройкой")
-            return None
-        model = ensure_model()
-        if model is None:
-            log(f"{cam}: модель детектора машин недоступна, выезд подтверждается только по номеру")
-            return None
-        try:
-            presence = VehiclePresence(model, **self.vehicle_params)
-        except Exception as exc:  # noqa: BLE001 - сбой модели не должен останавливать наблюдение
-            log(f"{cam}: детектор машин не запустился ({type(exc).__name__}), проверка выезда кадром отключена")
-            return None
-        log(f"{cam}: проверка выезда кадром включена (машина в боксе не даст подтвердить выезд)")
-        return presence
+            return
+
+        def load() -> None:
+            while not self.stop_event.is_set():
+                model = ensure_model()
+                if model is not None:
+                    try:
+                        self.presence = VehiclePresence(model, **self.vehicle_params)
+                    except Exception as exc:  # noqa: BLE001 - сбой модели не должен останавливать узел
+                        log(f"{cam}: детектор машин не запустился ({type(exc).__name__}), проверка выезда кадром отключена")
+                        return
+                    log(f"{cam}: проверка выезда кадром включена (машина в боксе не даст подтвердить выезд)")
+                    return
+                log(f"{cam}: модель детектора машин не скачалась, повторю через 10 минут; выезд пока подтверждается только по номеру")
+                if self.stop_event.wait(PRESENCE_RETRY_SEC):
+                    return
+
+        threading.Thread(target=load, name="vehicle-model", daemon=True).start()
 
     # ---- основной цикл -------------------------------------------------------------
 
@@ -275,13 +285,15 @@ class CameraWatcher(threading.Thread):
 
     def run(self) -> None:
         cam = self.camera
+        # Сигнал «я на связи» - первым делом, до загрузки моделей: пока они грузятся, узел виден.
+        threading.Thread(target=self._heartbeat_loop, name="heartbeat", daemon=True).start()
         log(f"{cam['id']}: загружаю модели распознавания номера...")
         pipeline = PlatePipeline(roi=self.roi)
-        presence = None if self.gate else self._load_presence()  # ворота: проверка кадром не нужна
+        if not self.gate:  # ворота: проверка кадром не нужна
+            self._start_presence_loader()
         motion = MotionGate(self.motion_threshold, GATE_MOTION_HOLD_SEC) if self.gate else None
         conn = be.connect()
         readlog = ReadLog(cam["id"])
-        threading.Thread(target=self._heartbeat_loop, name="heartbeat", daemon=True).start()
         track = 0  # номер «следа» машины для журнала чтения номера (см. read_log.py)
         url = build_url(
             cam["ip"], str(cam["rtsp_port"]), cam["user"], get_password(cam["user"]),
@@ -359,7 +371,7 @@ class CameraWatcher(threading.Thread):
                         tracker = BayTracker(
                             TrackerConfig(
                                 frame_width=float(frame.shape[1]),
-                                **{**self.tracker_fields, "vehicle_check": presence is not None},
+                                **{**self.tracker_fields, "vehicle_check": False},
                             ),
                             known=self.known,
                             occupied_plate=occupied,
@@ -374,6 +386,9 @@ class CameraWatcher(threading.Thread):
                     if motion is not None and det is not None:
                         motion.note_detection(now)
                     vehicle = None
+                    presence = self.presence  # готовится в фоне: появляется, когда скачана модель
+                    if presence is not None and not tracker.cfg.vehicle_check:
+                        tracker.cfg.vehicle_check = True
                     if (
                         presence is not None
                         and det is None

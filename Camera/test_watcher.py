@@ -103,5 +103,61 @@ class GateModeTest(unittest.TestCase):
         self.assertFalse(self._queued(bay, "exit_confirmed", "А123ВС77", False)["needs_review"])
 
 
+
+class PresenceLoaderTest(unittest.TestCase):
+    """Детектор машин готовится в фоне: долгое скачивание модели не должно задерживать узел
+    (2026-11-19: узел 12 минут молчал, пока модель качалась по слабому каналу площадки)."""
+
+    def test_a_slow_model_download_does_not_block_the_node(self):
+        import threading
+
+        import watcher as watcher_module
+
+        gate = threading.Event()
+        built = []
+
+        class FakePresence:
+            def __init__(self, model, **kwargs):
+                built.append(model)
+
+        original = (watcher_module.ensure_model, watcher_module.VehiclePresence)
+        watcher_module.ensure_model = lambda: gate.wait(5) and "model.onnx"
+        watcher_module.VehiclePresence = FakePresence
+        try:
+            w = watcher()
+            started = time.monotonic()
+            w._start_presence_loader()
+            self.assertLess(time.monotonic() - started, 0.5)  # вернулось сразу, модель ещё "качается"
+            self.assertIsNone(w.presence)
+            gate.set()  # скачалась
+            for _ in range(100):
+                if w.presence is not None:
+                    break
+                time.sleep(0.02)
+            self.assertIsInstance(w.presence, FakePresence)
+            self.assertEqual(built, ["model.onnx"])
+        finally:
+            watcher_module.ensure_model, watcher_module.VehiclePresence = original
+
+    def test_a_failed_download_retries_later_and_the_node_keeps_working(self):
+        import watcher as watcher_module
+
+        original = watcher_module.ensure_model
+        watcher_module.ensure_model = lambda: None  # скачать не вышло
+        try:
+            w = watcher()
+            w._start_presence_loader()
+            time.sleep(0.2)
+            self.assertIsNone(w.presence)  # без детектора: выезд только по номеру
+            w.stop()  # поток повтора завершается по stop
+        finally:
+            watcher_module.ensure_model = original
+
+    def test_the_presence_check_can_be_switched_off_in_the_settings(self):
+        w = CameraWatcher({"id": "cam1"}, {"timezone": "Europe/Moscow"}, {"vehicle_check": False}, "http://x", {})
+        w._start_presence_loader()
+        self.assertIsNone(w.presence)
+
+
 if __name__ == "__main__":
     unittest.main()
