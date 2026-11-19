@@ -181,6 +181,20 @@ def _site_photo_urls(payload: dict[str, Any]) -> list[str]:
     return urls
 
 
+# Ссылки сайта (photo_urls) скачиваем ДО ответа сайту: файл во временной папке сайт удаляет сразу
+# после обработки заявки, и фоновое скачивание после ответа получало 404 (panmotors77.ru,
+# 2026-11-19). Форма ждёт ответа, поэтому число ссылок и время ограничены.
+SYNC_PHOTO_URLS_MAX = 5
+SYNC_PHOTO_BUDGET_SEC = 10.0
+
+
+def site_photo_urls_to_fetch_now(payload: dict[str, Any]) -> list[str]:
+    """photo_urls сайта, которые надо скачать до ответа (нет, если фото пришли прямо в запросе)."""
+    if _extract_inline_photos(payload):
+        return []
+    return _site_photo_urls(payload)[:SYNC_PHOTO_URLS_MAX]
+
+
 def photo_urls_summary(payload: dict[str, Any]) -> dict[str, Any]:
     """Что сайт прислал в photo_urls (для диагностики): тип, число и первые ссылки."""
     raw = payload.get("photo_urls")
@@ -299,6 +313,7 @@ def create_lead(
     payload: dict[str, Any],
     request_meta: dict[str, Any] | None = None,
     uploaded_photos: list[tuple[str, bytes]] | None = None,
+    fetch_now_urls: list[str] | None = None,
 ) -> WebsiteLead:
     phone = _normalize_phone(payload.get("user_phone"))
     if len(phone) < 10:
@@ -335,6 +350,20 @@ def create_lead(
         intake = dict(json.loads(request_meta.get("intake") or "{}"))
     except (TypeError, ValueError):
         intake = {}
+    if fetch_now_urls and not inline_photos:
+        report: list[dict[str, Any]] = []
+        photos = (
+            lead_photos_service.archive_photos(
+                fetch_now_urls, lead_id, disk_token, report, time_budget=SYNC_PHOTO_BUDGET_SEC
+            )
+            or None
+        )
+        intake.update(
+            urls_asked=len(fetch_now_urls),
+            urls_archived=len(photos or []),
+            urls_mode="before_answer",
+            urls_report=report[:10],
+        )
     intake.update(
         photos_in_request=len(inline_photos),
         photos_archived=len(photos or []),

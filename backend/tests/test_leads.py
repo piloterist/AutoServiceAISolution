@@ -947,7 +947,7 @@ def test_the_intake_diagnostics_say_what_photo_links_the_site_sent_and_what_came
 
     _enable_intake(db_session)
 
-    def fake_archive(urls, lead_id, token, report=None):
+    def fake_archive(urls, lead_id, token, report=None, **_):
         report.append({"url": urls[0], "result": "bad_response", "status": 404})
         return []
 
@@ -983,3 +983,36 @@ def test_a_photo_link_of_the_new_site_outside_tmp_files_is_accepted_if_it_is_an_
         ]
     }
     assert photo_urls_to_archive(payload) == ["https://panmotors77.ru/tmp/upload_x99Evh.jpg"]
+
+
+def test_the_new_sites_photo_links_are_downloaded_before_answering_not_in_the_background(
+    client, db_session, auth_headers, monkeypatch
+) -> None:
+    """panmotors77.ru удаляет временный файл сразу после обработки заявки: ссылку скачиваем до
+    ответа (фоновая загрузка получала 404)."""
+    from app.services import leads_service
+    from app.services.telephony_settings_service import get_telephony_settings
+
+    _enable_intake(db_session)
+    get_telephony_settings(db_session).yandex_disk_token = "a-disk-token"
+    db_session.commit()
+    url = "https://panmotors77.ru/tmp/upload_x99Evh.jpg"
+    _fake_site_and_disk(monkeypatch, {url: b"jpeg-bytes"})
+    background: list = []
+    monkeypatch.setattr(
+        leads_service, "archive_lead_photos_from_urls", lambda *args: background.append(args)
+    )
+
+    response = client.post(
+        INTAKE_URL,
+        json={"user_phone": "+7 (900) 000-11-22", "photo_urls": [url]},
+        headers={"Authorization": "Bearer test-intake-token"},
+    )
+
+    assert response.status_code == 201
+    assert background == []  # фоновой загрузки нет
+    lead_id = response.json()["id"]
+    lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+    assert lead["photos"] == [f"/api/leads/{lead_id}/photos/upload_x99Evh.jpg"]
+    intake = json.loads(lead["request_meta"]["intake"])
+    assert intake["urls_mode"] == "before_answer" and intake["urls_archived"] == 1

@@ -21,6 +21,7 @@ Pan-Motors_web.md).
 
 from __future__ import annotations
 
+import time
 import uuid
 from urllib.parse import unquote, urlparse
 
@@ -92,6 +93,7 @@ def archive_photos(
     lead_id: uuid.UUID,
     yandex_disk_token: str | None,
     report: list[dict] | None = None,
+    time_budget: float | None = None,
 ) -> list[str]:
     """Downloads each of the site's own (likely short-lived) photo URLs and
     re-uploads it to our own Yandex.Disk folder, returning the matching
@@ -113,12 +115,16 @@ def archive_photos(
     fetch - see Pan-Motors_web.md) whenever the payload has them; this
     function is kept only as a fallback for payloads that don't.
 
+    `time_budget` (optional, seconds): stop starting new downloads after it - used when the
+    caller waits for the answer (the site's form is waiting on us).
+
     `report` (optional): one entry per link - what came of it (ok / fetch_failed / bad_response /
     upload_failed), so a lost photo can be explained from the lead itself, not from the logs."""
     if not photo_urls or not yandex_disk_token:
         return []
 
     archived: list[str] = []
+    deadline = time.monotonic() + time_budget if time_budget else None
     try:
         with (
             httpx.Client(timeout=FETCH_TIMEOUT_SECONDS) as fetch_client,
@@ -126,9 +132,20 @@ def archive_photos(
         ):
             folder_ready = False
             for url in photo_urls:
+                if deadline is not None and time.monotonic() > deadline:
+                    _note(report, url, "skipped_time_budget")
+                    continue
                 filename = _filename_from_url(url)
                 try:
-                    response = fetch_client.get(url, follow_redirects=True)
+                    response = fetch_client.get(
+                        url,
+                        follow_redirects=True,
+                        timeout=(
+                            min(FETCH_TIMEOUT_SECONDS, max(deadline - time.monotonic(), 1.0))
+                            if deadline is not None
+                            else FETCH_TIMEOUT_SECONDS
+                        ),
+                    )
                 except httpx.HTTPError as exc:
                     logger.warning("lead_photo_fetch_failed", url=url, error=str(exc))
                     _note(report, url, "fetch_failed", error=type(exc).__name__)
