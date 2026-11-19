@@ -154,7 +154,7 @@ def archive_photos(
             # из четырёх фото две первые успели, две других получили 404).
             prefetched: dict[str, tuple] = {}
             if deadline is not None and len(photo_urls) > 1:
-                with ThreadPoolExecutor(max_workers=min(len(photo_urls), 5)) as pool:
+                with ThreadPoolExecutor(max_workers=min(len(photo_urls), 10)) as pool:
                     for item_url, outcome in zip(
                         photo_urls, pool.map(fetch, photo_urls), strict=True
                     ):

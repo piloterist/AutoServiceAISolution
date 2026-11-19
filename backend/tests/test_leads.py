@@ -1016,3 +1016,11 @@ def test_the_new_sites_photo_links_are_downloaded_before_answering_not_in_the_ba
     assert lead["photos"] == [f"/api/leads/{lead_id}/photos/upload_x99Evh.jpg"]
     intake = json.loads(lead["request_meta"]["intake"])
     assert intake["urls_mode"] == "before_answer" and intake["urls_archived"] == 1
+
+
+def test_all_photo_links_up_to_the_limit_are_fetched_before_answering() -> None:
+    from app.services.leads_service import MAX_PHOTO_URLS, site_photo_urls_to_fetch_now
+
+    urls = [f"https://panmotors77.ru/tmp/upload_{n}.jpg" for n in range(12)]
+    assert site_photo_urls_to_fetch_now({"photo_urls": urls}) == urls[:MAX_PHOTO_URLS]
+    assert MAX_PHOTO_URLS >= 8  # восемь фото от посетителя не теряются
