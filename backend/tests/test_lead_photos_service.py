@@ -292,3 +292,38 @@ def test_archive_photos_reports_what_came_of_each_link(monkeypatch) -> None:
         ("bad_response", 404, None),
         ("fetch_failed", None, "ConnectError"),
     ]
+
+
+def test_archive_photos_with_a_time_budget_requests_all_links_at_once(monkeypatch) -> None:
+    """Сайт удаляет временные файлы по одному, пока мы качаем: с бюджетом времени все ссылки
+    запрашиваются одновременно, результат и отчёт - в порядке ссылок."""
+    import threading
+
+    second = "https://pan-motors.ru/tmp_files/438730/img2.jpg"
+    gone = "https://pan-motors.ru/tmp_files/438730/img3.jpg"
+    started = threading.Barrier(3, timeout=5)  # все три запроса должны быть в полёте разом
+
+    def fake_get(self, url, **kwargs):  # noqa: ANN001
+        if url == UPLOAD_LINK_URL:
+            return httpx.Response(200, json={"href": UPLOAD_HREF}, request=_request("GET", url))
+        started.wait()
+        if url == gone:
+            return httpx.Response(404, request=_request("GET", url))
+        return _ok_photo_response()
+
+    def fake_put(self, url, **kwargs):  # noqa: ANN001
+        return httpx.Response(201, request=_request("PUT", url))
+
+    monkeypatch.setattr(httpx.Client, "get", fake_get)
+    monkeypatch.setattr(httpx.Client, "put", fake_put)
+    report: list[dict] = []
+
+    result = lead_photos_service.archive_photos(
+        [PHOTO_URL, second, gone], LEAD_ID, "a-token", report, time_budget=10
+    )
+
+    assert result == [
+        f"/api/leads/{LEAD_ID}/photos/img1.jpg",
+        f"/api/leads/{LEAD_ID}/photos/img2.jpg",
+    ]
+    assert [r["result"] for r in report] == ["ok", "ok", "bad_response"]

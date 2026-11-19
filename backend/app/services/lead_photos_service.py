@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import unquote, urlparse
 
 import httpx
@@ -130,25 +131,42 @@ def archive_photos(
             httpx.Client(timeout=FETCH_TIMEOUT_SECONDS) as fetch_client,
             yandex_disk_client.new_client() as disk_client,
         ):
-            folder_ready = False
-            for url in photo_urls:
-                if deadline is not None and time.monotonic() > deadline:
-                    _note(report, url, "skipped_time_budget")
-                    continue
-                filename = _filename_from_url(url)
+
+            def fetch(url: str) -> tuple[httpx.Response | None, httpx.HTTPError | None]:
                 try:
-                    response = fetch_client.get(
-                        url,
-                        follow_redirects=True,
-                        timeout=(
-                            min(FETCH_TIMEOUT_SECONDS, max(deadline - time.monotonic(), 1.0))
-                            if deadline is not None
-                            else FETCH_TIMEOUT_SECONDS
+                    return (
+                        fetch_client.get(
+                            url,
+                            follow_redirects=True,
+                            timeout=(
+                                min(FETCH_TIMEOUT_SECONDS, max(deadline - time.monotonic(), 1.0))
+                                if deadline is not None
+                                else FETCH_TIMEOUT_SECONDS
+                            ),
                         ),
+                        None,
                     )
                 except httpx.HTTPError as exc:
-                    logger.warning("lead_photo_fetch_failed", url=url, error=str(exc))
-                    _note(report, url, "fetch_failed", error=type(exc).__name__)
+                    return None, exc
+
+            # Заказчик ждёт ответа (time_budget): все ссылки запрашиваем одновременно, потому что
+            # сайт удаляет временные файлы по одному, пока мы качаем по очереди (2026-11-19:
+            # из четырёх фото две первые успели, две других получили 404).
+            prefetched: dict[str, tuple] = {}
+            if deadline is not None and len(photo_urls) > 1:
+                with ThreadPoolExecutor(max_workers=min(len(photo_urls), 5)) as pool:
+                    for item_url, outcome in zip(
+                        photo_urls, pool.map(fetch, photo_urls), strict=True
+                    ):
+                        prefetched[item_url] = outcome
+
+            folder_ready = False
+            for url in photo_urls:
+                filename = _filename_from_url(url)
+                response, fetch_error = prefetched.get(url) or fetch(url)
+                if response is None:
+                    logger.warning("lead_photo_fetch_failed", url=url, error=str(fetch_error))
+                    _note(report, url, "fetch_failed", error=type(fetch_error).__name__)
                     continue
 
                 raw_content_type = response.headers.get("content-type", "")
