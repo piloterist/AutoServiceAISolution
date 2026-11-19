@@ -145,15 +145,17 @@ def _extract_photos(payload: dict[str, Any]) -> list[str] | None:
 
 
 MAX_PHOTO_URLS = 10
+_PHOTO_URL_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif")
 
 
 def _site_photo_urls(payload: dict[str, Any]) -> list[str]:
     """`photo_urls`: links to copies of the photos the site keeps for us (see
     Pan-Motors_web.md) - we download them right after answering the site.
 
-    Only plain https links into the site's tmp_files area are taken (never an IP
-    address or localhost), so the intake token can't be used to make us fetch
-    arbitrary internal addresses."""
+    Only plain https links to a public host are taken (never an IP address or localhost), and
+    only into the site's tmp_files area or to an image file (the new panmotors77.ru sends
+    https://panmotors77.ru/tmp/upload_XXXX.jpg), so the intake token can't be used to make us
+    fetch arbitrary internal addresses or non-image files."""
     entries = payload.get("photo_urls")
     if not isinstance(entries, list):
         return []
@@ -168,7 +170,10 @@ def _site_photo_urls(payload: dict[str, Any]) -> list[str]:
             or "." not in host
             or host.replace(".", "").isdigit()
             or ":" in host
-            or not parsed.path.startswith("/tmp_files/")
+            or not (
+                parsed.path.startswith("/tmp_files/")
+                or parsed.path.lower().endswith(_PHOTO_URL_EXTENSIONS)
+            )
         ):
             logger.warning("lead_photo_url_rejected", url=entry[:200])
             continue

@@ -957,7 +957,7 @@ def test_the_intake_diagnostics_say_what_photo_links_the_site_sent_and_what_came
         INTAKE_URL,
         json={
             "user_phone": "+7 (900) 123-45-67",
-            "photo_urls": [good, "https://panmotors77.ru/other/path.jpg"],
+            "photo_urls": [good, "https://panmotors77.ru/other/script.php"],
         },
         headers={"Authorization": "Bearer test-intake-token"},
     )
@@ -969,3 +969,17 @@ def test_the_intake_diagnostics_say_what_photo_links_the_site_sent_and_what_came
     assert intake["photo_urls_sample"][0] == good
     assert intake["urls_asked"] == 1 and intake["urls_archived"] == 0
     assert intake["urls_report"] == [{"url": good, "result": "bad_response", "status": 404}]
+
+
+def test_a_photo_link_of_the_new_site_outside_tmp_files_is_accepted_if_it_is_an_image() -> None:
+    from app.services.leads_service import photo_urls_to_archive
+
+    payload = {
+        "photo_urls": [
+            "https://panmotors77.ru/tmp/upload_x99Evh.jpg",  # так шлёт panmotors77.ru
+            "https://panmotors77.ru/tmp/upload_x99Evh.php",  # не картинка
+            "http://panmotors77.ru/tmp/a.jpg",  # не https
+            "https://10.0.0.5/tmp/a.jpg",  # IP-адрес
+        ]
+    }
+    assert photo_urls_to_archive(payload) == ["https://panmotors77.ru/tmp/upload_x99Evh.jpg"]
