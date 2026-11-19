@@ -947,11 +947,11 @@ def test_the_intake_diagnostics_say_what_photo_links_the_site_sent_and_what_came
 
     _enable_intake(db_session)
 
-    def fake_archive(urls, lead_id, token, report=None, **_):
+    def fake_fetch(urls, report=None, time_budget=None):
         report.append({"url": urls[0], "result": "bad_response", "status": 404})
         return []
 
-    monkeypatch.setattr(lead_photos_service, "archive_photos", fake_archive)
+    monkeypatch.setattr(lead_photos_service, "fetch_photos", fake_fetch)
     good = "https://panmotors77.ru/tmp_files/crm_photos/abc/IMG_1.jpg"
     response = client.post(
         INTAKE_URL,
@@ -967,7 +967,7 @@ def test_the_intake_diagnostics_say_what_photo_links_the_site_sent_and_what_came
     intake = json.loads(lead.request_meta["intake"])
     assert intake["photo_urls_count"] == 2 and intake["photo_urls_accepted"] == 1
     assert intake["photo_urls_sample"][0] == good
-    assert intake["urls_asked"] == 1 and intake["urls_archived"] == 0
+    assert intake["urls_asked"] == 1 and intake["urls_fetched"] == 0
     assert intake["urls_report"] == [{"url": good, "result": "bad_response", "status": 404}]
 
 
@@ -1015,7 +1015,10 @@ def test_the_new_sites_photo_links_are_downloaded_before_answering_not_in_the_ba
     lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
     assert lead["photos"] == [f"/api/leads/{lead_id}/photos/upload_x99Evh.jpg"]
     intake = json.loads(lead["request_meta"]["intake"])
-    assert intake["urls_mode"] == "before_answer" and intake["urls_archived"] == 1
+    # Скачано до ответа, на Диск загружено после ответа (в фоне), время каждого шага - в диагностике.
+    assert intake["urls_mode"] == "fetch_before_answer_upload_after"
+    assert intake["urls_fetched"] == 1 and intake["urls_archived"] == 1
+    assert "fetch_ms" in intake and "upload_ms" in intake
 
 
 def test_all_photo_links_up_to_the_limit_are_fetched_before_answering() -> None:

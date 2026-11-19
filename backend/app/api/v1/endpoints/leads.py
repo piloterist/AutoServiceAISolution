@@ -208,16 +208,21 @@ async def intake_lead(
     diag["has_files_folder"] = bool(payload.get("files") and payload.get("folder"))
     meta["intake"] = json.dumps(diag, ensure_ascii=False, separators=(",", ":"))
     try:
+        deferred: list[tuple[str, bytes]] = []
         lead = await run_in_threadpool(
-            leads_service.create_lead, db, payload, meta, uploaded, fetch_now
+            leads_service.create_lead, db, payload, meta, uploaded, fetch_now, deferred
         )
     except LeadRejected as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
 
-    # Ссылки сайта (photo_urls) уже скачаны в create_lead, до ответа. Остальные ссылки (старые
-    # сайты: files/folder) скачиваются после ответа в фоне.
+    # Ссылки сайта (photo_urls) уже скачаны в create_lead, до ответа; на Диск их загрузим после
+    # ответа. Остальные ссылки (старые сайты: files/folder) скачиваются после ответа в фоне.
+    if deferred:
+        background_tasks.add_task(
+            leads_service.upload_deferred_photos, db.get_bind(), lead.id, deferred
+        )
     if photo_urls and not fetch_now:
         background_tasks.add_task(
             leads_service.archive_lead_photos_from_urls, db.get_bind(), lead.id, photo_urls

@@ -29,6 +29,7 @@ import binascii
 import json
 import re
 import secrets
+import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -314,6 +315,7 @@ def create_lead(
     request_meta: dict[str, Any] | None = None,
     uploaded_photos: list[tuple[str, bytes]] | None = None,
     fetch_now_urls: list[str] | None = None,
+    deferred_photos: list[tuple[str, bytes]] | None = None,
 ) -> WebsiteLead:
     phone = _normalize_phone(payload.get("user_phone"))
     if len(phone) < 10:
@@ -352,18 +354,23 @@ def create_lead(
         intake = {}
     if fetch_now_urls and not inline_photos:
         report: list[dict[str, Any]] = []
-        photos = (
-            lead_photos_service.archive_photos(
-                fetch_now_urls, lead_id, disk_token, report, time_budget=SYNC_PHOTO_BUDGET_SEC
-            )
-            or None
+        started = time.monotonic()
+        fetched = lead_photos_service.fetch_photos(
+            fetch_now_urls, report, time_budget=SYNC_PHOTO_BUDGET_SEC
         )
         intake.update(
             urls_asked=len(fetch_now_urls),
-            urls_archived=len(photos or []),
-            urls_mode="before_answer",
+            urls_fetched=len(fetched),
+            fetch_ms=int((time.monotonic() - started) * 1000),
             urls_report=report[:10],
         )
+        if deferred_photos is not None:
+            # Загрузку на Диск делает вызывающий уже после ответа сайту (upload_deferred_photos).
+            deferred_photos.extend(fetched)
+            intake["urls_mode"] = "fetch_before_answer_upload_after"
+        else:
+            photos = lead_photos_service.archive_photo_bytes(fetched, lead_id, disk_token) or None
+            intake.update(urls_mode="all_before_answer", urls_archived=len(photos or []))
     intake.update(
         photos_in_request=len(inline_photos),
         photos_archived=len(photos or []),
@@ -385,6 +392,43 @@ def create_lead(
     db.commit()
     db.refresh(lead)
     return lead
+
+
+def upload_deferred_photos(bind: Any, lead_id: uuid.UUID, photos: list[tuple[str, bytes]]) -> None:
+    """После ответа сайту: загрузить уже скачанные фото на Диск и прикрепить к заявке (фото
+    появляются в карточке через несколько секунд). Итог и время - в request_meta.intake."""
+    try:
+        with Session(bind=bind) as db:
+            lead = db.get(WebsiteLead, lead_id)
+            if lead is None:
+                return
+            disk_token = telephony_settings_service.get_telephony_settings(db).yandex_disk_token
+            started = time.monotonic()
+            paths = lead_photos_service.archive_photo_bytes(photos, lead_id, disk_token)
+            logger.info(
+                "lead_photos_uploaded",
+                lead_id=str(lead_id),
+                asked=len(photos),
+                archived=len(paths),
+            )
+            if paths:
+                lead.photos = [*(lead.photos or []), *paths]
+            try:
+                intake = json.loads((lead.request_meta or {}).get("intake") or "{}")
+            except (TypeError, ValueError):
+                intake = {}
+            intake.update(
+                urls_archived=len(paths),
+                upload_ms=int((time.monotonic() - started) * 1000),
+                photos_archived=len(paths),
+            )
+            lead.request_meta = {
+                **(lead.request_meta or {}),
+                "intake": json.dumps(intake, ensure_ascii=False, separators=(",", ":")),
+            }
+            db.commit()
+    except Exception as exc:  # noqa: BLE001 - a photo problem must never surface anywhere
+        logger.error("lead_photos_upload_failed", lead_id=str(lead_id), error=str(exc))
 
 
 def archive_lead_photos_from_urls(bind: Any, lead_id: uuid.UUID, urls: list[str]) -> None:

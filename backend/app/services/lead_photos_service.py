@@ -220,6 +220,69 @@ def archive_photos(
     return archived
 
 
+def _is_image_response(response: httpx.Response) -> tuple[bool, str]:
+    raw_content_type = response.headers.get("content-type", "")
+    content_type = raw_content_type.split(";")[0].strip().lower()
+    image_exts = ("jpeg", "jpg", "png", "webp", "gif", "heic", "heif")
+    allowed_types = ("application/octet-stream", *(f"image/{ext}" for ext in image_exts))
+    return response.status_code == 200 and content_type in allowed_types, content_type
+
+
+def fetch_photos(
+    photo_urls: list[str], report: list[dict] | None = None, time_budget: float | None = None
+) -> list[tuple[str, bytes]]:
+    """Только скачать ссылки (все одновременно) и вернуть (имя, байты) в порядке ссылок; на Диск
+    ничего не грузится. Нужна, когда сайт ждёт ответа: скачиваем сразу (сайт удаляет временные
+    файлы по одному и сразу), а долгую загрузку на Диск делаем уже после ответа."""
+    if not photo_urls:
+        return []
+    deadline = time.monotonic() + time_budget if time_budget else None
+    fetched: list[tuple[str, bytes]] = []
+    try:
+        with httpx.Client(timeout=FETCH_TIMEOUT_SECONDS) as fetch_client:
+
+            def fetch(url: str) -> tuple[httpx.Response | None, httpx.HTTPError | None]:
+                try:
+                    timeout = (
+                        min(FETCH_TIMEOUT_SECONDS, max(deadline - time.monotonic(), 1.0))
+                        if deadline is not None
+                        else FETCH_TIMEOUT_SECONDS
+                    )
+                    return fetch_client.get(url, follow_redirects=True, timeout=timeout), None
+                except httpx.HTTPError as exc:
+                    return None, exc
+
+            with ThreadPoolExecutor(max_workers=min(len(photo_urls), 10)) as pool:
+                results = list(pool.map(fetch, photo_urls))
+        for url, (response, error) in zip(photo_urls, results, strict=True):
+            if response is None:
+                logger.warning("lead_photo_fetch_failed", url=url, error=str(error))
+                _note(report, url, "fetch_failed", error=type(error).__name__)
+                continue
+            ok, content_type = _is_image_response(response)
+            if not ok:
+                logger.warning(
+                    "lead_photo_fetch_bad_response",
+                    url=url,
+                    status=response.status_code,
+                    content_type=content_type,
+                )
+                _note(
+                    report,
+                    url,
+                    "bad_response",
+                    status=response.status_code,
+                    content_type=content_type,
+                )
+                continue
+            fetched.append((_filename_from_url(url), response.content))
+            _note(report, url, "fetched", bytes=len(response.content))
+    except Exception as exc:  # noqa: BLE001 - a photo problem must never reject the lead itself
+        logger.error("lead_photo_fetch_unexpected_error", error=str(exc))
+        _note(report, "", "unexpected_error", error=type(exc).__name__)
+    return fetched
+
+
 def _note(report: list[dict] | None, url: str, result: str, **details) -> None:
     if report is not None:
         report.append({"url": url[:160], "result": result, **details})
