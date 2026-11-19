@@ -3,6 +3,7 @@ verify_api_token), listing with computed status, and settings.
 """
 
 import json
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -1012,7 +1013,12 @@ def test_the_new_sites_photo_links_are_downloaded_before_answering_not_in_the_ba
     assert response.status_code == 201
     assert background == []  # фоновой загрузки нет
     lead_id = response.json()["id"]
-    lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+    # Загрузка на Диск идёт отдельным потоком уже после ответа: ждём, пока фото появятся.
+    for _ in range(100):
+        lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+        if lead["photos"]:
+            break
+        time.sleep(0.05)
     assert lead["photos"] == [f"/api/leads/{lead_id}/photos/upload_x99Evh.jpg"]
     intake = json.loads(lead["request_meta"]["intake"])
     # Скачано до ответа, на Диск загружено после ответа (в фоне), время каждого шага - в диагностике.

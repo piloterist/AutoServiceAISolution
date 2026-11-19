@@ -12,6 +12,8 @@ here still uses the normal `verify_api_token`, same as the rest of the app.
 import json
 import mimetypes
 import re
+import threading
+import time
 import uuid
 from typing import Any
 
@@ -191,6 +193,7 @@ async def intake_lead(
     потоков Starlette, где идут обычные `def`-эндпоинты, а не в общем executor asyncio: его
     занимают фоновые циклы расшифровки звонков (см. прежнее описание этого эндпоинта и
     db/session.py), заявка с сайта не должна ждать за ними (10-15 с зависаний формы 2026-10-06)."""
+    request_started = time.monotonic()
     token = authorization.removeprefix("Bearer ").strip() if authorization else None
     if not await run_in_threadpool(leads_service.verify_intake_token, db, token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid intake token")
@@ -220,9 +223,15 @@ async def intake_lead(
     # Ссылки сайта (photo_urls) уже скачаны в create_lead, до ответа; на Диск их загрузим после
     # ответа. Остальные ссылки (старые сайты: files/folder) скачиваются после ответа в фоне.
     if deferred:
-        background_tasks.add_task(
-            leads_service.upload_deferred_photos, db.get_bind(), lead.id, deferred
-        )
+        # Отдельным потоком, не фоновой задачей запроса: пока она не закончилась, ответ сайту мог
+        # не считаться завершённым (форма сайта висла ~14 с = время загрузки 8 фото на Диск).
+        handler_ms = int((time.monotonic() - request_started) * 1000)
+        threading.Thread(
+            target=leads_service.upload_deferred_photos,
+            args=(db.get_bind(), lead.id, deferred, handler_ms),
+            name=f"lead-photos-{lead.id}",
+            daemon=True,
+        ).start()
     if photo_urls and not fetch_now:
         background_tasks.add_task(
             leads_service.archive_lead_photos_from_urls, db.get_bind(), lead.id, photo_urls

@@ -394,7 +394,12 @@ def create_lead(
     return lead
 
 
-def upload_deferred_photos(bind: Any, lead_id: uuid.UUID, photos: list[tuple[str, bytes]]) -> None:
+def upload_deferred_photos(
+    bind: Any,
+    lead_id: uuid.UUID,
+    photos: list[tuple[str, bytes]],
+    handler_ms: int | None = None,
+) -> None:
     """После ответа сайту: загрузить уже скачанные фото на Диск и прикрепить к заявке (фото
     появляются в карточке через несколько секунд). Итог и время - в request_meta.intake."""
     try:
@@ -422,6 +427,8 @@ def upload_deferred_photos(bind: Any, lead_id: uuid.UUID, photos: list[tuple[str
                 upload_ms=int((time.monotonic() - started) * 1000),
                 photos_archived=len(paths),
             )
+            if handler_ms is not None:
+                intake["handler_ms"] = handler_ms  # сколько запрос обрабатывался до ответа сайту
             lead.request_meta = {
                 **(lead.request_meta or {}),
                 "intake": json.dumps(intake, ensure_ascii=False, separators=(",", ":")),
