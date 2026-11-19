@@ -2,6 +2,7 @@
 verify_api_token), listing with computed status, and settings.
 """
 
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -885,6 +886,37 @@ def test_photos_in_a_multipart_request_are_taken_without_the_files_folder_scheme
     lead = db_session.get(WebsiteLead, uuid.UUID(response.json()["id"]))
     assert seen["names"] == ["evil name.jpg", "second.png"]  # без каталога, пустой part пропущен
     assert len(lead.photos) == 2
+
+
+def test_the_request_meta_records_what_actually_arrived_for_photo_diagnostics(
+    client, db_session, monkeypatch
+) -> None:
+    from app.services import lead_photos_service
+
+    _enable_intake(db_session)
+    monkeypatch.setattr(lead_photos_service, "archive_photo_bytes", lambda *_: [])  # Диск не принял
+    files = [
+        ("file[]", ("a.jpg", b"jpeg-bytes", "image/jpeg")),
+        ("file[]", ("", b"", "application/octet-stream")),
+    ]
+    response = _form_lead(
+        client, data={"Phone number": "+7 900 000-11-22", "Name": "T"}, files=files
+    )
+    assert response.status_code == 201, response.text
+    intake = json.loads(
+        db_session.get(WebsiteLead, uuid.UUID(response.json()["id"])).request_meta["intake"]
+    )
+    assert intake["content_type"] == "multipart/form-data"
+    # Пустую часть без имени файла (браузер без фото) парсер формы отбрасывает.
+    assert [(p["filename"], p["kept"]) for p in intake["file_parts"]] == [("a.jpg", True)]
+    assert intake["photos_in_request"] == 1 and intake["photos_archived"] == 0  # дошло, не легло
+    assert "Phone number" in intake["fields"] or "user_phone" in intake["fields"]
+
+    nothing = _form_lead(client, data={"Phone number": "+7 900 000-11-23"})
+    meta = json.loads(
+        db_session.get(WebsiteLead, uuid.UUID(nothing.json()["id"])).request_meta["intake"]
+    )
+    assert meta["file_parts"] == [] and meta["photos_in_request"] == 0
 
 
 def test_the_old_json_format_is_unchanged_and_a_form_without_phone_is_still_rejected(

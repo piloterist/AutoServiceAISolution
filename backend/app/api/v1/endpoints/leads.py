@@ -9,6 +9,7 @@ services/leads_service.py's module docstring for why). Every other route
 here still uses the normal `verify_api_token`, same as the rest of the app.
 """
 
+import json
 import mimetypes
 import re
 import uuid
@@ -115,11 +116,18 @@ def _safe_filename(name: str, index: int) -> str:
     return cleaned or f"photo-{index + 1}.jpg"
 
 
-async def _read_intake_body(request: Request) -> tuple[dict[str, Any], list[tuple[str, bytes]]]:
+async def _read_intake_body(
+    request: Request,
+) -> tuple[dict[str, Any], list[tuple[str, bytes]], dict[str, Any]]:
     """Тело заявки: JSON (наш формат) или форма (urlencoded / multipart, как шлёт сайт на Webflow).
     Из формы файлы (file[], file, любые части с файлом) отдаём отдельно, пустые поля без файла
-    пропускаем."""
+    пропускаем. Третье значение - что пришло в запросе (для диагностики: сохраняется в
+    request_meta заявки, чтобы без журналов было видно, дошли ли фото и почему нет)."""
     content_type = request.headers.get("content-type", "").lower()
+    diag: dict[str, Any] = {
+        "content_type": content_type.split(";")[0][:60] or None,
+        "content_length": request.headers.get("content-length"),
+    }
     if "json" in content_type or not content_type:
         try:
             body = await request.json()
@@ -131,24 +139,41 @@ async def _read_intake_body(request: Request) -> tuple[dict[str, Any], list[tupl
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Body must be an object"
             )
-        return body, []
+        diag["fields"] = sorted(str(k) for k in body)[:40]
+        return body, [], diag
 
     form = await request.form()
     fields: dict[str, Any] = {}
     photos: list[tuple[str, bytes]] = []
+    file_parts: list[dict[str, Any]] = []
     for key in form.keys():
         values = form.getlist(key)
         files = [v for v in values if isinstance(v, UploadFile)]
         if files:
             for upload in files:
-                if not upload.filename or len(photos) >= MAX_UPLOADED_PHOTOS:
-                    continue
-                content = await upload.read()
-                if content and len(content) <= MAX_PHOTO_BYTES:
-                    photos.append((_safe_filename(upload.filename, len(photos)), content))
+                content = await upload.read() if upload.filename else b""
+                kept = bool(
+                    upload.filename
+                    and content
+                    and len(content) <= MAX_PHOTO_BYTES
+                    and len(photos) < MAX_UPLOADED_PHOTOS
+                )
+                if len(file_parts) < 15:
+                    file_parts.append(
+                        {
+                            "field": key,
+                            "filename": (upload.filename or "")[:60],
+                            "size": len(content),
+                            "kept": kept,
+                        }
+                    )
+                if kept:
+                    photos.append((_safe_filename(upload.filename or "", len(photos)), content))
             continue
         fields[key] = values[0] if len(values) == 1 else list(values)
-    return fields, photos
+    diag["fields"] = sorted(str(k) for k in fields)[:40]
+    diag["file_parts"] = file_parts
+    return fields, photos, diag
 
 
 @router.post("/intake", status_code=status.HTTP_201_CREATED)
@@ -170,11 +195,13 @@ async def intake_lead(
     if not await run_in_threadpool(leads_service.verify_intake_token, db, token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid intake token")
 
-    raw, uploaded = await _read_intake_body(request)
+    raw, uploaded, diag = await _read_intake_body(request)
     payload = normalize_site_fields(raw)
     meta = leads_service.request_meta_from(
         request.headers, request.client.host if request.client else None
     )
+    # Строкой, не объектом: карточка заявки выводит значения request_meta как текст.
+    meta["intake"] = json.dumps(diag, ensure_ascii=False, separators=(",", ":"))
     try:
         lead = await run_in_threadpool(leads_service.create_lead, db, payload, meta, uploaded)
     except LeadRejected as exc:

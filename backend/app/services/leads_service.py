@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import json
 import re
 import secrets
 import uuid
@@ -308,6 +309,21 @@ def create_lead(
         if inline_photos
         else None
     )
+
+    # Что реально дошло и что из этого легло на Диск: без этого пропавшее фото не разобрать (с сайта
+    # не прислали / пришло пустое / не сохранилось на Диске). Лежит в request_meta заявки.
+    request_meta = dict(request_meta or {})
+    try:
+        intake = dict(json.loads(request_meta.get("intake") or "{}"))
+    except (TypeError, ValueError):
+        intake = {}
+    intake.update(
+        photos_in_request=len(inline_photos),
+        photos_archived=len(photos or []),
+        disk_token_set=bool(disk_token),
+    )
+    # Строкой, не объектом: карточка заявки выводит значения request_meta как текст.
+    request_meta["intake"] = json.dumps(intake, ensure_ascii=False, separators=(",", ":"))
 
     lead = WebsiteLead(
         id=lead_id,
