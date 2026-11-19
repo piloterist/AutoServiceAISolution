@@ -762,6 +762,28 @@ def test_a_stay_closed_by_a_lost_node_continues_when_the_same_car_is_seen_next_m
     assert db_session.scalars(select(BayOccupancy)).one().workshop_job_id == today.id
 
 
+def test_a_multi_day_stay_closed_by_a_false_exit_today_continues_when_the_car_is_seen_again(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    """2026-11-19: машина стояла с 18.11, сегодня выезд ложно подтвердился (номер закрыли), а
+    через 2,5 минуты та же машина снова в кадре: это тот же заезд, а не новый."""
+    _order(db_session, "ЗН-Т652", "Škoda № Т652АК977 VIN T")
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.93, moment(18, 19)
+    )
+    _event_with_confidence(
+        client, auth_headers, bay_id, "exit_confirmed", "Т652АК977", 0.9, _day3(10, 10)
+    )
+    event = _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.95, _day3(10, 12, 30)
+    )
+    assert "не учтён" in event["note"]
+    db_session.expire_all()
+    interval = db_session.scalars(select(BayOccupancy)).one()
+    assert interval.ended_at is None and interval.exit_event_id is None
+    assert interval.started_at.replace(tzinfo=UTC) == moment(18, 19)
+
+
 def test_a_stay_over_midnight_takes_the_planned_job_of_the_new_day_instead_of_a_duplicate(
     client, auth_headers, bay_id, workshop, statuses, db_session
 ) -> None:

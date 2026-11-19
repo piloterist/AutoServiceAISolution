@@ -444,6 +444,8 @@ def same_car_interval(db: Session, event: BayEvent) -> BayOccupancy | None:
             BayOccupancy.ended_at.is_not(None),
             or_(
                 BayOccupancy.started_at >= day_start,
+                # заезд с прошлых суток, закрытый сегодня (ложный выезд): тоже можно продолжить
+                BayOccupancy.ended_at >= day_start,
                 BayOccupancy.exit_event_id.in_(offline_exits),
             ),
         )
