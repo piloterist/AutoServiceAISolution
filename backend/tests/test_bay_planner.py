@@ -541,9 +541,7 @@ def test_a_quick_entry_of_a_different_known_car_is_a_new_car_not_a_return(
         client, auth_headers, bay_id, "entry_confirmed", "К679ОО777", 0.76, moment(14, 21, 53)
     )
     db_session.expire_all()
-    intervals = db_session.scalars(
-        select(BayOccupancy).order_by(BayOccupancy.started_at)
-    ).all()
+    intervals = db_session.scalars(select(BayOccupancy).order_by(BayOccupancy.started_at)).all()
     assert len(intervals) == 2
     assert intervals[0].ended_at is not None  # выезд Audi остался в силе
     assert intervals[1].ended_at is None and intervals[1].plate.startswith("К679ОО")
@@ -565,7 +563,10 @@ def test_a_confidently_read_different_plate_is_a_new_car_even_without_a_work_ord
         "occurred_at": moment(14, 21).isoformat(),
         "note": "прочитано: М111ММ77 (первые 6 символов: 100%, кадров: 10)",
     }
-    assert client.post(f"/api/v1/bays/{bay_id}/events", json=body, headers=auth_headers).status_code == 201
+    assert (
+        client.post(f"/api/v1/bays/{bay_id}/events", json=body, headers=auth_headers).status_code
+        == 201
+    )
     db_session.expire_all()
     intervals = db_session.scalars(select(BayOccupancy).order_by(BayOccupancy.started_at)).all()
     assert len(intervals) == 2 and intervals[0].ended_at is not None
@@ -639,9 +640,7 @@ def test_the_same_car_returning_the_same_day_continues_its_stay_however_long_the
     )
     assert "не учтён" in event["note"]
     db_session.expire_all()
-    stays = db_session.scalars(
-        select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")
-    ).all()
+    stays = db_session.scalars(select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")).all()
     assert len(stays) == 1 and stays[0].ended_at is None and stays[0].started_at.hour == 7
     jobs = db_session.scalars(select(WorkshopJob).where(WorkshopJob.plate == "С151СА99")).all()
     assert len(jobs) == 1 and jobs[0].status_id == statuses["В работе"].id
@@ -659,9 +658,7 @@ def test_a_confident_other_car_between_two_entries_makes_the_second_a_new_stay(
     ):
         _event_with_confidence(client, auth_headers, bay_id, kind, plate, 0.95, at)
     db_session.expire_all()
-    stays = db_session.scalars(
-        select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")
-    ).all()
+    stays = db_session.scalars(select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")).all()
     assert len(stays) == 2
 
 
@@ -704,9 +701,7 @@ def test_a_short_stay_of_another_car_between_two_entries_is_not_a_car(
     ):
         _event_with_confidence(client, auth_headers, bay_id, kind, plate, 0.95, at)
     db_session.expire_all()
-    stays = db_session.scalars(
-        select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")
-    ).all()
+    stays = db_session.scalars(select(BayOccupancy).where(BayOccupancy.plate == "С151СА99")).all()
     assert len(stays) == 1 and stays[0].ended_at is None
 
 
@@ -722,3 +717,78 @@ def test_plates_match_allows_one_wrong_character_of_six() -> None:
     assert not plates_match("С151СА99", "К279КО777")
     assert not plates_match("С151", "С151СА99")  # короткое чтение: только точное совпадение
     assert not plates_match(None, "С151СА99")
+
+
+def _day3(hour: int, minute: int = 0, second: int = 0) -> datetime:
+    return moment(hour, minute, second).replace(day=3)
+
+
+def test_a_stay_closed_by_a_lost_node_continues_when_the_same_car_is_seen_next_morning(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    """Машина стоит в боксе с вечера, ночью узел был выключен (заезд закрылся автоматически),
+    утром узел снова видит ту же машину: заезд продолжается, а запись плана - на новый день с
+    начала рабочего дня."""
+    _order(db_session, "ЗН-Т652", "Škoda № Т652АК977 VIN T")
+    db_session.get(Bay, uuid.UUID(bay_id)).camera_code = "cam2"
+    db_session.commit()
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.93, moment(18, 19)
+    )
+    _node_seen(db_session, "cam2", moment(18, 52))
+    bay_planner.tick(db_session, now=_day3(6))  # утром узла всё ещё нет: заезд закрыт
+
+    event = _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.95, _day3(8, 41)
+    )
+    assert "не учтён" in event["note"]
+    db_session.expire_all()
+    interval = db_session.scalars(select(BayOccupancy)).one()
+    assert interval.ended_at is None  # тот же заезд продолжается
+    assert interval.started_at.replace(tzinfo=UTC) == moment(18, 19)
+
+    status = db_session.get(CameraStatus, "cam2")
+    status.seen_at = _day3(8, 44)  # узел снова шлёт сигналы
+    db_session.commit()
+    bay_planner.tick(db_session, now=_day3(8, 45))
+    db_session.expire_all()
+    jobs = db_session.scalars(select(WorkshopJob).order_by(WorkshopJob.job_date)).all()
+    assert [job.job_date.day for job in jobs] == [2, 3]
+    yesterday, today = jobs
+    assert yesterday.status_id == statuses["Готова"].id
+    assert today.status_id == statuses["В работе"].id
+    assert today.start_time == time(8, 0) and today.end_time == time(9, 0)
+    assert today.work_order_id == yesterday.work_order_id
+    assert db_session.scalars(select(BayOccupancy)).one().workshop_job_id == today.id
+
+
+def test_a_stay_over_midnight_takes_the_planned_job_of_the_new_day_instead_of_a_duplicate(
+    client, auth_headers, bay_id, workshop, statuses, db_session
+) -> None:
+    _order(db_session, "ЗН-Т652", "Škoda № Т652АК977 VIN T")
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "Т652АК977", 0.93, moment(18, 19)
+    )
+    planned = WorkshopJob(
+        workshop_id=workshop.id,
+        post_number=3,
+        job_date=date(2026, 11, 3),
+        start_time=time(14, 0),
+        end_time=time(16, 0),
+        plate="Т652АК977",
+        status_id=statuses["Запись"].id,
+    )
+    db_session.add(planned)
+    db_session.commit()
+
+    bay_planner.tick(db_session, now=_day3(7, 0))  # цех ещё закрыт: ничего не создаём
+    assert len(db_session.scalars(select(WorkshopJob)).all()) == 2
+    bay_planner.tick(db_session, now=_day3(8, 30))
+    db_session.expire_all()
+    jobs = db_session.scalars(select(WorkshopJob)).all()
+    assert len(jobs) == 2  # дубля нет: взята запись мастера
+    db_session.refresh(planned)
+    assert planned.status_id == statuses["В работе"].id
+    assert db_session.scalars(select(BayOccupancy)).one().workshop_job_id == planned.id
+    bay_planner.tick(db_session, now=_day3(8, 31))  # повторный проход ничего не меняет
+    assert len(db_session.scalars(select(WorkshopJob)).all()) == 2

@@ -392,6 +392,9 @@ OCCUPIED_NOISE_CONFIDENCE = 0.70
 # машины с уверенным въездом и выездом.
 SAME_CAR_NOTE = f"повторный въезд той же машины за день: {IGNORED_MARK}"
 OTHER_CAR_CONFIDENCE = 0.70
+# Заезд, закрытый автоматически, потому что узел камеры долго не был на связи (bay_planner). Если
+# тот же номер увидят при первом запуске узла, заезд продолжается, а не открывается новый.
+OFFLINE_NOTE = "узел видеоконтроля не был на связи больше 3 часов: заезд закрыт автоматически"
 # Другая машина между двумя въездами - только если она простояла в боксе не меньше этого: короткий
 # «заезд» - ложное срабатывание (опустили подъёмник, номер закрыли), а не реальная машина.
 OTHER_CAR_MIN_STAY = timedelta(minutes=10)
@@ -432,13 +435,17 @@ def same_car_interval(db: Session, event: BayEvent) -> BayOccupancy | None:
     day_start = datetime.combine(
         event.occurred_at.astimezone(SHOP_TZ).date(), time.min, tzinfo=SHOP_TZ
     )
+    offline_exits = select(BayEvent.id).where(BayEvent.note.contains(OFFLINE_NOTE))
     intervals = db.scalars(
         select(BayOccupancy)
         .where(
             BayOccupancy.bay_id == event.bay_id,
-            BayOccupancy.started_at >= day_start,
             BayOccupancy.started_at <= event.occurred_at,
             BayOccupancy.ended_at.is_not(None),
+            or_(
+                BayOccupancy.started_at >= day_start,
+                BayOccupancy.exit_event_id.in_(offline_exits),
+            ),
         )
         .order_by(BayOccupancy.started_at.desc())
     ).all()
@@ -453,6 +460,18 @@ def same_car_interval(db: Session, event: BayEvent) -> BayOccupancy | None:
     prior = next((i for i in intervals if same_car(i)), None)
     if prior is None:
         return None
+    if (
+        prior.started_at < day_start
+        and db.scalars(
+            select(BayOccupancy.id).where(
+                BayOccupancy.bay_id == event.bay_id,
+                BayOccupancy.started_at > prior.started_at,
+                BayOccupancy.started_at <= event.occurred_at,
+                BayOccupancy.id != prior.id,
+            )
+        ).first()
+    ):
+        return None  # заезд прошлых суток продолжаем, только если после него в боксе никого не было
     for other in intervals:
         if other.id == prior.id or other.started_at <= prior.started_at or same_car(other):
             continue

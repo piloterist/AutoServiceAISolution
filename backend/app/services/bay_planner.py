@@ -46,6 +46,7 @@ from app.models.workshop_job import WorkshopJob
 from app.services import audit_log_service
 from app.services.bay_service import (
     CANCELLED_EXIT_MARK,
+    OFFLINE_NOTE,
     REENTRY_NOTE,
     SAME_CAR_NOTE,
     SHOP_TZ,
@@ -197,11 +198,21 @@ def _find_planned_job(
 
 
 def _create_job(
-    db: Session, workshop: Workshop, post: int, moment: datetime, event: BayEvent
+    db: Session,
+    workshop: Workshop,
+    post: int,
+    moment: datetime,
+    event: BayEvent,
+    *,
+    from_day_start: bool = False,
 ) -> WorkshopJob | None:
+    """from_day_start: запись на новый день для машины, что стоит в боксе с прошлых суток, -
+    она начинается с начала рабочего дня, а не с момента, когда это заметили."""
     if moment.weekday() not in workshop.working_days or not 1 <= post <= workshop.posts_count:
         return None
-    start = max(_minutes(moment.time()), _minutes(workshop.start_time))
+    start = _minutes(workshop.start_time)
+    if not from_day_start:
+        start = max(_minutes(moment.time()), start)
     end = min(start + SLOT_MINUTES, _minutes(workshop.end_time))
     if end <= start:
         return None  # въезд после закрытия цеха: записи не создаём
@@ -326,12 +337,22 @@ def _cancel_false_exit(db: Session, event: BayEvent) -> None:
         return
     interval.ended_at = None
     interval.exit_event_id = None
-    note = f"{CANCELLED_EXIT_MARK}: машина вернулась в кадр"
+    after_offline = OFFLINE_NOTE in (exit_event.note or "")
+    note = f"{CANCELLED_EXIT_MARK}: " + (
+        "узел снова на связи, машина на месте" if after_offline else "машина вернулась в кадр"
+    )
     exit_event.note = f"{exit_event.note}; {note}" if exit_event.note else note
+    today = event.occurred_at.astimezone(SHOP_TZ).date()
     if interval.workshop_job_id is not None:
         job = db.get(WorkshopJob, interval.workshop_job_id)
         in_work = _status(db, STATUS_IN_WORK)
-        if job is not None and in_work is not None and job.status_id != in_work.id:
+        # Запись прошлых суток остаётся закрытой: запись на сегодня создаст _roll_over_open_jobs.
+        if (
+            job is not None
+            and in_work is not None
+            and job.job_date >= today
+            and job.status_id != in_work.id
+        ):
             before = _snapshot(job)
             job.status_id = in_work.id
             _log(db, job, before)
@@ -382,6 +403,57 @@ def _extend_open_jobs(db: Session, now: datetime) -> int:
     return extended
 
 
+def _roll_over_open_jobs(db: Session, now: datetime) -> int:
+    """Машина стоит в боксе дольше суток: на каждый новый рабочий день записи плана своя, с начала
+    рабочего дня (вчерашняя закрывается «Готова»). Запись на сегодня берётся из плана мастера,
+    если он её уже завёл, иначе создаётся."""
+    local = now.astimezone(SHOP_TZ)
+    rows = db.execute(
+        select(BayOccupancy, WorkshopJob, Bay)
+        .join(WorkshopJob, WorkshopJob.id == BayOccupancy.workshop_job_id)
+        .join(Bay, Bay.id == BayOccupancy.bay_id)
+        .where(BayOccupancy.ended_at.is_(None), WorkshopJob.job_date < local.date())
+    ).all()
+    done = _status(db, STATUS_DONE)
+    cancelled = _status(db, STATUS_CANCELLED)
+    rolled = 0
+    for interval, old_job, bay in rows:
+        workshop = db.get(Workshop, bay.workshop_id)
+        if (
+            workshop is None
+            or workshop.workshop_type != WORKSHOP_TYPE_MECHANICAL
+            or local.weekday() not in workshop.working_days
+            or not workshop.start_time <= local.time() < workshop.end_time
+        ):
+            continue
+        entry = db.get(BayEvent, interval.entry_event_id)
+        if entry is None:
+            continue
+        track_posts = get_app_settings(db).control_posts_enabled
+        job = _find_planned_job(
+            db,
+            workshop,
+            bay.sort_order,
+            local,
+            plate_prefix(interval.plate),
+            any_post=not track_posts,
+        )
+        if job is not None:
+            _start_job(db, job, entry)
+        else:
+            job = _create_job(db, workshop, bay.sort_order, local, entry, from_day_start=True)
+        if job is None:
+            continue
+        if old_job.status_id not in {s.id for s in (done, cancelled) if s} and done is not None:
+            before = _snapshot(old_job)
+            old_job.status_id = done.id
+            _log(db, old_job, before)
+        interval.workshop_job_id = job.id
+        db.flush()
+        rolled += 1
+    return rolled
+
+
 def _resolve_found_work_orders(db: Session) -> int:
     issues = db.scalars(
         select(BayIssue).where(BayIssue.resolved_at.is_(None), BayIssue.kind == ISSUE_NO_WORK_ORDER)
@@ -420,7 +492,6 @@ def _resolve_found_work_orders(db: Session) -> int:
 # за правду и не замечает, что машина уехала или стоит уже другая. После закрытия узел стартует
 # с «бокс свободен» и сам увидит то, что стоит в боксе.
 NODE_OFFLINE_CLOSE = timedelta(hours=3)
-OFFLINE_NOTE = "узел видеоконтроля не был на связи больше 3 часов: заезд закрыт автоматически"
 
 
 def _close_orphaned(db: Session, now: datetime) -> int:
@@ -461,6 +532,7 @@ def tick(db: Session, now: datetime | None = None) -> tuple[int, int]:
     """(записей продлено, ошибок закрыто автоматически)."""
     now = now or datetime.now(UTC)
     _close_orphaned(db, now)
+    _roll_over_open_jobs(db, now)
     extended = _extend_open_jobs(db, now)
     resolved = _resolve_found_work_orders(db)
     db.commit()
