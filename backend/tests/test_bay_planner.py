@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.models.bay import Bay, BayIssue, BayOccupancy, CameraStatus
 from app.models.department import Department
+from app.models.schedule_audit_log import ScheduleAuditLog
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.work_order import WorkOrder
 from app.models.workshop import Workshop
@@ -224,6 +225,65 @@ def test_the_job_is_extended_while_the_car_stays_and_done_after_exit(
 
     bay_planner.tick(db_session, moment(13, 0))  # машины нет - не продлеваем
     assert _jobs(db_session, workshop)[0].end_time == time(12, 0)
+
+
+def _planned_job(db_session, workshop, statuses, start: time, end: time) -> WorkshopJob:
+    job = WorkshopJob(
+        workshop_id=workshop.id,
+        post_number=2,
+        job_date=date(2026, 11, 2),
+        start_time=start,
+        end_time=end,
+        plate="А612СМ777",
+        status_id=statuses["Запись"].id,
+    )
+    db_session.add(job)
+    db_session.commit()
+    return job
+
+
+def test_the_planned_end_of_a_job_is_cut_to_the_exit_time(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    """2026-11-20: Peugeot уехала в 10:33, а запись на доске тянулась до 12:30."""
+    _order(db_session)
+    planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(12, 30))
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 2))
+    _event(client, auth_headers, bay_id, "exit_confirmed", at=moment(10, 33))
+    db_session.expire_all()
+    job = db_session.get(WorkshopJob, planned.id)
+    assert job.status_id == statuses["Готова"].id
+    assert (job.start_time, job.end_time) == (time(10, 0), time(11, 0))  # 10:33 -> до 11:00
+    log = db_session.scalars(
+        select(ScheduleAuditLog).where(ScheduleAuditLog.entity_id == planned.id)
+    ).all()
+    assert any(
+        entry.changes.get("end_time", {}).get("old") == "12:30:00"
+        and entry.changes.get("end_time", {}).get("new") == "11:00:00"
+        for entry in log
+    )  # прежнее значение осталось в истории
+
+
+def test_a_job_is_never_cut_shorter_than_one_slot(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(12, 30))
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 2))
+    _event(client, auth_headers, bay_id, "exit_confirmed", at=moment(10, 8))
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, planned.id).end_time == time(10, 30)  # не короче слота
+
+
+def test_a_job_that_ended_by_the_plan_is_not_extended_on_exit(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(10, 30))
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 2))
+    _event(client, auth_headers, bay_id, "exit_confirmed", at=moment(10, 20))
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, planned.id).end_time == time(10, 30)  # выезд раньше конца
 
 
 def test_extension_stops_at_the_end_of_the_working_day(
