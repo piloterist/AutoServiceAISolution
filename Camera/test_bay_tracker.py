@@ -124,6 +124,24 @@ class BayTrackerTest(unittest.TestCase):
         run.feed(25)
         self.assertEqual(run.events[1].frame, "w90")
 
+    def test_the_exit_frame_is_not_replaced_by_the_frames_of_the_car_that_drives_in(self):
+        """2026-11-20: Peugeot уехала, через две минуты въехала Audi; её номер сначала мельче, чем
+        у уезжающей в конце, и подменял снимок выезда."""
+        run = Run(tracker())
+        parked(run)
+        for width in (300, 250, 200, 150):
+            run.feed(1.0, width=width)
+        run.feed(3.0)  # номер пропал: уехала
+        run.feed(5)  # пустой бокс (меньше срока подтверждения выезда), приезжает другая машина
+        for width in (60, 80, 120):  # номер новой машины мельче, чем был у уезжающей
+            run.feed(1.0, detection=det(width, text="T123YX199"), width=width)
+        run.approach(start=120, end=330, seconds=4, text="T123YX199")
+        run.feed(10, width=330, text="T123YX199")
+        self.assertEqual(
+            [e.kind for e in run.events], ["entry_confirmed", "exit_confirmed", "entry_confirmed"]
+        )
+        self.assertEqual(run.events[1].frame, "w150")  # кадр уехавшей, а не новой машины
+
     def test_car_that_comes_back_before_the_hold_is_not_an_exit(self):
         run = Run(tracker())
         parked(run)

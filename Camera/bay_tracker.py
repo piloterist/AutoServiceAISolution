@@ -33,6 +33,7 @@ import plates
 
 EMPTY, APPROACH, PARKED, LEAVING = "EMPTY", "APPROACH", "PARKED", "LEAVING"
 LEAVE_VOTES = 3  # подряд кадров «уезжает», чтобы не реагировать на один сбой детектора
+FAR_FRAME_GAP_SEC = 5.0  # пауза без номера дольше этой: появившийся номер - другая машина, снимок выезда не трогаем
 
 
 @dataclass
@@ -131,6 +132,7 @@ class BayTracker:
         self.leave_frame = None
         self.far_width = float("inf")
         self.far_frame = None
+        self.far_closed = False  # снимок выезда закрыт: номер снова виден после паузы - другая машина
         self._reset_vehicle()
 
     def _reset_vehicle(self) -> None:
@@ -264,6 +266,7 @@ class BayTracker:
             self.last_seen = t
             self.best_frame, self.best_score = None, 0.0
             self.far_width, self.far_frame = det.width, frame
+            self.far_closed = False
             self._reset_vehicle()
         return []
 
@@ -313,6 +316,7 @@ class BayTracker:
         self.still_since, self.prev = None, None
         self.leave_votes, self.leave_t, self.leave_frame = 0, None, None
         self.far_width, self.far_frame = float("inf"), None
+        self.far_closed = False
         self._reset_vehicle()
 
     def _update_leaving(self, t, det, frame, vehicle=None) -> list[Event]:
@@ -339,8 +343,12 @@ class BayTracker:
                 return [event]
             return []
         self._reset_vehicle()  # номер снова виден: проверки машины начинаются заново
+        if self.last_seen is not None and t - self.last_seen > FAR_FRAME_GAP_SEC:
+            # Номер пропадал надолго: это уже другая машина. Её кадры не должны подменять
+            # снимок выезда уехавшей (2026-11-20: на фото выезда Peugeot стояла вошедшая Audi).
+            self.far_closed = True
         self._observe(t, det, frame)
-        if det.width <= self.far_width:
+        if not self.far_closed and det.width <= self.far_width:
             self.far_width = det.width
             if frame is not None:
                 self.far_frame = frame
@@ -362,6 +370,7 @@ class BayTracker:
                 self._set_reference(t)
                 self.leave_votes, self.leave_t, self.leave_frame = 0, None, None
                 self.far_width, self.far_frame = float("inf"), None
+                self.far_closed = False
                 return []
             exit_event = Event("exit_confirmed", self.leave_t, self.parked, self._exit_frame())
             self.parked = None
