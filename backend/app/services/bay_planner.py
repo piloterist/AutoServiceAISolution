@@ -235,11 +235,39 @@ def _create_job(
     return job
 
 
+def _earlier_start(db: Session, job: WorkshopJob, arrived: datetime) -> time | None:
+    """Машина приехала раньше записи: запись начинается с фактического заезда (как и записи,
+    что создаются при заезде, - с минуты заезда). Не раньше начала рабочего дня и не заходя на
+    предыдущую запись того же поста. None - сдвигать нечего."""
+    if job.job_date != arrived.date():
+        return None
+    start = _minutes(arrived.time())
+    workshop = db.get(Workshop, job.workshop_id)
+    if workshop is not None:
+        start = max(start, _minutes(workshop.start_time))
+    previous_ends = db.scalars(
+        select(WorkshopJob.end_time).where(
+            WorkshopJob.workshop_id == job.workshop_id,
+            WorkshopJob.post_number == job.post_number,
+            WorkshopJob.job_date == job.job_date,
+            WorkshopJob.id != job.id,
+            WorkshopJob.end_time <= job.start_time,
+        )
+    ).all()
+    if previous_ends:
+        start = max(start, max(_minutes(end) for end in previous_ends))
+    return _at(start) if start < _minutes(job.start_time) else None
+
+
 def _start_job(db: Session, job: WorkshopJob, event: BayEvent) -> None:
     before = _snapshot(job)
     status = _status(db, STATUS_IN_WORK)
     if status:
         job.status_id = status.id
+    # Приехала раньше записи (2026-11-20: заезд в 09:48, запись с 10:00): начало - фактическое.
+    earlier = _earlier_start(db, job, event.occurred_at.astimezone(SHOP_TZ))
+    if earlier is not None:
+        job.start_time = earlier
     job.plate = job.plate or event.plate
     if event.work_order_id and job.work_order_id is None:
         _fill_from_work_order(db, job, event.work_order_id)

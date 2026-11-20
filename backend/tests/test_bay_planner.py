@@ -264,6 +264,49 @@ def test_the_planned_end_of_a_job_is_cut_to_the_exit_time(
     )  # прежнее значение осталось в истории
 
 
+def test_an_early_arrival_moves_the_job_start_to_the_actual_entry(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    """2026-11-20: Peugeot заехала в 09:48, а запись стояла с 10:00."""
+    _order(db_session)
+    planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(12, 30))
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(9, 48))
+    db_session.expire_all()
+    job = db_session.get(WorkshopJob, planned.id)
+    assert job.status_id == statuses["В работе"].id
+    assert (job.start_time, job.end_time) == (time(9, 48), time(12, 30))
+    log = db_session.scalars(
+        select(ScheduleAuditLog).where(ScheduleAuditLog.entity_id == planned.id)
+    ).all()
+    assert any(
+        entry.changes.get("start_time", {}).get("old") == "10:00:00"
+        and entry.changes.get("start_time", {}).get("new") == "09:48:00"
+        for entry in log
+    )
+
+
+def test_an_early_arrival_does_not_run_into_the_previous_job_of_the_post(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    before = _planned_job(db_session, workshop, statuses, time(9, 0), time(9, 30))
+    before.plate = "К279КО777"
+    planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(11, 0))
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(9, 10))
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, planned.id).start_time == time(9, 30)  # не раньше соседа
+
+
+def test_a_late_arrival_keeps_the_planned_start(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(12, 30))
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 20))
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, planned.id).start_time == time(10, 0)
+
+
 def test_a_job_is_never_cut_shorter_than_one_slot(
     client, auth_headers, db_session, workshop, statuses, bay_id
 ) -> None:
