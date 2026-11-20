@@ -725,24 +725,30 @@ function MechanicalViewInner({
                     >
                       {/* Grab the top/bottom edge to shrink or stretch the
                           record in time only - day/post stay fixed. */}
-                      <div
-                        className="job-resize-handle job-resize-handle--top"
-                        onPointerDown={(e) => startDrag(e, job, "resize-start")}
-                        onPointerMove={handleDragPointerMove}
-                        onPointerUp={handleDragPointerUp}
-                        onPointerCancel={handleDragPointerUp}
-                      />
+                      {/* У совсем короткой записи края не показываем: две ручки по 6 px закрывают её
+                          целиком, и по ней не попасть. Время такой записи меняется в карточке. */}
+                      {height >= 24 && (
+                        <div
+                          className="job-resize-handle job-resize-handle--top"
+                          onPointerDown={(e) => startDrag(e, job, "resize-start")}
+                          onPointerMove={handleDragPointerMove}
+                          onPointerUp={handleDragPointerUp}
+                          onPointerCancel={handleDragPointerUp}
+                        />
+                      )}
                       <div className="job-title">{job.work_order_number ?? "Без ЗН"}</div>
                       {job.car_description && <div className="job-sub">{job.car_description}</div>}
                       {job.work_description && <div className="job-work">{job.work_description}</div>}
                       {job.employee_name && <div className="job-employee">{job.employee_name}</div>}
-                      <div
-                        className="job-resize-handle job-resize-handle--bottom"
-                        onPointerDown={(e) => startDrag(e, job, "resize-end")}
-                        onPointerMove={handleDragPointerMove}
-                        onPointerUp={handleDragPointerUp}
-                        onPointerCancel={handleDragPointerUp}
-                      />
+                      {height >= 24 && (
+                        <div
+                          className="job-resize-handle job-resize-handle--bottom"
+                          onPointerDown={(e) => startDrag(e, job, "resize-end")}
+                          onPointerMove={handleDragPointerMove}
+                          onPointerUp={handleDragPointerUp}
+                          onPointerCancel={handleDragPointerUp}
+                        />
+                      )}
                     </div>
                   );
                   });
