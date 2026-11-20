@@ -519,11 +519,12 @@ def test_heartbeat_tracks_the_node_and_the_camera(
     assert card["camera_ok_since"] >= since_ok
 
 
-def test_bay_card_carries_the_workshop_schedule(
+def test_bay_card_carries_the_video_frame_window_and_the_workshop_days(
     client: TestClient, auth_headers: dict, workshop: Workshop
 ) -> None:
     card = _first_bay(client, auth_headers, workshop)
-    assert (card["work_start"], card["work_end"]) == ("08:00:00", "20:00:00")
+    # Окно кадров 08:00-24:00 минус запас узла ±30 минут.
+    assert (card["work_start"], card["work_end"]) == ("08:30:00", "23:30:00")
     assert card["work_days"] == [0, 1, 2, 3, 4]
 
 

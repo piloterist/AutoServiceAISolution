@@ -49,6 +49,20 @@ from app.services.yandex_disk_client import YaDiskError
 logger = structlog.get_logger(__name__)
 
 DISK_BASE_PATH = "disk:/Bays"
+# Окно, в котором узел камеры присылает кадр бокса раз в минуту: с 08:00 до 24:00 (решение
+# 2026-11-20, вне часов работы цеха - иначе ночью и утром на карточке висит вчерашний кадр).
+# Узел сам расширяет присланное окно на NODE_FRAME_MARGIN в обе стороны (Camera/watcher.py,
+# WORK_MARGIN), поэтому отдаём окно, суженное на этот запас: на узле получится ровно 08:00-24:00.
+VIDEO_FRAMES_FROM = timedelta(hours=8)
+VIDEO_FRAMES_TO = timedelta(hours=24)
+NODE_FRAME_MARGIN = timedelta(minutes=30)
+
+
+def _clock(delta: timedelta) -> str:
+    seconds = int(delta.total_seconds())
+    return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:00"
+
+
 SHOP_TZ = ZoneInfo("Europe/Moscow")  # границы «дня» в истории - по времени цеха
 HISTORY_LIMIT = 500
 # Запрос кадра, который узел не обработал за это время, считается проваленным.
@@ -373,8 +387,9 @@ def list_bay_cards(db: Session, workshop_id: uuid.UUID | None = None) -> list[di
                 "state": state,
                 "plate": plate,
                 "occupied_since": since,
-                "work_start": workshop.start_time.isoformat() if workshop else None,
-                "work_end": workshop.end_time.isoformat() if workshop else None,
+                # Окно присылки кадров узлом (не часы работы цеха), см. VIDEO_FRAMES_FROM.
+                "work_start": _clock(VIDEO_FRAMES_FROM + NODE_FRAME_MARGIN) if workshop else None,
+                "work_end": _clock(VIDEO_FRAMES_TO - NODE_FRAME_MARGIN) if workshop else None,
                 "work_days": list(workshop.working_days) if workshop else [],
                 "node_seen_at": camera.seen_at if camera else None,
                 "camera_ok": camera.camera_ok if camera else None,

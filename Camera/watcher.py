@@ -402,8 +402,8 @@ class CameraWatcher(threading.Thread):
                             if vehicle != last_vehicle_seen:
                                 last_vehicle_seen = vehicle
                                 log(
-                                    f"{cam[id]}: проверка выезда кадром: машина в боксе "
-                                    f"{ЕСТЬ if vehicle else нет} "
+                                    f"{cam['id']}: проверка выезда кадром: машина в боксе "
+                                    f"{'ЕСТЬ' if vehicle else 'нет'} "
                                     + (
                                         "(кадр тёмный, проверить нельзя)"
                                         if found.dark

@@ -342,7 +342,13 @@ def test_intake_downloads_the_site_photo_links_after_answering(
     assert response.status_code == 201
     lead_id = response.json()["id"]
 
-    lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+    # Скачанные фото грузятся на Диск отдельным потоком после ответа: ждём их появления.
+    deadline = time.monotonic() + 10
+    while True:
+        lead = client.get(LEADS_URL, headers=auth_headers).json()["leads"][0]
+        if lead["photos"] or time.monotonic() > deadline:
+            break
+        time.sleep(0.1)
     assert lead["photos"] == [
         f"/api/leads/{lead_id}/photos/img1.jpg",
         f"/api/leads/{lead_id}/photos/Фото 2.jpg",
