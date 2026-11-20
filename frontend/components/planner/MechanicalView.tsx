@@ -77,7 +77,8 @@ function computeLanes(jobs: WorkshopJob[]): Map<string, { lane: number; lanes: n
   };
   for (const job of sorted) {
     const start = timeToMinutes(job.start_time);
-    const end = timeToMinutes(job.end_time);
+    // Короткая запись рисуется не ниже 18 px (15 минут сетки): дорожки считаем по видимому концу.
+    const end = Math.max(timeToMinutes(job.end_time), start + (18 / SLOT_HEIGHT) * SLOT_MINUTES);
     if (group.length > 0 && start >= groupEnd) flush();
     let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
     if (lane === -1) {
