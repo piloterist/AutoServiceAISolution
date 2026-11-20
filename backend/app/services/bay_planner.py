@@ -237,25 +237,15 @@ def _create_job(
 
 def _earlier_start(db: Session, job: WorkshopJob, arrived: datetime) -> time | None:
     """Машина приехала раньше записи: запись начинается с фактического заезда (как и записи,
-    что создаются при заезде, - с минуты заезда). Не раньше начала рабочего дня и не заходя на
-    предыдущую запись того же поста. None - сдвигать нечего."""
+    что создаются при заезде, - с минуты заезда). Не раньше начала рабочего дня (ручная правка
+    записи вне часов цеха не принимается). Наложение на соседние записи допустимо: доска ставит
+    пересекающиеся записи рядом. None - сдвигать нечего."""
     if job.job_date != arrived.date():
         return None
     start = _minutes(arrived.time())
     workshop = db.get(Workshop, job.workshop_id)
     if workshop is not None:
         start = max(start, _minutes(workshop.start_time))
-    previous_ends = db.scalars(
-        select(WorkshopJob.end_time).where(
-            WorkshopJob.workshop_id == job.workshop_id,
-            WorkshopJob.post_number == job.post_number,
-            WorkshopJob.job_date == job.job_date,
-            WorkshopJob.id != job.id,
-            WorkshopJob.end_time <= job.start_time,
-        )
-    ).all()
-    if previous_ends:
-        start = max(start, max(_minutes(end) for end in previous_ends))
     return _at(start) if start < _minutes(job.start_time) else None
 
 
@@ -403,11 +393,11 @@ def on_exit(db: Session, event: BayEvent) -> None:
         job.status_id = done.id
         # Запись заканчивается, когда машина уехала (с точностью до минуты, как и начало при
         # раннем заезде), а не в запланированное время: иначе на доске блок тянется дальше выезда
-        # (2026-11-20: выезд в 10:33, запись до 12:30). Запись короче одного слота не бывает.
-        # Старые значения остаются в журнале планировщика.
+        # (2026-11-20: выезд в 10:33, запись до 12:30). Короткий заезд (лампочку заменить) - тоже
+        # запись, но не короче минуты. Старые значения остаются в журнале планировщика.
         left_at = event.occurred_at.astimezone(SHOP_TZ)
         if job.job_date == left_at.date():
-            new_end = max(_minutes(left_at.time()), _minutes(job.start_time) + SLOT_MINUTES)
+            new_end = max(_minutes(left_at.time()), _minutes(job.start_time) + 1)
             if new_end < _minutes(job.end_time):
                 job.end_time = _at(new_end)
         _log(db, job, before)

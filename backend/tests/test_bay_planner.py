@@ -287,7 +287,7 @@ def test_an_early_arrival_moves_the_job_start_to_the_actual_entry(
     )
 
 
-def test_an_early_arrival_does_not_run_into_the_previous_job_of_the_post(
+def test_an_early_arrival_may_overlap_the_previous_job_of_the_post(
     client, auth_headers, db_session, workshop, statuses, bay_id
 ) -> None:
     _order(db_session)
@@ -296,7 +296,7 @@ def test_an_early_arrival_does_not_run_into_the_previous_job_of_the_post(
     planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(11, 0))
     _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(9, 10))
     db_session.expire_all()
-    assert db_session.get(WorkshopJob, planned.id).start_time == time(9, 30)  # не раньше соседа
+    assert db_session.get(WorkshopJob, planned.id).start_time == time(9, 10)  # наложение допустимо
 
 
 def test_a_late_arrival_keeps_the_planned_start(
@@ -309,7 +309,7 @@ def test_a_late_arrival_keeps_the_planned_start(
     assert db_session.get(WorkshopJob, planned.id).start_time == time(10, 0)
 
 
-def test_a_job_is_never_cut_shorter_than_one_slot(
+def test_a_short_stay_gives_a_short_job(
     client, auth_headers, db_session, workshop, statuses, bay_id
 ) -> None:
     _order(db_session)
@@ -317,7 +317,7 @@ def test_a_job_is_never_cut_shorter_than_one_slot(
     _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 2))
     _event(client, auth_headers, bay_id, "exit_confirmed", at=moment(10, 8))
     db_session.expire_all()
-    assert db_session.get(WorkshopJob, planned.id).end_time == time(10, 30)  # не короче слота
+    assert db_session.get(WorkshopJob, planned.id).end_time == time(10, 8)  # 8 минут - так и есть
 
 
 def test_a_job_that_ended_by_the_plan_is_not_extended_on_exit(
@@ -326,9 +326,9 @@ def test_a_job_that_ended_by_the_plan_is_not_extended_on_exit(
     _order(db_session)
     planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(10, 30))
     _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 2))
-    _event(client, auth_headers, bay_id, "exit_confirmed", at=moment(10, 20))
+    _event(client, auth_headers, bay_id, "exit_confirmed", at=moment(10, 50))  # позже плана
     db_session.expire_all()
-    assert db_session.get(WorkshopJob, planned.id).end_time == time(10, 30)  # выезд раньше конца
+    assert db_session.get(WorkshopJob, planned.id).end_time == time(10, 30)  # не удлиняем
 
 
 def test_extension_stops_at_the_end_of_the_working_day(
