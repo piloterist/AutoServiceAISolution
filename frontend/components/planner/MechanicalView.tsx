@@ -19,6 +19,7 @@ import { emptyJobDraft, jobToDraft, WorkshopJobDialog, type JobDraft } from "./W
 
 const SLOT_MINUTES = 30;
 const SLOT_HEIGHT = 36;
+const MIN_JOB_HEIGHT = 18; // px: ниже короткую запись не рисуем, если ей не мешает следующая
 // Pointer movement (px) below which a press+release is treated as a click
 // (open the edit dialog) rather than a drag.
 const DRAG_THRESHOLD_PX = 4;
@@ -77,8 +78,7 @@ function computeLanes(jobs: WorkshopJob[]): Map<string, { lane: number; lanes: n
   };
   for (const job of sorted) {
     const start = timeToMinutes(job.start_time);
-    // Короткая запись рисуется не ниже 18 px (15 минут сетки): дорожки считаем по видимому концу.
-    const end = Math.max(timeToMinutes(job.end_time), start + (18 / SLOT_HEIGHT) * SLOT_MINUTES);
+    const end = timeToMinutes(job.end_time);
     if (group.length > 0 && start >= groupEnd) flush();
     let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
     if (lane === -1) {
@@ -681,7 +681,14 @@ function MechanicalViewInner({
                   const startMinutes = isBeingResized ? dragState.previewStartMinutes : timeToMinutes(job.start_time);
                   const endMinutes = isBeingResized ? dragState.previewEndMinutes : timeToMinutes(job.end_time);
                   const top = ((startMinutes - timeToMinutes(workshop.start_time)) / SLOT_MINUTES) * SLOT_HEIGHT;
-                  const height = ((endMinutes - startMinutes) / SLOT_MINUTES) * SLOT_HEIGHT - 2;
+                  // Короткую запись рисуем не ниже MIN_JOB_HEIGHT (чтобы её было видно), но не дальше начала
+                  // следующей записи поста: записи идут друг за другом, как и по факту.
+                  const nextStart = dayJobs.reduce((acc, other) => {
+                    const otherStart = timeToMinutes(other.start_time);
+                    return otherStart >= endMinutes && otherStart < acc ? otherStart : acc;
+                  }, Infinity);
+                  const minEnd = Math.min(startMinutes + (MIN_JOB_HEIGHT / SLOT_HEIGHT) * SLOT_MINUTES, nextStart);
+                  const height = ((Math.max(endMinutes, minEnd) - startMinutes) / SLOT_MINUTES) * SLOT_HEIGHT - 2;
                   const dim = search.trim() && !jobMatches(job, search);
                   const isDragSource = dragState?.hasMoved && dragState.job.id === job.id && dragState.kind === "move";
                   return (
@@ -696,7 +703,7 @@ function MechanicalViewInner({
                         .join(" ")}
                       style={{
                         top,
-                        height: Math.max(18, height),
+                        height: Math.max(2, height),
                         // Пересекающиеся записи стоят рядом, каждая шириной в долю полосы поста.
                         ...(lanes > 1
                           ? {
