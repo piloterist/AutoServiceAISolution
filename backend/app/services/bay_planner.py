@@ -401,13 +401,13 @@ def on_exit(db: Session, event: BayEvent) -> None:
     if job is not None and done is not None and job.status_id != done.id:
         before = _snapshot(job)
         job.status_id = done.id
-        # Запись заканчивается, когда машина уехала, а не в запланированное время: иначе на доске
-        # блок тянется дальше выезда (2026-11-20: выезд в 10:33, запись до 12:30). Время выезда
-        # округляется вверх до получаса; запись короче одного слота не бывает. Старые значения
-        # остаются в журнале планировщика.
+        # Запись заканчивается, когда машина уехала (с точностью до минуты, как и начало при
+        # раннем заезде), а не в запланированное время: иначе на доске блок тянется дальше выезда
+        # (2026-11-20: выезд в 10:33, запись до 12:30). Запись короче одного слота не бывает.
+        # Старые значения остаются в журнале планировщика.
         left_at = event.occurred_at.astimezone(SHOP_TZ)
         if job.job_date == left_at.date():
-            new_end = max(_ceil_slot(left_at), _minutes(job.start_time) + SLOT_MINUTES)
+            new_end = max(_minutes(left_at.time()), _minutes(job.start_time) + SLOT_MINUTES)
             if new_end < _minutes(job.end_time):
                 job.end_time = _at(new_end)
         _log(db, job, before)

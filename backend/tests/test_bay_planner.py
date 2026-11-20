@@ -223,8 +223,10 @@ def test_the_job_is_extended_while_the_car_stays_and_done_after_exit(
     [job] = _jobs(db_session, workshop)
     assert job.status_id == statuses["Готова"].id
 
+    assert job.end_time == time(11, 50)  # запись закончилась в момент выезда, а не в 12:00
+
     bay_planner.tick(db_session, moment(13, 0))  # машины нет - не продлеваем
-    assert _jobs(db_session, workshop)[0].end_time == time(12, 0)
+    assert _jobs(db_session, workshop)[0].end_time == time(11, 50)
 
 
 def _planned_job(db_session, workshop, statuses, start: time, end: time) -> WorkshopJob:
@@ -253,13 +255,13 @@ def test_the_planned_end_of_a_job_is_cut_to_the_exit_time(
     db_session.expire_all()
     job = db_session.get(WorkshopJob, planned.id)
     assert job.status_id == statuses["Готова"].id
-    assert (job.start_time, job.end_time) == (time(10, 0), time(11, 0))  # 10:33 -> до 11:00
+    assert (job.start_time, job.end_time) == (time(10, 0), time(10, 33))  # конец - минута выезда
     log = db_session.scalars(
         select(ScheduleAuditLog).where(ScheduleAuditLog.entity_id == planned.id)
     ).all()
     assert any(
         entry.changes.get("end_time", {}).get("old") == "12:30:00"
-        and entry.changes.get("end_time", {}).get("new") == "11:00:00"
+        and entry.changes.get("end_time", {}).get("new") == "10:33:00"
         for entry in log
     )  # прежнее значение осталось в истории
 
