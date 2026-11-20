@@ -202,6 +202,21 @@ def test_no_plan_creates_a_thirty_minute_job_linked_to_the_work_order(
     assert db_session.scalars(select(BayIssue)).all() == []
 
 
+def test_a_job_made_by_video_control_shows_it_as_the_creator(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 12))
+
+    listed = client.get(
+        f"{PLAN_URL}/workshops/{workshop.id}/jobs"
+        f"?date_from={moment(10, 12).date()}&date_to={moment(10, 12).date()}",
+        headers=auth_headers,
+    ).json()
+
+    assert [job["created_by_name"] for job in listed] == ["Видеоконтроль"]
+
+
 def test_the_job_is_extended_while_the_car_stays_and_done_after_exit(
     client, auth_headers, db_session, workshop, statuses, bay_id
 ) -> None:

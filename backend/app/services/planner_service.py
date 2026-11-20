@@ -27,6 +27,7 @@ from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
 from app.models.employee import Employee
 from app.models.planner_constants import BODY_CAR_COLORS
+from app.models.schedule_audit_log import ScheduleAuditLog
 from app.models.slesarka_status import SlesarkaStatus
 from app.models.user import User
 from app.models.work_order import WorkOrder
@@ -754,6 +755,22 @@ def find_planner_record(db: Session, work_order_id: uuid.UUID) -> PlannerRecordR
         return PlannerRecordRef(kind="mechanical", workshop_id=job_row[0], date=job_row[1])
 
     return None
+
+
+def audit_creator_name(db: Session, entity_type: str, entity_id: uuid.UUID) -> str | None:
+    """Кто создал запись, если у неё нет пользователя-автора (её создал видеоконтроль):
+    имя из записи «create» в журнале планировщика."""
+    return db.scalar(
+        select(ScheduleAuditLog.actor_name)
+        .where(
+            ScheduleAuditLog.entity_type == entity_type,
+            ScheduleAuditLog.entity_id == entity_id,
+            ScheduleAuditLog.action == "create",
+            ScheduleAuditLog.actor_user_id.is_(None),
+        )
+        .order_by(ScheduleAuditLog.created_at)
+        .limit(1)
+    )
 
 
 def user_lookup(db: Session, user_ids: set[uuid.UUID]) -> dict[uuid.UUID, User]:
