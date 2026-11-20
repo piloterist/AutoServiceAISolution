@@ -235,18 +235,27 @@ def _create_job(
     return job
 
 
-def _earlier_start(db: Session, job: WorkshopJob, arrived: datetime) -> time | None:
-    """Машина приехала раньше записи: запись начинается с фактического заезда (как и записи,
-    что создаются при заезде, - с минуты заезда). Не раньше начала рабочего дня (ручная правка
-    записи вне часов цеха не принимается). Наложение на соседние записи допустимо: доска ставит
-    пересекающиеся записи рядом. None - сдвигать нечего."""
+def _actual_start(db: Session, job: WorkshopJob, arrived: datetime) -> tuple[time, time] | None:
+    """Запись начинается с фактического заезда (с минуты заезда, как и записи, что создаются при
+    заезде), и когда машина приехала раньше плана, и когда позже. Не раньше начала рабочего дня
+    (ручная правка записи вне часов цеха не принимается). Наложение на соседние записи
+    допустимо: доска ставит пересекающиеся записи рядом. Если машина приехала после планового
+    конца, запись получает слот в 30 минут от заезда (дальше её продлевает tick, пока машина
+    стоит). Возвращает (начало, конец); None - сдвигать нечего."""
     if job.job_date != arrived.date():
         return None
     start = _minutes(arrived.time())
     workshop = db.get(Workshop, job.workshop_id)
+    day_end = 24 * 60
     if workshop is not None:
         start = max(start, _minutes(workshop.start_time))
-    return _at(start) if start < _minutes(job.start_time) else None
+        day_end = _minutes(workshop.end_time)
+    if start == _minutes(job.start_time) or start >= day_end:
+        return None
+    end = _minutes(job.end_time)
+    if end <= start:
+        end = min(start + SLOT_MINUTES, day_end)
+    return _at(start), _at(end)
 
 
 def _start_job(db: Session, job: WorkshopJob, event: BayEvent) -> None:
@@ -254,10 +263,11 @@ def _start_job(db: Session, job: WorkshopJob, event: BayEvent) -> None:
     status = _status(db, STATUS_IN_WORK)
     if status:
         job.status_id = status.id
-    # Приехала раньше записи (2026-11-20: заезд в 09:48, запись с 10:00): начало - фактическое.
-    earlier = _earlier_start(db, job, event.occurred_at.astimezone(SHOP_TZ))
-    if earlier is not None:
-        job.start_time = earlier
+    # Начало записи - фактический заезд (2026-11-20: заезд в 09:48, запись с 10:00; Audi ждали в
+    # 10:30, приехала в 10:35).
+    actual = _actual_start(db, job, event.occurred_at.astimezone(SHOP_TZ))
+    if actual is not None:
+        job.start_time, job.end_time = actual
     job.plate = job.plate or event.plate
     if event.work_order_id and job.work_order_id is None:
         _fill_from_work_order(db, job, event.work_order_id)

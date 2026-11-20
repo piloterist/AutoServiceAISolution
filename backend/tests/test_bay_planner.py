@@ -255,7 +255,7 @@ def test_the_planned_end_of_a_job_is_cut_to_the_exit_time(
     db_session.expire_all()
     job = db_session.get(WorkshopJob, planned.id)
     assert job.status_id == statuses["Готова"].id
-    assert (job.start_time, job.end_time) == (time(10, 0), time(10, 33))  # конец - минута выезда
+    assert (job.start_time, job.end_time) == (time(10, 2), time(10, 33))  # заезд 10:02, выезд 10:33
     log = db_session.scalars(
         select(ScheduleAuditLog).where(ScheduleAuditLog.entity_id == planned.id)
     ).all()
@@ -299,14 +299,28 @@ def test_an_early_arrival_may_overlap_the_previous_job_of_the_post(
     assert db_session.get(WorkshopJob, planned.id).start_time == time(9, 10)  # наложение допустимо
 
 
-def test_a_late_arrival_keeps_the_planned_start(
+def test_a_late_arrival_moves_the_job_start_to_the_actual_entry(
     client, auth_headers, db_session, workshop, statuses, bay_id
 ) -> None:
+    """2026-11-20: Audi ждали в 10:30, а заехала в 10:35."""
     _order(db_session)
     planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(12, 30))
     _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 20))
     db_session.expire_all()
-    assert db_session.get(WorkshopJob, planned.id).start_time == time(10, 0)
+    job = db_session.get(WorkshopJob, planned.id)
+    assert (job.start_time, job.end_time) == (time(10, 20), time(12, 30))
+
+
+def test_an_arrival_after_the_planned_end_gets_a_slot_from_the_entry(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    planned = _planned_job(db_session, workshop, statuses, time(10, 0), time(10, 30))
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(11, 7))
+    db_session.expire_all()
+    job = db_session.get(WorkshopJob, planned.id)
+    assert (job.start_time, job.end_time) == (time(11, 7), time(11, 37))
+    assert job.status_id == statuses["В работе"].id
 
 
 def test_a_short_stay_gives_a_short_job(
