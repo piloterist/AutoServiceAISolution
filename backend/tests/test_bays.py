@@ -333,6 +333,26 @@ def _work_order(number: str, car: str, day: int) -> WorkOrder:
     )
 
 
+def test_closed_and_refused_work_orders_do_not_make_a_plate_known(
+    client: TestClient, auth_headers: dict, db_session: Session
+) -> None:
+    closed = _work_order("ЗН-ЗАКР", "Peugeot № Е370ВО197 VIN P", 1)
+    closed.status = "Закрыт"
+    refused = _work_order("ЗН-ОТК", "Kia № М111ММ777 VIN K", 2)
+    refused.status = "Отказ"
+    older_open = _work_order("ЗН-РАБ", "Audi № К279КО777 VIN A", 3)
+    older_open.status = "В работе"
+    newer_closed = _work_order("ЗН-ЗАКР2", "Audi № К279КО777 VIN A", 9)
+    newer_closed.status = "Закрыт"
+    no_status = _work_order("ЗН-БЕЗ", "Ford № Х222ХХ777 VIN F", 4)
+    db_session.add_all([closed, refused, older_open, newer_closed, no_status])
+    db_session.commit()
+    response = client.get("/api/v1/bays/known-plates", headers=auth_headers)
+    plates = {p["plate"]: p["work_order_number"] for p in response.json()["plates"]}
+    # закрытый и отказной не считаются; у Audi берётся открытый, хоть он и старше закрытого
+    assert plates == {"К279КО777": "ЗН-РАБ", "Х222ХХ777": "ЗН-БЕЗ"}
+
+
 def test_known_plates_come_from_work_orders_latest_first(
     client: TestClient, auth_headers: dict, db_session: Session
 ) -> None:

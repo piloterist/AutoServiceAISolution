@@ -122,15 +122,27 @@ def plate_from_description(description: str | None) -> str | None:
     return normalize_plate(match.group(1)) if match else None
 
 
+# Заказ-наряды в этих статусах машину в боксе не объясняют: 2026-11-19 к заезду Peugeot подтянулся
+# закрытый ЗН от августа 2025. Номера ищем только среди остальных (в работе, ожидание и т. д.).
+INACTIVE_ORDER_STATUSES = ("Закрыт", "Отказ")
+
+
 def known_plates(db: Session) -> list[dict]:
     """Номера из заказ-нарядов 1С - то, с чем узел сверяет прочитанное камерой.
 
-    По одному номеру берётся самый свежий заказ-наряд (по дате документа). Заявки на
-    ремонт сюда не попадают: ORM скрывает их, пока запрос не включит их явно.
+    Только заказ-наряды не в статусах «Закрыт» и «Отказ» (статус не указан - тоже подходит). По
+    одному номеру берётся самый свежий из них (по дате документа). Заявки на ремонт сюда не
+    попадают: ORM скрывает их, пока запрос не включит их явно.
     """
     rows = db.execute(
         select(WorkOrder.id, WorkOrder.external_number, WorkOrder.vehicle_description)
         .where(WorkOrder.vehicle_description.is_not(None))
+        .where(
+            or_(
+                WorkOrder.status.is_(None),
+                WorkOrder.status.not_in(INACTIVE_ORDER_STATUSES),
+            )
+        )
         .order_by(WorkOrder.document_date.desc())
     ).all()
     seen: dict[str, dict] = {}
