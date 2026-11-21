@@ -23,6 +23,7 @@ crm_task_overdue_days от попадания в столбец. Счётчик 
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta, timezone
@@ -279,6 +280,86 @@ def create_from_lead(
         actor_id=actor_id,
         actor_name=actor_name,
     )
+
+
+def manual_phone(raw: str | None) -> str:
+    """Телефон, введённый руками: последние 10 цифр, как в telephony_calls.client."""
+    digits = re.sub(r"\D", "", raw or "")
+    if not digits:
+        raise CrmTaskInvalid("Укажите телефон")
+    if len(digits) < 10:
+        raise CrmTaskInvalid("Телефон должен содержать не меньше 10 цифр")
+    return digits[-10:]
+
+
+def create_manual(
+    db: Session,
+    *,
+    phone: str | None,
+    workshop_id: uuid.UUID | None,
+    employee_id: uuid.UUID | None = None,
+    client_name: str | None = None,
+    comment: str | None = None,
+    action_date: date | None = None,
+    action_comment: str | None = None,
+    actor_id: uuid.UUID | None,
+    actor_name: str,
+) -> tuple[CrmTask, bool, Literal["call", "lead"] | None]:
+    """Карточка, созданная руками на доске («Создать»). Телефон ищется в телефонии и среди заявок с
+    сайта: найден - карточка связывается с самым свежим звонком или заявкой (по телефону они сразу
+    получают статус задачи, а время звонка / заявки становится точкой отсчёта автоматики, как при
+    «На контроль» у звонка); не найден - точка отсчёта момент создания. Телефон уже ведётся -
+    вернётся существующая карточка (created=False), комментарий и действие в неё не добавляются.
+    Возвращает (карточка, создана ли, с чем связана)."""
+    key = manual_phone(phone)
+    employee = _check_assignment(db, workshop_id, employee_id)
+    comment = (comment or "").strip()
+    action_comment = (action_comment or "").strip()
+    if action_date is not None and not action_comment:
+        raise CrmTaskInvalid("Укажите комментарий к запланированному действию")
+    if action_comment and action_date is None:
+        raise CrmTaskInvalid("Укажите дату запланированного действия")
+
+    call = db.scalar(
+        select(CallRecord).where(CallRecord.client == key).order_by(CallRecord.occurred_at.desc())
+    )
+    lead = db.scalar(
+        select(WebsiteLead).where(WebsiteLead.phone == key).order_by(WebsiteLead.created_at.desc())
+    )
+    if call is not None and (lead is None or call.occurred_at >= lead.created_at):
+        link, at, call_id, lead_id, lead_name = "call", call.occurred_at, call.id, None, None
+    elif lead is not None:
+        link, at, call_id, lead_id, lead_name = "lead", lead.created_at, None, lead.id, lead.name
+    else:
+        link, at, call_id, lead_id, lead_name = None, datetime.now(UTC), None, None, None
+
+    task, created = _open_task(
+        db,
+        phone=key,
+        at=at,
+        call_id=call_id,
+        lead_id=lead_id,
+        client_name=(client_name or "").strip() or lead_name,
+        kind="Вручную" if link is None else f"Вручную ({'звонок' if link == 'call' else 'заявка'})",
+        workshop_id=workshop_id,
+        employee=employee,
+        actor_id=actor_id,
+        actor_name=actor_name,
+    )
+    if created:
+        if comment:
+            add_comment(db, task.id, comment, actor_id=actor_id, actor_name=actor_name)
+        if action_date is not None:
+            add_comment(
+                db,
+                task.id,
+                action_comment,
+                next_action_date=action_date,
+                actor_id=actor_id,
+                actor_name=actor_name,
+            )
+        db.refresh(task)
+    return task, created, link
 
 
 # ---- автоматика ------------------------------------------------------------------

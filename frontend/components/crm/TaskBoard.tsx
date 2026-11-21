@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { employeesOfWorkshop, workshopLabel } from "@/components/crm/WorkshopsContext";
+import { ManualTaskDialog, type ManualTaskResult } from "@/components/crm/ManualTaskDialog";
+import {
+  employeesOfWorkshop,
+  useControlTasks,
+  useEmployees,
+  workshopLabel,
+} from "@/components/crm/WorkshopsContext";
 import {
   COLUMNS,
   canMoveByHand,
@@ -10,6 +16,7 @@ import {
   formatInspection,
   formatMoment,
   formatPhone,
+  sourceTitle,
   type Column,
 } from "@/components/crm/columns";
 import { TaskDetailModal } from "@/components/crm/TaskDetailModal";
@@ -109,6 +116,39 @@ export function TaskBoard({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  // «Создать»: карточка руками; цех и сотрудник по умолчанию - текущего пользователя.
+  const [creating, setCreating] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const { currentEmployeeId } = useEmployees();
+  const { register } = useControlTasks();
+  const ownEmployee = employees.find((e) => e.id === currentEmployeeId) ?? null;
+  const createWorkshopId =
+    ownEmployee?.workshop_id && workshops.some((w) => w.id === ownEmployee.workshop_id)
+      ? ownEmployee.workshop_id
+      : workshopId;
+  const createEmployeeId =
+    ownEmployee &&
+    (!ownEmployee.workshop_id || ownEmployee.workshop_id === createWorkshopId) &&
+    createWorkshopId
+      ? ownEmployee.id
+      : "";
+  const manualDone = (result: ManualTaskResult) => {
+    setCreating(false);
+    register(result.task);
+    void load();
+    if (result.created) {
+      const linked =
+        result.linked === "call"
+          ? " Телефон найден в телефонии, задача связана со звонком."
+          : result.linked === "lead"
+            ? " Телефон найден среди заявок с сайта, задача связана с заявкой."
+            : "";
+      setNotice(`Задача создана.${linked}`);
+    } else {
+      setNotice("Этот телефон уже на доске - открыта существующая задача.");
+      setOpened(result.task);
+    }
+  };
   // Responses of an older filter must not overwrite a newer one.
   const requestSeq = useRef(0);
 
@@ -243,6 +283,16 @@ export function TaskBoard({
         </div>
       )}
       <div className="task-board-toolbar">
+        <button
+          type="button"
+          className="admin-btn admin-btn-primary"
+          onClick={() => {
+            setNotice(null);
+            setCreating(true);
+          }}
+        >
+          Создать
+        </button>
         <label className="task-board-filter">
           Цех
           <select
@@ -297,6 +347,7 @@ export function TaskBoard({
       </div>
 
       {error && <p className="admin-form-error">{error}</p>}
+      {notice && <p className="admin-hint">{notice}</p>}
       {!data && !error && <p className="admin-hint">Загрузка…</p>}
 
       {data && (
@@ -382,7 +433,7 @@ export function TaskBoard({
                         <div className="task-card-line">Причина: {task.refuse_reason}</div>
                       )}
                       <div className="task-card-meta">
-                        {task.source === "lead" ? "Заявка с сайта" : "Звонок"} {formatMoment(task.call_at)}
+                        {sourceTitle(task.source)} {formatMoment(task.call_at)}
                         {task.status === "control" && <> · на контроле {formatAge(task.status_changed_at, now)}</>}
                       </div>
                       {task.employee_name && <div className="task-card-meta">Сотрудник: {task.employee_name}</div>}
@@ -419,6 +470,18 @@ export function TaskBoard({
           return failure;
         }}
       />
+
+      {creating && (
+        <ManualTaskDialog
+          open
+          workshops={workshops}
+          employees={employees}
+          defaultWorkshopId={createWorkshopId}
+          defaultEmployeeId={createEmployeeId}
+          onClose={() => setCreating(false)}
+          onDone={manualDone}
+        />
+      )}
 
       <TaskDetailModal
         task={opened}

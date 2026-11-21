@@ -1137,3 +1137,138 @@ def test_a_lead_task_follows_the_chain_from_the_lead_time(db_session) -> None:
     assert task.work_order_number == order.external_number
     log = _log_rows(db_session, task)[0]
     assert log.changes["task_source"]["new"] == "Заявка с сайта"
+
+
+# ---- «Создать» на доске: карточка руками ----------------------------------------------
+
+
+def _manual(db: Session, workshop: Workshop, **kwargs):
+    kwargs.setdefault("phone", RAW_PHONE)
+    return service.create_manual(
+        db, workshop_id=workshop.id, actor_id=None, actor_name="Тест", **kwargs
+    )
+
+
+def test_a_phone_found_nowhere_makes_a_standalone_card(db_session) -> None:
+    workshop = _workshop(db_session)
+
+    task, created, linked = _manual(db_session, workshop, client_name="Сергей")
+
+    assert created and linked is None
+    assert (task.phone, task.call_id, task.lead_id, task.client_name) == (
+        PHONE,
+        None,
+        None,
+        "Сергей",
+    )
+    assert task.status == "control"
+    assert _log_rows(db_session, task)[0].changes["task_source"]["new"] == "Вручную"
+
+
+def test_a_phone_known_to_telephony_links_the_card_to_the_latest_call(db_session) -> None:
+    workshop = _workshop(db_session)
+    _call(db_session, at=_now() - timedelta(days=3))
+    last = _call(db_session, at=_now() - timedelta(hours=5))
+
+    task, created, linked = _manual(db_session, workshop)
+
+    assert created and linked == "call"
+    assert task.call_id == last.id and task.lead_id is None
+    assert task.call_at == last.occurred_at
+
+
+def test_a_phone_found_among_website_leads_links_the_card_to_the_lead(db_session) -> None:
+    workshop = _workshop(db_session)
+    lead = _lead(db_session, at=_now() - timedelta(hours=2))
+
+    task, created, linked = _manual(db_session, workshop)
+
+    assert created and linked == "lead"
+    assert task.lead_id == lead.id and task.client_name == "Иван"
+
+
+def test_the_newer_of_call_and_lead_wins(db_session) -> None:
+    workshop = _workshop(db_session)
+    _call(db_session, at=_now() - timedelta(days=2))
+    lead = _lead(db_session, at=_now() - timedelta(hours=1))
+
+    task, _, linked = _manual(db_session, workshop)
+
+    assert linked == "lead" and task.lead_id == lead.id
+
+
+def test_a_manual_card_on_an_already_controlled_phone_returns_the_existing_one(db_session) -> None:
+    workshop = _workshop(db_session)
+    existing = _task(db_session, _call(db_session, at=_now() - timedelta(hours=1)), workshop.id)
+
+    task, created, _ = _manual(db_session, workshop, comment="Ещё раз")
+
+    assert not created and task.id == existing.id
+    assert service.list_comments(db_session, task.id) == []
+
+
+def test_manual_card_takes_the_comment_and_the_planned_action(db_session) -> None:
+    workshop = _workshop(db_session)
+    when = date.today() + timedelta(days=2)
+
+    task, _, _ = _manual(
+        db_session,
+        workshop,
+        comment="Просил перезвонить",
+        action_date=when,
+        action_comment="Позвонить",
+    )
+
+    assert {c.text for c in service.list_comments(db_session, task.id)} == {
+        "Просил перезвонить",
+        "Позвонить",
+    }
+    assert [a.planned_date for a in service.list_actions(db_session, task.id)] == [when]
+    assert task.next_action_date == when
+
+
+def test_manual_card_validation(db_session) -> None:
+    workshop = _workshop(db_session)
+    for phone in (None, "", "  ", "12345"):
+        with pytest.raises(service.CrmTaskInvalid):
+            _manual(db_session, workshop, phone=phone)
+    with pytest.raises(service.CrmTaskInvalid, match="Выберите цех"):
+        service.create_manual(
+            db_session, phone=RAW_PHONE, workshop_id=None, actor_id=None, actor_name="Тест"
+        )
+    with pytest.raises(service.CrmTaskInvalid, match="комментарий"):
+        _manual(db_session, workshop, action_date=date.today())
+    with pytest.raises(service.CrmTaskInvalid, match="дату"):
+        _manual(db_session, workshop, action_comment="Позвонить")
+    assert db_session.query(CrmTask).count() == 0
+
+
+def test_manual_card_through_the_api(client, db_session, auth_headers) -> None:
+    workshop = _workshop(db_session)
+    employee = _employee(db_session, workshop)
+    call = _call(db_session, at=_now() - timedelta(hours=1))
+    payload = {
+        "phone": "8 900 111-22-33",
+        "workshop_id": str(workshop.id),
+        "employee_id": str(employee.id),
+        "comment": "Из салона",
+    }
+
+    created = client.post("/api/v1/crm-tasks/manual", json=payload, headers=auth_headers)
+
+    assert created.status_code == 200
+    body = created.json()
+    assert (body["created"], body["linked"]) == (True, "call")
+    assert body["task"]["source"] == "call" and body["task"]["comments_count"] == 1
+    assert body["task"]["employee_name"] == employee.full_name
+    assert body["task"]["phone"] == call.client
+    no_phone = client.post(
+        "/api/v1/crm-tasks/manual", json={"workshop_id": str(workshop.id)}, headers=auth_headers
+    )
+    assert no_phone.status_code == 422
+    standalone = client.post(
+        "/api/v1/crm-tasks/manual",
+        json={"phone": "9005550000", "workshop_id": str(workshop.id)},
+        headers=auth_headers,
+    ).json()
+    assert standalone["linked"] is None and standalone["task"]["source"] == "manual"

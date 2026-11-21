@@ -28,6 +28,8 @@ from app.schemas.crm_tasks import (
     CrmTaskDetailOut,
     CrmTaskLeadOut,
     CrmTaskListResponse,
+    CrmTaskManualIn,
+    CrmTaskManualOut,
     CrmTaskMoveIn,
     CrmTaskOut,
     CrmTaskOverdueCountOut,
@@ -70,7 +72,7 @@ def _out(
     return CrmTaskOut(
         id=task.id,
         phone=task.phone,
-        source="lead" if task.lead_id else "call",
+        source="lead" if task.lead_id else "call" if task.call_id else "manual",
         lead_id=task.lead_id,
         status=task.status,
         status_changed_at=task.status_changed_at,
@@ -178,6 +180,44 @@ def create_task(
             employees=_employee_names(db),
         ),
         created=created,
+    )
+
+
+@router.post("/manual", response_model=CrmTaskManualOut)
+def create_manual_task(
+    payload: CrmTaskManualIn,
+    who: tuple[uuid.UUID | None, str] = Depends(actor),
+    db: Session = Depends(get_db),
+) -> CrmTaskManualOut:
+    """«Создать» на доске: карточка вручную; телефон ищется в телефонии и заявках с сайта."""
+    try:
+        task, created, linked = service.create_manual(
+            db,
+            phone=payload.phone,
+            workshop_id=payload.workshop_id,
+            employee_id=payload.employee_id,
+            client_name=payload.client_name,
+            comment=payload.comment,
+            action_date=payload.action_date,
+            action_comment=payload.action_comment,
+            actor_id=who[0],
+            actor_name=who[1],
+        )
+    except service.CrmTaskError as exc:
+        raise _http_error(exc) from exc
+    settings = get_app_settings(db)
+    return CrmTaskManualOut(
+        task=_out(
+            task,
+            _workshop_labels(db),
+            settings.crm_task_warn_days,
+            settings.crm_task_overdue_days,
+            datetime.now(UTC),
+            service.comment_counts(db, [task.id]).get(task.id, 0),
+            _employee_names(db),
+        ),
+        created=created,
+        linked=linked,
     )
 
 

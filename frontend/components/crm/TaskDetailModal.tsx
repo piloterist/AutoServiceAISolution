@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { DateInput } from "@/components/DateInput";
 import { LeadInfo, sourceLabel } from "@/components/leads/LeadInfo";
 import { employeesOfWorkshop, useEmployees, useWorkshops, workshopLabel } from "@/components/crm/WorkshopsContext";
-import { columnOf, formatDate, formatInspection, formatMoment, formatPhone } from "@/components/crm/columns";
+import { columnOf, formatDate, formatInspection, formatMoment, formatPhone, sourceTitle } from "@/components/crm/columns";
 import { AdminModal } from "@/components/settings/AdminModal";
 import { CallEventsTable } from "@/components/telephony/TelephonyStatsView";
 import type { CrmTask, CrmTaskAction, CrmTaskComment, CrmTaskDetail, LineCallEvent } from "@/lib/backend-api";
@@ -346,7 +346,7 @@ function TaskDetail({
               </select>
             </div>
             <div className="task-detail-row">
-              <span className="task-detail-label">{task.source === "lead" ? "Заявка с сайта" : "Звонок"}</span>
+              <span className="task-detail-label">{sourceTitle(task.source)}</span>
               <span>{formatMoment(task.call_at, true)}</span>
             </div>
             <div className="task-detail-row">

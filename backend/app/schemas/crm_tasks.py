@@ -12,8 +12,9 @@ TaskStatus = Literal["control", "inspection", "thinking", "refused", "work_order
 class CrmTaskOut(BaseModel):
     id: uuid.UUID
     phone: str
-    # Откуда взята на контроль: звонок или заявка с сайта (call_at - время того или другого).
-    source: Literal["call", "lead"] = "call"
+    # Откуда взята на контроль: звонок, заявка с сайта или создана руками, когда телефон нигде не
+    # найден (call_at - время звонка / заявки / создания).
+    source: Literal["call", "lead", "manual"] = "call"
     lead_id: uuid.UUID | None = None
     status: TaskStatus
     status_changed_at: datetime
@@ -58,6 +59,27 @@ class CrmTaskCreateIn(BaseModel):
     workshop_id: uuid.UUID | None = None
     # Необязателен; обязан работать в выбранном цехе.
     employee_id: uuid.UUID | None = None
+
+
+class CrmTaskManualIn(BaseModel):
+    """«Создать» на доске: карточка с ручным заполнением (телефон и цех обязательны)."""
+
+    phone: str | None = None
+    workshop_id: uuid.UUID | None = None
+    employee_id: uuid.UUID | None = None
+    client_name: str | None = None
+    # Начальный комментарий и запланированное действие (дата + комментарий) - необязательны.
+    comment: str | None = None
+    action_date: date | None = None
+    action_comment: str | None = None
+
+
+class CrmTaskManualOut(BaseModel):
+    task: CrmTaskOut
+    # False - этот телефон уже на контроле, вернулась существующая карточка.
+    created: bool
+    # С чем связали телефон: звонок из телефонии, заявка с сайта; None - телефон нигде не найден.
+    linked: Literal["call", "lead"] | None = None
 
 
 class CrmTaskAssignIn(BaseModel):

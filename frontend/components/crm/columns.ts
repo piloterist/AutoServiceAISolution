@@ -61,3 +61,8 @@ export function formatMoment(iso: string, withYear = false): string {
     minute: "2-digit",
   });
 }
+
+/** Откуда карточка: звонок, заявка с сайта или создана руками (телефон нигде не найден). */
+export function sourceTitle(source: "call" | "lead" | "manual"): string {
+  return source === "lead" ? "Заявка с сайта" : source === "manual" ? "Создана вручную" : "Звонок";
+}

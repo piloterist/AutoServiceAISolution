@@ -2447,7 +2447,7 @@ export type CrmTask = {
   id: string;
   phone: string;
   // Откуда взята на контроль: звонок или заявка с сайта (call_at - время того или другого).
-  source: "call" | "lead";
+  source: "call" | "lead" | "manual";
   lead_id: string | null;
   status: CrmTaskStatus;
   status_changed_at: string;
@@ -2745,4 +2745,26 @@ export function fetchBaySnapshotRequestImage(requestId: string) {
 
 export function fetchBayLatestFrame(bayId: string) {
   return fetchBayImage(`/api/v1/bays/${bayId}/latest-frame`);
+}
+
+export type ManualCrmTaskInput = {
+  phone: string;
+  workshop_id: string;
+  employee_id: string | null;
+  client_name: string | null;
+  comment: string | null;
+  action_date: string | null;
+  action_comment: string | null;
+};
+
+/** «Создать» на доске задач: карточка руками; телефон ищется в телефонии и заявках с сайта. */
+export function createManualCrmTask(
+  input: ManualCrmTaskInput,
+  actor: Actor,
+): Promise<{ task: CrmTask; created: boolean; linked: "call" | "lead" | null }> {
+  return backendPost<{ task: CrmTask; created: boolean; linked: "call" | "lead" | null }>(
+    "/api/v1/crm-tasks/manual",
+    input,
+    actorHeaders(actor),
+  );
 }
