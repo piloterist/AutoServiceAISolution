@@ -215,19 +215,33 @@ def read_known_plates(db: Session = Depends(get_db)) -> KnownPlatesResponse:
 
 @router.get("/history", response_model=BayHistoryResponse)
 def read_history(
-    date_from: date,
-    date_to: date,
+    date_from: date | None = None,
+    date_to: date | None = None,
     bay_id: uuid.UUID | None = None,
     workshop_id: uuid.UUID | None = None,
+    job_id: uuid.UUID | None = None,
     db: Session = Depends(get_db),
 ) -> BayHistoryResponse:
-    """Заезды по дням (время цеха), свежие первыми: фото въезда и выезда, время в боксе, ЗН."""
-    if date_to < date_from:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="date_to is before date_from"
-        )
+    """Заезды по дням (время цеха), свежие первыми: фото въезда и выезда, время в боксе, ЗН.
+    С job_id - заезды записи планировщика (без дат)."""
+    if job_id is None:
+        if date_from is None or date_to is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="date_from and date_to are required",
+            )
+        if date_to < date_from:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="date_to is before date_from",
+            )
     items = bay_service.list_history(
-        db, bay_id=bay_id, workshop_id=workshop_id, date_from=date_from, date_to=date_to
+        db,
+        bay_id=bay_id,
+        workshop_id=workshop_id,
+        date_from=date_from,
+        date_to=date_to,
+        job_id=job_id,
     )
     return BayHistoryResponse(items=[BayHistoryItem(**item) for item in items])
 

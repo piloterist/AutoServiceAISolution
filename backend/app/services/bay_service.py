@@ -706,22 +706,29 @@ def list_history(
     *,
     bay_id: uuid.UUID | None = None,
     workshop_id: uuid.UUID | None = None,
-    date_from: date,
-    date_to: date,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    job_id: uuid.UUID | None = None,
 ) -> list[dict]:
     """Заезды (интервалы занятости) за дни [date_from, date_to] по времени цеха, свежие первыми.
 
     День определяется по началу заезда; заезд, который ещё идёт, считается до «сейчас».
+    С job_id - заезды, связанные с этой записью планировщика (кнопка «Фото» в записи), за любые дни.
     """
-    start = datetime.combine(date_from, time.min, tzinfo=SHOP_TZ)
-    end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=SHOP_TZ)
     query = (
         select(BayOccupancy, Bay)
         .join(Bay, Bay.id == BayOccupancy.bay_id)
-        .where(BayOccupancy.started_at >= start, BayOccupancy.started_at < end)
         .order_by(BayOccupancy.started_at.desc())
         .limit(HISTORY_LIMIT)
     )
+    if job_id is not None:
+        query = query.where(BayOccupancy.workshop_job_id == job_id)
+    else:
+        if date_from is None or date_to is None:
+            raise ValueError("date_from and date_to are required without job_id")
+        start = datetime.combine(date_from, time.min, tzinfo=SHOP_TZ)
+        end = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=SHOP_TZ)
+        query = query.where(BayOccupancy.started_at >= start, BayOccupancy.started_at < end)
     if bay_id is not None:
         query = query.where(Bay.id == bay_id)
     if workshop_id is not None:

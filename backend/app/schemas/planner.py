@@ -74,6 +74,8 @@ class WorkshopJobOut(BaseModel):
     created_by_name: str | None
     # Запись создал видеоконтроль, а не человек: на плашке планировщика она с рамкой.
     auto_created: bool = False
+    # С записью связан заезд видеоконтроля: в карточке записи есть кнопка «Фото» (история заездов).
+    has_video: bool = False
 
     model_config = {"from_attributes": True}
 

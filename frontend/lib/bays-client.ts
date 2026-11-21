@@ -49,9 +49,12 @@ export const baysClient = {
       headers: jsonHeaders,
       body: JSON.stringify({ event_type: eventType, plate: plate || null }),
     }),
-  history: (params: { dateFrom: string; dateTo: string; bayId?: string }) => {
-    const query = new URLSearchParams({ date_from: params.dateFrom, date_to: params.dateTo });
+  history: (params: { dateFrom?: string; dateTo?: string; bayId?: string; jobId?: string }) => {
+    const query = new URLSearchParams();
+    if (params.dateFrom) query.set("date_from", params.dateFrom);
+    if (params.dateTo) query.set("date_to", params.dateTo);
     if (params.bayId) query.set("bay_id", params.bayId);
+    if (params.jobId) query.set("job_id", params.jobId);
     return proxyFetch<BayHistoryResponse>(`/api/bays/history?${query.toString()}`);
   },
   // Ворота кузовного цеха: машины внутри (status=inside) или все заезды за период.

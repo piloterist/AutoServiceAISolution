@@ -12,11 +12,13 @@ from datetime import date
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
 from app.core.config import get_settings
 from app.db.session import get_db
+from app.models.bay import BayOccupancy
 from app.models.body_car import BodyCar
 from app.models.workshop_job import WorkshopJob
 from app.schemas.planner import (
@@ -131,7 +133,20 @@ def lookup_work_order_by_plate_endpoint(
 # ---- Слесарный --------------------------------------------------------------
 
 
-def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
+def _video_job_ids(db: Session, job_ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Записи, с которыми связан заезд видеоконтроля (создал её видеоконтроль или привязался)."""
+    if not job_ids:
+        return set()
+    return set(
+        db.scalars(
+            select(BayOccupancy.workshop_job_id).where(BayOccupancy.workshop_job_id.in_(job_ids))
+        )
+    )
+
+
+def _job_out(
+    db: Session, job: WorkshopJob, video_job_ids: set[uuid.UUID] | None = None
+) -> WorkshopJobOut:
     work_order = planner_service.work_order_lookup(
         db, {job.work_order_id} if job.work_order_id else set()
     ).get(job.work_order_id)
@@ -179,6 +194,8 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
         created_at=job.created_at,
         created_by_name=created_by_name,
         auto_created=created_by_name == VIDEO_CONTROL_ACTOR,
+        has_video=job.id
+        in (video_job_ids if video_job_ids is not None else _video_job_ids(db, [job.id])),
     )
 
 
@@ -187,7 +204,8 @@ def list_jobs(
     workshop_id: uuid.UUID, date_from: date, date_to: date, db: Session = Depends(get_db)
 ) -> list[WorkshopJobOut]:
     jobs = planner_service.list_workshop_jobs(db, workshop_id, date_from=date_from, date_to=date_to)
-    return [_job_out(db, j) for j in jobs]
+    video_ids = _video_job_ids(db, [j.id for j in jobs])
+    return [_job_out(db, j, video_ids) for j in jobs]
 
 
 @router.post(

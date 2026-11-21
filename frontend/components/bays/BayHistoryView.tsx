@@ -70,7 +70,16 @@ function Photo({
 /** История заездов бокса по дням (product ask, 2026-11-04): широкие полосы от свежих к
  * старым, фильтр по датам (по умолчанию сегодня), в каждой - фото въезда и выезда с датой
  * и временем, номер, время в боксе и заказ-наряд, привязанный в момент въезда. */
-export function BayHistoryView({ bayId, bayName }: { bayId: string | null; bayName: string | null }) {
+export function BayHistoryView({
+  bayId,
+  bayName,
+  jobId = null,
+}: {
+  bayId: string | null;
+  bayName: string | null;
+  /** Заезды одной записи планировщика (кнопка «Фото» в записи): без выбора дат. */
+  jobId?: string | null;
+}) {
   const [dateFrom, setDateFrom] = useState(shopDate());
   const [dateTo, setDateTo] = useState(shopDate());
   const [items, setItems] = useState<BayHistoryItem[] | null>(null);
@@ -78,14 +87,15 @@ export function BayHistoryView({ bayId, bayName }: { bayId: string | null; bayNa
   const [lightbox, setLightbox] = useState<Lightbox>(null);
 
   const load = useCallback(async () => {
-    if (!dateFrom || !dateTo || dateTo < dateFrom) return;
+    if (!jobId && (!dateFrom || !dateTo || dateTo < dateFrom)) return;
     try {
-      setItems((await baysClient.history({ dateFrom, dateTo, bayId: bayId ?? undefined })).items);
+      const params = jobId ? { jobId } : { dateFrom, dateTo, bayId: bayId ?? undefined };
+      setItems((await baysClient.history(params)).items);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить историю");
     }
-  }, [dateFrom, dateTo, bayId]);
+  }, [dateFrom, dateTo, bayId, jobId]);
 
   useEffect(() => {
     setItems(null);
@@ -110,7 +120,10 @@ export function BayHistoryView({ bayId, bayName }: { bayId: string | null; bayNa
         <Link href="/bays" className="admin-btn">
           ← Боксы
         </Link>
-        <h1 className="planner-title">История{bayName ? `: ${bayName}` : ""}</h1>
+        <h1 className="planner-title">
+          {jobId ? "Фото заезда по записи планировщика" : `История${bayName ? `: ${bayName}` : ""}`}
+        </h1>
+        {!jobId && (
         <div className="bay-hist-filters">
           <label>
             С{" "}
@@ -130,6 +143,7 @@ export function BayHistoryView({ bayId, bayName }: { bayId: string | null; bayNa
             7 дней
           </button>
         </div>
+        )}
       </div>
 
       {error && (
@@ -139,7 +153,9 @@ export function BayHistoryView({ bayId, bayName }: { bayId: string | null; bayNa
       )}
 
       {items === null && !error && <div className="card">Загрузка…</div>}
-      {items && items.length === 0 && <div className="card">За выбранные дни заездов не было.</div>}
+      {items && items.length === 0 && (
+        <div className="card">{jobId ? "У этой записи нет заездов видеоконтроля." : "За выбранные дни заездов не было."}</div>
+      )}
 
       {items?.map((item) => (
         <section key={item.id} className="card bay-hist-row">

@@ -220,6 +220,40 @@ def test_a_job_made_by_video_control_shows_it_as_the_creator(
     assert [job["work_description"] for job in listed] == [None]
 
 
+def test_a_job_linked_to_a_video_stay_has_photos_and_its_history_is_found_by_the_job(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    order = _order(db_session)
+    planned = _job(
+        db_session, workshop, statuses["Запись"], time(10), time(11), "А612СМ", order=order
+    )
+    manual = _job(
+        db_session, workshop, statuses["Запись"], time(12), time(13), "О111ОО", order=None
+    )
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+
+    listed = {
+        job["id"]: job
+        for job in client.get(
+            f"{PLAN_URL}/workshops/{workshop.id}/jobs"
+            f"?date_from={moment(10).date()}&date_to={moment(10).date()}",
+            headers=auth_headers,
+        ).json()
+    }
+    # Привязалась к заезду - кнопка «Фото»; ручная запись без заезда - нет.
+    assert listed[str(planned.id)]["has_video"] is True
+    assert listed[str(manual.id)]["has_video"] is False
+
+    history = client.get(f"/api/v1/bays/history?job_id={planned.id}", headers=auth_headers)
+    assert history.status_code == 200
+    [stay] = history.json()["items"]
+    assert stay["plate"] == "А612СМ777" and stay["entry"]["event_type"] == "entry_confirmed"
+    none = client.get(f"/api/v1/bays/history?job_id={manual.id}", headers=auth_headers)
+    assert none.json()["items"] == []
+    no_dates = client.get("/api/v1/bays/history", headers=auth_headers)
+    assert no_dates.status_code == 422
+
+
 def test_the_job_is_extended_while_the_car_stays_and_done_after_exit(
     client, auth_headers, db_session, workshop, statuses, bay_id
 ) -> None:

@@ -1139,6 +1139,8 @@ export type WorkshopJob = {
   created_by_name: string | null;
   // Запись создал видеоконтроль, а не человек: на плашке планировщика она с рамкой.
   auto_created?: boolean;
+  // С записью связан заезд видеоконтроля: в карточке записи есть кнопка «Фото».
+  has_video?: boolean;
 };
 
 export type WorkshopJobWrite = {
@@ -2645,16 +2647,19 @@ export function getBays(workshopId?: string): Promise<BaysResponse> {
 }
 
 export function getBayHistory(params: {
-  date_from: string;
-  date_to: string;
+  date_from?: string;
+  date_to?: string;
   bay_id?: string;
   workshop_id?: string;
+  /** Заезды записи планировщика (без дат). */
+  job_id?: string;
 }): Promise<BayHistoryResponse> {
   return backendGet<BayHistoryResponse>("/api/v1/bays/history", {
-    date_from: params.date_from,
-    date_to: params.date_to,
+    date_from: params.date_from ?? "",
+    date_to: params.date_to ?? "",
     bay_id: params.bay_id ?? "",
     workshop_id: params.workshop_id ?? "",
+    job_id: params.job_id ?? "",
   });
 }
 

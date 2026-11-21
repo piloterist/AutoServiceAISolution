@@ -36,6 +36,8 @@ export type JobDraft = {
   // 2026-10-04.
   createdAt: string | null;
   createdByName: string | null;
+  // С записью связан заезд видеоконтроля (создан им или привязан): кнопка «Фото» ведёт в историю.
+  hasVideo: boolean;
 };
 
 function formatDateTime(iso: string): string {
@@ -342,6 +344,17 @@ export function WorkshopJobDialog({
               Удалить
             </button>
           )}
+          {form.jobId && form.hasVideo && (
+            <a
+              className="admin-btn"
+              href={`/bays/history?job=${form.jobId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Фото въезда и выезда в истории видеоконтроля"
+            >
+              Фото
+            </a>
+          )}
           <span className="admin-form-actions-spacer" />
           <button type="button" className="admin-btn" onClick={onClose}>
             Отмена
@@ -410,6 +423,7 @@ export function jobToDraft(job: WorkshopJob): JobDraft {
     statusId: job.status_id,
     createdAt: job.created_at,
     createdByName: job.created_by_name,
+    hasVideo: job.has_video ?? false,
   };
 }
 
@@ -443,5 +457,6 @@ export function emptyJobDraft(
     statusId: statuses.find((s) => s.name === "Запись")?.id ?? statuses[0]?.id ?? null,
     createdAt: null,
     createdByName: null,
+    hasVideo: false,
   };
 }
