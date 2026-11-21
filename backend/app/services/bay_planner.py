@@ -66,7 +66,9 @@ STATUS_DONE = "Готова"
 STATUS_CANCELLED = "Отмена"
 PLATE_PREFIX = 6  # регион в плане часто не указан - сверяем только основную часть номера
 SLOT_MINUTES = 30
-AUTO_WORK_DESCRIPTION = "Создано автоматически: машина заехала в бокс"
+# Раньше у созданной видеоконтролем записи в «Работах» писали этот текст; теперь запись отмечена
+# рамкой на плашке (auto_created), а старые записи с этим текстом на плашке его не показывают.
+LEGACY_AUTO_WORK_DESCRIPTION = "Создано автоматически: машина заехала в бокс"
 # Запись в плане автоматически не создаётся, если номер распознан с меньшей уверенностью.
 MIN_CONFIDENCE_FOR_NEW_JOB = Decimal("0.70")
 LOW_CONFIDENCE_NOTE = "запись в планировщике не создана: номер распознан с уверенностью ниже 70 %"
@@ -225,7 +227,6 @@ def _create_job(
         end_time=_at(end),
         plate=event.plate,
         status_id=status.id if status else None,
-        work_description=AUTO_WORK_DESCRIPTION,
     )
     if event.work_order_id:
         _fill_from_work_order(db, job, event.work_order_id)

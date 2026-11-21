@@ -1137,6 +1137,8 @@ export type WorkshopJob = {
   // 2026-10-04).
   created_at: string;
   created_by_name: string | null;
+  // Запись создал видеоконтроль, а не человек: на плашке планировщика она с рамкой.
+  auto_created?: boolean;
 };
 
 export type WorkshopJobWrite = {

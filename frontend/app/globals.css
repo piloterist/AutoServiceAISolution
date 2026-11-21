@@ -3568,6 +3568,12 @@ table.admin-data-table td.audit-changes-cell {
   z-index: 4;
 }
 
+/* Запись создана видеоконтролем, а не человеком: синяя рамка (синий не занят статусами записей). */
+.job--auto {
+  outline: 2px solid #1d6fe8;
+  outline-offset: -2px;
+}
+
 .job-title {
   font-weight: 700;
   /* Fixed dark color, not var(--text) - the card's background is now a

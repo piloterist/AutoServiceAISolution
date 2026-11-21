@@ -72,6 +72,8 @@ class WorkshopJobOut(BaseModel):
     # product ask, 2026-10-04.
     created_at: datetime
     created_by_name: str | None
+    # Запись создал видеоконтроль, а не человек: на плашке планировщика она с рамкой.
+    auto_created: bool = False
 
     model_config = {"from_attributes": True}
 

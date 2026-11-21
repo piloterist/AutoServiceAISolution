@@ -30,7 +30,7 @@ from app.schemas.planner import (
 )
 from app.services import planner_service
 from app.services.fivesystems_client import FiveSystemsError, lookup_work_order_by_plate
-from app.services.planner_service import NotFoundError, SchedulingError
+from app.services.planner_service import VIDEO_CONTROL_ACTOR, NotFoundError, SchedulingError
 from app.services.settings_service import get_app_settings
 
 router = APIRouter(prefix="/planner", tags=["planner"], dependencies=[Depends(verify_api_token)])
@@ -144,6 +144,15 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
     creator = planner_service.user_lookup(
         db, {job.created_by_id} if job.created_by_id else set()
     ).get(job.created_by_id)
+    created_by_name = (
+        creator.full_name
+        if creator
+        else (
+            planner_service.audit_creator_name(db, "workshop_job", job.id)
+            if job.created_by_id is None
+            else None
+        )
+    )
     return WorkshopJobOut(
         id=job.id,
         workshop_id=job.workshop_id,
@@ -168,15 +177,8 @@ def _job_out(db: Session, job: WorkshopJob) -> WorkshopJobOut:
         employee_id=job.employee_id,
         employee_name=employee.full_name if employee else None,
         created_at=job.created_at,
-        created_by_name=(
-            creator.full_name
-            if creator
-            else (
-                planner_service.audit_creator_name(db, "workshop_job", job.id)
-                if job.created_by_id is None
-                else None
-            )
-        ),
+        created_by_name=created_by_name,
+        auto_created=created_by_name == VIDEO_CONTROL_ACTOR,
     )
 
 

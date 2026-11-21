@@ -19,6 +19,8 @@ import { emptyJobDraft, jobToDraft, WorkshopJobDialog, type JobDraft } from "./W
 
 const SLOT_MINUTES = 30;
 const SLOT_HEIGHT = 36;
+// Текст, который видеоконтроль раньше писал в «Работы» создаваемой записи: теперь такие записи с рамкой, текст на плашке не нужен.
+const LEGACY_AUTO_DESCRIPTION = "Создано автоматически: машина заехала в бокс";
 const MIN_JOB_HEIGHT = 18; // px: ниже короткую запись не рисуем, если ей не мешает следующая
 // Pointer movement (px) below which a press+release is treated as a click
 // (open the edit dialog) rather than a drag.
@@ -698,7 +700,7 @@ function MechanicalViewInner({
                         if (el) jobElsRef.current.set(job.id, el);
                         else jobElsRef.current.delete(job.id);
                       }}
-                      className={[dim ? "job planner-job-dim" : "job", isDragSource ? "planner-job-drag-source" : ""]
+                      className={[dim ? "job planner-job-dim" : "job", job.auto_created ? "job--auto" : "", isDragSource ? "planner-job-drag-source" : ""]
                         .filter(Boolean)
                         .join(" ")}
                       style={{
@@ -738,7 +740,7 @@ function MechanicalViewInner({
                       )}
                       <div className="job-title">{job.work_order_number ?? "Без ЗН"}</div>
                       {job.car_description && <div className="job-sub">{job.car_description}</div>}
-                      {job.work_description && <div className="job-work">{job.work_description}</div>}
+                      {job.work_description && job.work_description !== LEGACY_AUTO_DESCRIPTION && (<div className="job-work">{job.work_description}</div>)}
                       {job.employee_name && <div className="job-employee">{job.employee_name}</div>}
                       {height >= 24 && (
                         <div

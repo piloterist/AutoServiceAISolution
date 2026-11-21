@@ -215,6 +215,9 @@ def test_a_job_made_by_video_control_shows_it_as_the_creator(
     ).json()
 
     assert [job["created_by_name"] for job in listed] == ["Видеоконтроль"]
+    assert [job["auto_created"] for job in listed] == [True]
+    # Текст «создано автоматически» больше не пишется: запись отмечена рамкой на плашке.
+    assert [job["work_description"] for job in listed] == [None]
 
 
 def test_the_job_is_extended_while_the_car_stays_and_done_after_exit(

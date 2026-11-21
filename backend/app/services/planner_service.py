@@ -54,6 +54,10 @@ class SchedulingError(ValueError):
     always a 422 at the API layer, never a 500."""
 
 
+# Автор записей, созданных видеоконтролем (в журнале планировщика; у такой записи нет пользователя).
+VIDEO_CONTROL_ACTOR = "Видеоконтроль"
+
+
 class NotFoundError(ValueError):
     pass
 
