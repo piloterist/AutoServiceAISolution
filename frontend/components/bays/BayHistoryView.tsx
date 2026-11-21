@@ -117,9 +117,16 @@ export function BayHistoryView({
   return (
     <div className="bays-page">
       <div className="bays-toolbar card">
-        <Link href="/bays" className="admin-btn">
-          ← Боксы
-        </Link>
+        {jobId ? (
+          // Пришли из записи планировщика: возвращаем туда же, где были.
+          <button type="button" className="admin-btn" onClick={() => window.history.back()}>
+            ← Назад
+          </button>
+        ) : (
+          <Link href="/bays" className="admin-btn">
+            ← Боксы
+          </Link>
+        )}
         <h1 className="planner-title">
           {jobId ? "Фото заезда по записи планировщика" : `История${bayName ? `: ${bayName}` : ""}`}
         </h1>

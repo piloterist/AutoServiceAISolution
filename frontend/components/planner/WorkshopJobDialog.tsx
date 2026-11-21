@@ -348,8 +348,6 @@ export function WorkshopJobDialog({
             <a
               className="admin-btn"
               href={`/bays/history?job=${form.jobId}`}
-              target="_blank"
-              rel="noopener noreferrer"
               title="Фото въезда и выезда в истории видеоконтроля"
             >
               Фото
