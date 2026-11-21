@@ -587,9 +587,9 @@ def count_open_issues(db: Session) -> int:
 def list_issues(db: Session, *, status: str = "all") -> list[dict]:
     query = (
         select(BayIssue, Bay, Workshop, Department)
-        .join(Bay, Bay.id == BayIssue.bay_id)
-        .join(Workshop, Workshop.id == Bay.workshop_id)
-        .join(Department, Department.id == Workshop.department_id)
+        .outerjoin(Bay, Bay.id == BayIssue.bay_id)
+        .outerjoin(Workshop, Workshop.id == Bay.workshop_id)
+        .outerjoin(Department, Department.id == Workshop.department_id)
         .order_by(BayIssue.occurred_at.desc())
     )
     if status == "open":
@@ -601,9 +601,13 @@ def list_issues(db: Session, *, status: str = "all") -> list[dict]:
         items.append(
             {
                 "id": issue.id,
-                "bay_id": bay.id,
-                "bay_name": bay.name,
-                "workshop_label": f"{department.name} / {workshop.workshop_type}",
+                "bay_id": bay.id if bay else None,
+                "bay_name": bay.name if bay else "Выгрузка из 1С",
+                "workshop_label": (
+                    f"{department.name} / {workshop.workshop_type}"
+                    if bay and workshop and department
+                    else "Интеграция"
+                ),
                 "kind": issue.kind,
                 "plate": issue.plate,
                 "message": issue.message,

@@ -170,6 +170,7 @@ class BaySnapshotRequest(Base):
 ISSUE_NO_WORK_ORDER = "no_work_order"
 ISSUE_NO_BODY_PLAN = "no_body_plan"  # въехала машина, а в плане кузовного её нет
 ISSUE_EXIT_WITHOUT_ENTRY = "exit_without_entry"  # выезд машины, которой нет в цехе
+ISSUE_IMPORT_STALE = "import_stale"  # из 1С давно нет пакетов (без бокса: bay_id пусто)
 ISSUE_RESOLVED_AUTO = "auto"
 ISSUE_RESOLVED_MANUAL = "manual"
 
@@ -181,8 +182,9 @@ class BayIssue(Base):
     __tablename__ = "bay_issues"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    bay_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bays.id", ondelete="CASCADE"), nullable=False, index=True
+    # Пусто у ошибок, не связанных с боксом (нет данных из 1С).
+    bay_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("bays.id", ondelete="CASCADE"), nullable=True, index=True
     )
     occupancy_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("bay_occupancy.id", ondelete="SET NULL"), nullable=True

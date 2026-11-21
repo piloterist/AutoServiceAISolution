@@ -12,7 +12,7 @@ import asyncio
 import structlog
 
 from app.db.session import SessionLocal
-from app.services import bay_planner
+from app.services import bay_planner, import_monitor
 
 logger = structlog.get_logger(__name__)
 
@@ -22,7 +22,14 @@ INTERVAL_SECONDS = 60
 def run_once() -> tuple[int, int]:
     db = SessionLocal()
     try:
-        return bay_planner.tick(db)
+        result = bay_planner.tick(db)
+        try:
+            # Ошибка «нет данных из 1С» - отдельно: сбой проверки не мешает видеоконтролю.
+            import_monitor.check(db)
+        except Exception as exc:  # noqa: BLE001
+            db.rollback()
+            logger.error("import_monitor_error", error=str(exc))
+        return result
     finally:
         db.close()
 

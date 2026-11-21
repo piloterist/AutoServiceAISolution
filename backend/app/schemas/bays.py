@@ -154,7 +154,7 @@ class BayHistoryResponse(BaseModel):
 
 class BayIssueOut(BaseModel):
     id: uuid.UUID
-    bay_id: uuid.UUID
+    bay_id: uuid.UUID | None  # пусто у ошибки «нет данных из 1С»
     bay_name: str
     workshop_label: str
     kind: str

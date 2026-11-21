@@ -2319,7 +2319,7 @@ export type GateStaysResponse = { stays: GateStay[] };
 // Лист «Ошибки»: машина в боксе без заказ-наряда (см. backend services/bay_planner.py).
 export type BayIssue = {
   id: string;
-  bay_id: string;
+  bay_id: string | null; // пусто у ошибки «нет данных из 1С»
   bay_name: string;
   workshop_label: string;
   kind: string;

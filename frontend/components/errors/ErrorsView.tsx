@@ -38,10 +38,22 @@ const ISSUE_KIND_LABEL: Record<string, string> = {
   no_work_order: "Нет заказ-наряда",
   no_body_plan: "Нет в плане кузовного",
   exit_without_entry: "Выезд без въезда",
+  import_stale: "Нет данных из 1С",
 };
 
 function IssueHead({ issue }: { issue: BayIssue }) {
   const kindLabel = ISSUE_KIND_LABEL[issue.kind];
+  if (issue.kind === "import_stale") {
+    // Не про машину и бокс: ошибка выгрузки из 1С.
+    return (
+      <>
+        <div className="errors-title">
+          Выгрузка из 1С<span className="gate-flag gate-flag--down"> {kindLabel}</span>
+        </div>
+        <div className="errors-sub">с {formatDateTime(issue.occurred_at)}</div>
+      </>
+    );
+  }
   return (
     <>
       <div className="errors-title">
