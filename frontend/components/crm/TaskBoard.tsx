@@ -473,7 +473,6 @@ export function TaskBoard({
 
       {creating && (
         <ManualTaskDialog
-          open
           workshops={workshops}
           employees={employees}
           defaultWorkshopId={createWorkshopId}

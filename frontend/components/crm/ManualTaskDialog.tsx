@@ -2,21 +2,20 @@
 
 import { useState } from "react";
 
+import { columnOf, formatPhone } from "@/components/crm/columns";
 import { employeesOfWorkshop, workshopLabel } from "@/components/crm/WorkshopsContext";
-import { formatPhone } from "@/components/crm/columns";
 import { DateInput } from "@/components/DateInput";
 import { AdminModal } from "@/components/settings/AdminModal";
 import type { CrmTask, Employee, Workshop } from "@/lib/backend-api";
 
 export type ManualTaskResult = { task: CrmTask; created: boolean; linked: "call" | "lead" | null };
 
-/** «Создать» на доске задач: карточка, заполненная руками. Обязательны телефон и цех; цех и
- * сотрудник по умолчанию - текущего пользователя. Ниже - комментарий и запланированное действие
- * (как в окне карточки), необязательные. Сервер ищет телефон в телефонии и среди заявок с сайта и
- * связывает карточку с найденным звонком / заявкой; если телефон уже ведётся - откроется существующая
- * карточка. */
+/** «Создать» на доске задач: та же форма, что у окна задачи (TaskDetailModal), только телефон
+ * вводится руками (поле выше) и поля «Сотрудник» / «Цех» сразу доступны. Цех и сотрудник по
+ * умолчанию - текущего пользователя. Комментарий и запланированное действие необязательны и
+ * сохраняются вместе с задачей. Сервер ищет телефон в телефонии и среди заявок с сайта и связывает
+ * задачу с найденным звонком / заявкой; если телефон уже ведётся - откроется существующая задача. */
 export function ManualTaskDialog({
-  open,
   workshops,
   employees,
   defaultWorkshopId,
@@ -24,7 +23,6 @@ export function ManualTaskDialog({
   onClose,
   onDone,
 }: {
-  open: boolean;
   workshops: Workshop[];
   employees: Employee[];
   defaultWorkshopId: string;
@@ -35,15 +33,15 @@ export function ManualTaskDialog({
   const [phone, setPhone] = useState("");
   const [workshopId, setWorkshopId] = useState(defaultWorkshopId);
   const [employeeId, setEmployeeId] = useState(defaultEmployeeId);
-  const [clientName, setClientName] = useState("");
-  const [commentOpen, setCommentOpen] = useState(false);
-  const [actionOpen, setActionOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [comment, setComment] = useState("");
   const [actionDate, setActionDate] = useState("");
   const [actionComment, setActionComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const stage = columnOf("control");
   const employeeOptions = employeesOfWorkshop(employees, workshopId || null);
   // Свой сотрудник без цеха в справочнике подходит к любому цеху - не теряем его в списке.
   const own = employees.find((e) => e.id === defaultEmployeeId) ?? null;
@@ -61,12 +59,12 @@ export function ManualTaskDialog({
       return;
     }
     if (actionDate && !actionComment.trim()) {
-      setActionOpen(true);
+      setActionsOpen(true);
       setError("Укажите комментарий к запланированному действию");
       return;
     }
     if (actionComment.trim() && !actionDate) {
-      setActionOpen(true);
+      setActionsOpen(true);
       setError("Укажите дату запланированного действия");
       return;
     }
@@ -80,7 +78,6 @@ export function ManualTaskDialog({
           phone,
           workshop_id: workshopId,
           employee_id: employeeId || null,
-          client_name: clientName || null,
           comment: comment || null,
           action_date: actionDate || null,
           action_comment: actionComment || null,
@@ -97,76 +94,120 @@ export function ManualTaskDialog({
   };
 
   return (
-    <AdminModal open={open} title="Новая задача" onClose={() => !saving && onClose()}>
-      <div className="call-control-dialog">
-        <label htmlFor="manual-task-phone">Телефон *</label>
-        <input
-          id="manual-task-phone"
-          type="tel"
-          inputMode="tel"
-          value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-          onBlur={() => digits.length >= 10 && setPhone(formatPhone(digits.slice(-10)))}
-          placeholder="+7 900 123-45-67"
-          autoFocus
-        />
-        <label htmlFor="manual-task-client">Клиент</label>
-        <input
-          id="manual-task-client"
-          value={clientName}
-          onChange={(event) => setClientName(event.target.value)}
-          placeholder="Имя клиента (необязательно)"
-        />
-        <label htmlFor="manual-task-workshop">Цех *</label>
-        <select
-          id="manual-task-workshop"
-          value={workshopId}
-          onChange={(event) => {
-            const next = event.target.value;
-            setWorkshopId(next);
-            // Сотрудник остаётся, только если он работает в новом цехе (или без цеха в справочнике).
-            const stays = employeesOfWorkshop(employees, next || null).some((e) => e.id === employeeId);
-            if (!stays && !(own && own.id === employeeId && !own.workshop_id)) setEmployeeId("");
-          }}
-        >
-          <option value="">Выберите цех…</option>
-          {workshops.map((workshop) => (
-            <option key={workshop.id} value={workshop.id}>
-              {workshopLabel(workshop)}
-            </option>
-          ))}
-        </select>
-        <label htmlFor="manual-task-employee">Сотрудник</label>
-        <select
-          id="manual-task-employee"
-          value={employeeId}
-          disabled={!workshopId}
-          onChange={(event) => setEmployeeId(event.target.value)}
-        >
-          <option value="">{workshopId ? "Не выбран" : "Сначала выберите цех"}</option>
-          {employeeOptions.map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.full_name}
-              {employee.specialty ? ` — ${employee.specialty}` : ""}
-            </option>
-          ))}
-        </select>
+    <AdminModal
+      open
+      wide
+      title={
+        <>
+          Лид · новая задача
+          <span className={`task-detail-stage task-column--control`}>
+            <span aria-hidden="true">{stage.icon}</span> {stage.title}
+          </span>
+        </>
+      }
+      onClose={() => !saving && onClose()}
+    >
+      <div className="task-detail task-column--control">
+        <div className="task-detail-summary">
+          <div className="task-detail-top">
+            <div className="task-detail-main">
+              <div className="task-detail-grid">
+                <div className="task-detail-row">
+                  <label className="task-detail-label" htmlFor="manual-task-phone">
+                    Телефон *
+                  </label>
+                  <input
+                    id="manual-task-phone"
+                    className="task-detail-select"
+                    type="tel"
+                    inputMode="tel"
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value)}
+                    onBlur={() => digits.length >= 10 && setPhone(formatPhone(digits.slice(-10)))}
+                    placeholder="+7 900 123-45-67"
+                    autoFocus
+                  />
+                </div>
+                <div className="task-detail-row">
+                  <span className="task-detail-label">Сотрудник</span>
+                  <select
+                    className="task-detail-select"
+                    value={employeeId}
+                    onChange={(event) => setEmployeeId(event.target.value)}
+                    aria-label="Сотрудник"
+                  >
+                    <option value="">Не выбран</option>
+                    {employeeOptions.map((employee) => (
+                      <option key={employee.id} value={employee.id}>
+                        {employee.full_name}
+                        {employee.specialty ? ` — ${employee.specialty}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="task-detail-row">
+                  <span className="task-detail-label">Цех *</span>
+                  <select
+                    className="task-detail-select"
+                    value={workshopId}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      setWorkshopId(next);
+                      // Сотрудник остаётся, только если работает в новом цехе (или цех ему не указан).
+                      const keep = employees.find((e) => e.id === employeeId);
+                      if (keep?.workshop_id && keep.workshop_id !== next) setEmployeeId("");
+                    }}
+                    aria-label="Цех"
+                  >
+                    <option value="">Выберите цех…</option>
+                    {workshops.map((workshop) => (
+                      <option key={workshop.id} value={workshop.id}>
+                        {workshopLabel(workshop)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <span className="task-detail-head-actions">
+              <span className="task-detail-head-row">
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-primary"
+                  disabled={saving || digits.length < 10 || !workshopId}
+                  onClick={() => void submit()}
+                >
+                  {saving ? "Создаём…" : "Создать"}
+                </button>
+                <button type="button" className="admin-btn" disabled={saving} onClick={onClose}>
+                  Отмена
+                </button>
+              </span>
+              {["Запись на осмотр", "Заявка на ремонт", "Заказ-наряд"].map((label) => (
+                <button key={label} type="button" className="admin-btn task-detail-navbtn" disabled>
+                  {label}
+                </button>
+              ))}
+            </span>
+          </div>
+          {error && <p className="admin-form-error">{error}</p>}
+        </div>
 
         <button
           type="button"
           className="task-detail-toggle"
-          aria-expanded={commentOpen}
-          onClick={() => setCommentOpen((prev) => !prev)}
+          aria-expanded={commentsOpen}
+          onClick={() => setCommentsOpen((prev) => !prev)}
         >
-          {commentOpen ? "▾" : "▸"} Комментарий{comment.trim() ? " ✓" : ""}
+          {commentsOpen ? "▾" : "▸"} Комментарии ({comment.trim() ? 1 : 0})
         </button>
-        {commentOpen && (
+        {commentsOpen && (
           <div className="task-detail-comment-form">
             <textarea
               rows={3}
               value={comment}
               onChange={(event) => setComment(event.target.value)}
-              placeholder="Комментарий к задаче"
+              placeholder="Написать комментарий…  (сохранится вместе с задачей)"
               aria-label="Комментарий"
             />
           </div>
@@ -175,16 +216,17 @@ export function ManualTaskDialog({
         <button
           type="button"
           className="task-detail-toggle"
-          aria-expanded={actionOpen}
-          onClick={() => setActionOpen((prev) => !prev)}
+          aria-expanded={actionsOpen}
+          onClick={() => setActionsOpen((prev) => !prev)}
         >
-          {actionOpen ? "▾" : "▸"} Действие{actionDate ? " ✓" : ""}
+          {actionsOpen ? "▾" : "▸"} Действия ({actionDate && actionComment.trim() ? 1 : 0})
         </button>
-        {actionOpen && (
+        {actionsOpen && (
           <div className="task-detail-comment-form">
             <div className="task-detail-plan">
               <label htmlFor="manual-task-date">Дата контакта</label>
               <DateInput id="manual-task-date" value={actionDate} onChange={setActionDate} />
+              <span className="admin-hint">Не запланировано - сроки считаются от создания задачи.</span>
             </div>
             <textarea
               rows={3}
@@ -197,22 +239,8 @@ export function ManualTaskDialog({
         )}
 
         <p className="admin-hint">
-          Телефон будет проверен в телефонии и среди заявок с сайта: найденный звонок или заявка свяжутся с задачей.
+          Телефон проверяется в телефонии и среди заявок с сайта: найденный звонок или заявка связываются с задачей.
         </p>
-        {error && <p className="admin-form-error">{error}</p>}
-        <div className="request-control-actions">
-          <button
-            type="button"
-            className="admin-btn admin-btn-primary"
-            disabled={saving || digits.length < 10 || !workshopId}
-            onClick={() => void submit()}
-          >
-            {saving ? "Создаём…" : "Создать"}
-          </button>
-          <button type="button" className="admin-btn" disabled={saving} onClick={onClose}>
-            Отмена
-          </button>
-        </div>
       </div>
     </AdminModal>
   );
