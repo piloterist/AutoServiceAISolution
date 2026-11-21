@@ -3570,8 +3570,8 @@ table.admin-data-table td.audit-changes-cell {
 
 /* Запись создана видеоконтролем, а не человеком: синяя рамка (синий не занят статусами записей). */
 .job--auto {
-  outline: 2px solid #1d6fe8;
-  outline-offset: -2px;
+  outline: 3px solid #1d6fe8;
+  outline-offset: -3px;
 }
 
 .job-title {
