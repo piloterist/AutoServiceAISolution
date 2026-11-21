@@ -83,4 +83,4 @@ def test_the_error_is_listed_on_the_errors_sheet_without_a_bay(db_session: Sessi
     ]
 
     assert len(items) >= 1
-    assert items[0]["bay_id"] is None and items[0]["bay_name"] == "Выгрузка из 1С"
+    assert items[0]["bay_id"] is None and items[0]["bay_name"] == "Импорт из 1С"

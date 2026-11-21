@@ -602,7 +602,7 @@ def list_issues(db: Session, *, status: str = "all") -> list[dict]:
             {
                 "id": issue.id,
                 "bay_id": bay.id if bay else None,
-                "bay_name": bay.name if bay else "Выгрузка из 1С",
+                "bay_name": bay.name if bay else "Импорт из 1С",
                 "workshop_label": (
                     f"{department.name} / {workshop.workshop_type}"
                     if bay and workshop and department

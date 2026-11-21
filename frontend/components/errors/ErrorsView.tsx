@@ -48,9 +48,9 @@ function IssueHead({ issue }: { issue: BayIssue }) {
     return (
       <>
         <div className="errors-title">
-          Выгрузка из 1С<span className="gate-flag gate-flag--down"> {kindLabel}</span>
+          Импорт из 1С<span className="gate-flag gate-flag--down"> {kindLabel}</span>
         </div>
-        <div className="errors-sub">с {formatDateTime(issue.occurred_at)}</div>
+        <div className="errors-sub">обнаружено {formatDateTime(issue.occurred_at)}</div>
       </>
     );
   }
@@ -140,7 +140,9 @@ export function ErrorsView({ initialIssues }: { initialIssues: BayIssue[] }) {
     }
   };
 
-  const open = issues.filter((i) => !i.resolved_at);
+  const open = issues.filter((i) => !i.resolved_at && i.kind !== "import_stale");
+  // Ошибка выгрузки из 1С - не про видеоконтроль: свой раздел, виден только пока ошибка открыта.
+  const importOpen = issues.filter((i) => !i.resolved_at && i.kind === "import_stale");
   const resolved = issues.filter((i) => i.resolved_at);
 
   return (
@@ -188,6 +190,25 @@ export function ErrorsView({ initialIssues }: { initialIssues: BayIssue[] }) {
               ))}
             </ul>
           )}
+        </>
+      )}
+
+      {importOpen.length > 0 && (
+        <>
+          <h2 className="errors-subtitle">Импорт из 1С</h2>
+          <ul className="errors-list">
+            {importOpen.map((issue) => (
+              <li key={issue.id} className="errors-item errors-item--open">
+                <div className="errors-body">
+                  <IssueHead issue={issue} />
+                  <div>{issue.message}</div>
+                </div>
+                <button type="button" className="admin-btn" disabled={busyId === issue.id} onClick={() => resolve(issue)}>
+                  Исправлено
+                </button>
+              </li>
+            ))}
+          </ul>
         </>
       )}
 
