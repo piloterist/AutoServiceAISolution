@@ -1210,6 +1210,8 @@ export type BodyCar = {
   workshop_id: string;
   work_order_id: string | null;
   work_order_number: string | null;
+  // ЗаказНаряд.Статус (1С) привязанного ЗН; null - ЗН не привязан. Для фильтра «Активные».
+  work_order_status?: string | null;
   // ЗаказНаряд.ВидРемонта, live from the linked ЗН - shown as its own
   // field on the card.
   repair_type: string | null;

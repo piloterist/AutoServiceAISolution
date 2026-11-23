@@ -282,6 +282,7 @@ def _car_out(db: Session, car: BodyCar) -> BodyCarOut:
         workshop_id=car.workshop_id,
         work_order_id=car.work_order_id,
         work_order_number=work_order.external_number if work_order else None,
+        work_order_status=work_order.status if work_order else None,
         repair_type=work_order.repair_type if work_order else None,
         is_internal=work_order.is_internal if work_order else False,
         amount=work_order.amount if work_order else None,

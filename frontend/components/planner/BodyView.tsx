@@ -140,6 +140,16 @@ function carMatches(car: BodyCar, query: string): boolean {
 const WARRANTY_REPAIR_TYPES = ["Гарантийный", "Гарантийный (бесплатный)"];
 const INSURANCE_REPAIR_TYPE = "Страховой";
 
+/** Фильтр «Показ» кузовного планировщика. «Текущие» - машины, попавшие в выбранный период; «Активные» -
+ * все, у кого заказ-наряд не «Закрыт» (без привязанного ЗН тоже активные); «Все» - все записи. */
+type BodyScope = "current" | "active" | "all";
+const BODY_SCOPES: { key: BodyScope; label: string }[] = [
+  { key: "current", label: "Текущие" },
+  { key: "active", label: "Активные" },
+  { key: "all", label: "Все" },
+];
+const CLOSED_ORDER_STATUS = "Закрыт";
+
 /** "Вид ремонта" filter (Кузовной Planner toolbar, per product spec,
  * 2026-09-30): "Текущий" is a catch-all for every ЗН that isn't
  * Гарантийный/Гарантийный (бесплатный)/Страховой - including a car with no
@@ -233,6 +243,9 @@ function BodyViewInner({
       ? (defaultRepairType as RepairTypeFilter)
       : "Все",
   );
+  // «Показ» (product ask, 2026-11-23): текущие - машины, попавшие в выбранный период (как раньше);
+  // активные - все машины, чей ЗН не «Закрыт», независимо от периода; все - вообще все записи.
+  const [scope, setScope] = useState<BodyScope>("current");
   const [cars, setCars] = useState<BodyCar[]>([]);
   const [dialogDraft, setDialogDraft] = useState<CarDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -310,6 +323,8 @@ function BodyViewInner({
   // график/окно дат при этом двигать не надо.
   const visibleCars = repairFilteredCars
     .filter((car) => {
+      if (scope === "all") return true;
+      if (scope === "active") return car.work_order_status !== CLOSED_ORDER_STATUS;
       const span = carDisplaySpan(car);
       const inWindow = !span || (span.start <= windowEnd && span.end >= windowStart);
       if (inWindow) return true;
@@ -523,6 +538,18 @@ function BodyViewInner({
             {REPAIR_TYPE_FILTERS.map((type) => (
               <option key={type} value={type}>
                 {type}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="grp">
+          <label htmlFor="body-scope-filter" className="planner-repair-filter-label">
+            Показ
+          </label>
+          <select id="body-scope-filter" value={scope} onChange={(e) => setScope(e.target.value as BodyScope)}>
+            {BODY_SCOPES.map((item) => (
+              <option key={item.key} value={item.key}>
+                {item.label}
               </option>
             ))}
           </select>

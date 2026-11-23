@@ -433,6 +433,31 @@ def test_body_car_surfaces_linked_work_order_repair_type(
     assert listed.json()[0]["repair_type"] == "Страховой"
 
 
+def test_body_car_surfaces_linked_work_order_status(
+    client, auth_headers, body_workshop, sample_work_order, db_session: Session
+) -> None:
+    """work_order_status - для фильтра «Активные» планировщика: «Закрыт» скрывается, а машина без ЗН
+    (None) остаётся."""
+    sample_work_order.status = "Закрыт"
+    db_session.commit()
+
+    linked = client.post(
+        f"{PLANNER_URL}/workshops/{body_workshop.id}/cars",
+        headers=auth_headers,
+        json=_car_payload(work_order_id=str(sample_work_order.id)),
+    )
+    unlinked = client.post(
+        f"{PLANNER_URL}/workshops/{body_workshop.id}/cars",
+        headers=auth_headers,
+        json=_car_payload(),
+    )
+
+    assert linked.json()["work_order_status"] == "Закрыт"
+    assert unlinked.json()["work_order_status"] is None
+    listed = client.get(f"{PLANNER_URL}/workshops/{body_workshop.id}/cars", headers=auth_headers)
+    assert sorted(str(car["work_order_status"]) for car in listed.json()) == ["None", "Закрыт"]
+
+
 def test_body_car_repair_type_null_without_linked_work_order(
     client, auth_headers, body_workshop
 ) -> None:

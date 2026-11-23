@@ -138,6 +138,9 @@ class BodyCarOut(BaseModel):
     # ЗаказНаряд.ВидРемонта, live from the linked ЗН like work_order_number/
     # amount above - shown as its own field on the car card.
     repair_type: str | None
+    # ЗаказНаряд.Статус (1С), live from the linked ЗН: фильтр «Активные» на планировщике кузовного
+    # скрывает машины, чей заказ-наряд «Закрыт». None - ЗН не привязан.
+    work_order_status: str | None = None
     # WorkOrder.is_internal, live from the linked ЗН - drives the red
     # "Страховой" label on the Planner car list (see BodyView.tsx).
     # Despite the label text, this is no longer about repair_type at all
