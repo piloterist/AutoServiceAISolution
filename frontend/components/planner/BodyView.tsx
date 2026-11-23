@@ -544,7 +544,7 @@ function BodyViewInner({
         </div>
         <div className="grp">
           <label htmlFor="body-scope-filter" className="planner-repair-filter-label">
-            Показ
+            Показать
           </label>
           <select id="body-scope-filter" value={scope} onChange={(e) => setScope(e.target.value as BodyScope)}>
             {BODY_SCOPES.map((item) => (
