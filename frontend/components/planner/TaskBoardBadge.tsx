@@ -43,7 +43,7 @@ export function TaskBoardBadge({ workshopId }: { workshopId: string | null }) {
 
   const title =
     count > 0
-      ? `Задачи CRM: ${count} на контроле дольше ${warnDays ?? ""} дн.`
+      ? `Задачи CRM: ${count} с наступившим сроком (на контроле дольше ${warnDays ?? ""} дн. или пришла дата запланированного действия)`
       : "Задачи CRM";
 
   return (

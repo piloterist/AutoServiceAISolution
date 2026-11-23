@@ -676,13 +676,15 @@ def _delete_planner_record(
 
 
 def alert_for(task: CrmTask, warn_days: int, overdue_days: int, now: datetime) -> Alert | None:
-    """Окраска карточки: только в «На контроле».
+    """Окраска карточки.
 
-    Без запланированного действия: розовая через warn_days дней после перевода в столбец, красная
-    через overdue_days. С запланированным действием: розовая уже с начала запланированного дня (по
-    Москве) - пора действовать, красная - позже на тот же промежуток (overdue_days - warn_days),
-    что и без плана. До запланированного дня карточка не окрашена."""
-    if task.status != TASK_STATUS_CONTROL:
+    С запланированным действием - в любом активном столбце («На контроле», «Записан на осмотр»,
+    «Думает»): розовая с начала запланированного дня (по Москве) - пора действовать, красная -
+    позже на промежуток (overdue_days - warn_days); до запланированного дня не окрашена. «Отказ» и
+    «Заказ-наряд» - конец пути, прошедшая дата действия там карточку не красит.
+    Без запланированного действия окраска только в «На контроле»: розовая через warn_days дней
+    после перевода в столбец, красная через overdue_days."""
+    if task.status not in ACTIVE_STATUSES:
         return None
     if task.next_action_date is not None:
         planned = datetime.combine(task.next_action_date, time.min, tzinfo=_MSK)
@@ -694,6 +696,8 @@ def alert_for(task: CrmTask, warn_days: int, overdue_days: int, now: datetime) -
         ):
             return "overdue"
         return "warn"
+    if task.status != TASK_STATUS_CONTROL:
+        return None  # без плана сроки идут только в «На контроле»
     age = now - _aware(task.status_changed_at)
     if age >= timedelta(days=overdue_days):
         return "overdue"
@@ -731,7 +735,9 @@ def overdue_count(db: Session, *, workshop_id: uuid.UUID | None = None) -> Overd
     sync_tasks(db)
     settings = get_app_settings(db)
     now = datetime.now(UTC)
-    query = select(CrmTask).where(CrmTask.status == TASK_STATUS_CONTROL)
+    # Счётчик «Задачи CRM» в планировщике: карточки активных столбцов, у которых наступил срок
+    # (розовые и красные), не только «На контроле».
+    query = select(CrmTask).where(CrmTask.status.in_(ACTIVE_STATUSES))
     if workshop_id is not None:
         query = query.where(CrmTask.workshop_id == workshop_id)
     warn = overdue = 0

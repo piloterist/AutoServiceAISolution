@@ -419,6 +419,53 @@ def test_only_the_control_column_is_coloured(db_session) -> None:
     assert service.alert_for(task, 1, 3, _now()) is None
 
 
+def test_a_planned_action_colours_cards_of_every_active_column_but_not_the_finished_ones(
+    db_session,
+) -> None:
+    workshop = _workshop(db_session)
+    task = _task(db_session, _call(db_session, at=_now() - timedelta(hours=3)))
+    _body_car(db_session, workshop, created_at=_now() - timedelta(hours=1))
+    assert _status(db_session, task) == "inspection"
+    service.add_comment(
+        db_session,
+        task.id,
+        "Узнать про осмотр",
+        next_action_date=date(2026, 11, 17),
+        actor_id=None,
+        actor_name="Тест",
+    )
+
+    # «Записан на осмотр»: сроки те же, что в «На контроле» (розовая с дня, красная через 2 дня).
+    assert service.alert_for(task, 1, 3, _msk(16, 23, 59)) is None
+    assert service.alert_for(task, 1, 3, _msk(17, 0, 0)) == "warn"
+    assert service.alert_for(task, 1, 3, _msk(19, 0, 0)) == "overdue"
+    # Без плана в этом столбце окраски по возрасту нет.
+    task.next_action_date = None
+    _aged(db_session, task, 10)
+    assert service.alert_for(task, 1, 3, _now()) is None
+    # «Отказ» - конец пути: дата действия карточку не красит.
+    task.next_action_date = date(2026, 11, 17)
+    service.move_task(db_session, task.id, "refused", reason="Дорого", actor_name="Тест")
+    task.next_action_date = date(2026, 11, 17)
+    assert service.alert_for(task, 1, 3, _msk(19, 0, 0)) is None
+
+
+def test_the_crm_counter_includes_planned_actions_of_the_other_columns(db_session) -> None:
+    workshop = _workshop(db_session)
+    task = _task(
+        db_session, _call(db_session, at=_now() - timedelta(hours=3), workshop_id=workshop.id)
+    )
+    _body_car(db_session, workshop, created_at=_now() - timedelta(hours=1))
+    assert _status(db_session, task) == "inspection"
+    assert service.overdue_count(db_session, workshop_id=workshop.id).warn_count == 0
+
+    task.next_action_date = (_now() - timedelta(days=1)).date()  # срок действия уже наступил
+    db_session.commit()
+
+    result = service.overdue_count(db_session, workshop_id=workshop.id)
+    assert result.warn_count == 1
+
+
 def test_overdue_counter_is_per_workshop(db_session) -> None:
     mine = _workshop(db_session, "Кузовной", "Каховка")
     other = _workshop(db_session, "Слесарный", "Каховка-2")
