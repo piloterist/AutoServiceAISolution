@@ -12,7 +12,16 @@ import { addDaysIso, diffDaysIso, formatShortDate, todayIso } from "@/lib/planne
 
 import { WorkOrderAutocomplete } from "./WorkOrderAutocomplete";
 
-type StageDraft = { stageName: string; note: string; startDate: string; endDate: string; employeeId: string };
+type StageDraft = {
+  stageName: string;
+  note: string;
+  startDate: string;
+  endDate: string;
+  employeeId: string;
+  /** Этап перетащен на новое место в этой сессии редактирования: пока форма открыта, его даты
+   * сдвигают следующие этапы (иначе правку дат пришлось бы повторять руками у каждого). */
+  moved?: boolean;
+};
 
 export type CarDraft = {
   carId: string | null;
@@ -55,16 +64,62 @@ function formatDateTime(iso: string): string {
  * below, which cascades directly). */
 function fixupStageOrder(stages: StageDraft[]): StageDraft[] {
   const fixed = [...stages];
-  for (let i = 1; i < fixed.length; i++) {
-    const minStart = fixed[i - 1].startDate;
-    if (fixed[i].startDate < minStart) {
-      const delta = diffDaysIso(fixed[i].startDate, minStart);
+  let prevStart: string | null = null;
+  for (let i = 0; i < fixed.length; i++) {
+    if (!fixed[i].startDate) continue; // этап без дат (его только что перетащили) в порядке не участвует
+    if (prevStart && fixed[i].startDate < prevStart) {
+      const delta = diffDaysIso(fixed[i].startDate, prevStart);
       for (let j = i; j < fixed.length; j++) {
-        fixed[j] = { ...fixed[j], startDate: addDaysIso(fixed[j].startDate, delta), endDate: addDaysIso(fixed[j].endDate, delta) };
+        if (fixed[j].startDate) fixed[j] = shiftStage(fixed[j], delta);
+      }
+    }
+    prevStart = fixed[i].startDate;
+  }
+  return fixed;
+}
+
+function shiftStage(stage: StageDraft, delta: number): StageDraft {
+  return { ...stage, startDate: addDaysIso(stage.startDate, delta), endDate: addDaysIso(stage.endDate, delta) };
+}
+
+/** Начало ближайшего предыдущего этапа с датами (этапы без дат пропускаются). */
+function previousStart(stages: StageDraft[], index: number): string | null {
+  for (let i = index - 1; i >= 0; i--) {
+    if (stages[i].startDate) return stages[i].startDate;
+  }
+  return null;
+}
+
+/** Перенос этапа: он встаёт на новое место БЕЗ дат (их укажут заново), а те, что шли после
+ * его прежнего места, сдвигаются назад - следующий этап начинается там, где начинался
+ * вынутый, так что дыры в плане не остаётся. */
+function moveStageRow(stages: StageDraft[], from: number, to: number): StageDraft[] {
+  const rest = [...stages];
+  const [moved] = rest.splice(from, 1);
+  if (moved.startDate) {
+    const next = rest.slice(from).find((s) => s.startDate);
+    const delta = next ? diffDaysIso(next.startDate, moved.startDate) : 0;
+    if (delta < 0) {
+      for (let j = from; j < rest.length; j++) {
+        if (rest[j].startDate) rest[j] = shiftStage(rest[j], delta);
       }
     }
   }
-  return fixed;
+  rest.splice(to, 0, { ...moved, startDate: "", endDate: "", moved: true });
+  return rest;
+}
+
+/** Для перетащенного этапа: следующие за ним этапы сдвигаются так, чтобы ближайший начинался
+ * на следующий день после его конца (как у нового этапа). Остальные этапы между собой не
+ * трогаем - пересечения этапов по-прежнему разрешены. */
+function followMovedStage(stages: StageDraft[], index: number): StageDraft[] {
+  const stage = stages[index];
+  if (!stage.endDate) return stages;
+  const next = stages.find((s, i) => i > index && s.startDate);
+  if (!next) return stages;
+  const delta = diffDaysIso(next.startDate, addDaysIso(stage.endDate, 1));
+  if (delta === 0) return stages;
+  return stages.map((s, i) => (i > index && s.startDate ? shiftStage(s, delta) : s));
 }
 
 function newStageRow(previous: StageDraft | undefined, fallbackDate: string): StageDraft {
@@ -101,6 +156,8 @@ export function BodyCarDialog({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [plateLookupBusy, setPlateLookupBusy] = useState(false);
   const [plateLookupError, setPlateLookupError] = useState<string | null>(null);
+  const [dragStage, setDragStage] = useState<number | null>(null);
+  const [overStage, setOverStage] = useState<number | null>(null);
 
   if (!form) return null;
 
@@ -161,26 +218,39 @@ export function BodyCarDialog({
    * backwards past where the previous stage itself starts is not). */
   const updateStageStart = (index: number, rawStart: string) => {
     if (!rawStart) return;
-    const minStart = index > 0 ? form.stages[index - 1].startDate : rawStart;
-    const startDate = rawStart < minStart ? minStart : rawStart;
-    const delta = diffDaysIso(form.stages[index].startDate, startDate);
+    const prev = previousStart(form.stages, index);
+    const startDate = prev && rawStart < prev ? prev : rawStart;
+    const stage = form.stages[index];
+    if (!stage.startDate) {
+      // Этап без дат (перетащенный): получает дату начала, длительность - один день.
+      const stages = form.stages.map((s, i) => (i === index ? { ...s, startDate, endDate: startDate } : s));
+      setForm({ ...form, stages: followMovedStage(stages, index) });
+      return;
+    }
+    const delta = diffDaysIso(stage.startDate, startDate);
     if (delta === 0) return;
-    const stages = form.stages.map((s, i) =>
-      i < index ? s : { ...s, startDate: addDaysIso(s.startDate, delta), endDate: addDaysIso(s.endDate, delta) },
-    );
+    const stages = form.stages.map((s, i) => (i < index || !s.startDate ? s : shiftStage(s, delta)));
     setForm({ ...form, stages });
   };
 
   const updateStageEnd = (index: number, rawEnd: string) => {
     if (!rawEnd) return;
     const stage = form.stages[index];
+    if (!stage.startDate) {
+      const prev = previousStart(form.stages, index);
+      const date = prev && rawEnd < prev ? prev : rawEnd;
+      const stages = form.stages.map((s, i) => (i === index ? { ...s, startDate: date, endDate: date } : s));
+      setForm({ ...form, stages: followMovedStage(stages, index) });
+      return;
+    }
     const endDate = rawEnd < stage.startDate ? stage.startDate : rawEnd;
     const stages = form.stages.map((s, i) => (i === index ? { ...s, endDate } : s));
-    setForm({ ...form, stages: fixupStageOrder(stages) });
+    setForm({ ...form, stages: stage.moved ? followMovedStage(stages, index) : fixupStageOrder(stages) });
   };
 
   const addStage = () => {
-    setForm({ ...form, stages: [...form.stages, newStageRow(form.stages[form.stages.length - 1], todayIso())] });
+    const lastDated = [...form.stages].reverse().find((s) => s.endDate);
+    setForm({ ...form, stages: [...form.stages, newStageRow(lastDated, todayIso())] });
   };
 
   const removeStage = (index: number) => {
@@ -188,10 +258,16 @@ export function BodyCarDialog({
     setForm({ ...form, stages: fixupStageOrder(remaining) });
   };
 
-  const span = form.stages.length
+  const moveStage = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0 || to >= form.stages.length) return;
+    setForm({ ...form, stages: moveStageRow(form.stages, from, to) });
+  };
+
+  const datedStages = form.stages.filter((s) => s.startDate && s.endDate);
+  const span = datedStages.length
     ? {
-        start: form.stages.reduce((min, s) => (s.startDate < min ? s.startDate : min), form.stages[0].startDate),
-        end: form.stages.reduce((max, s) => (s.endDate > max ? s.endDate : max), form.stages[0].endDate),
+        start: datedStages.reduce((min, s) => (s.startDate < min ? s.startDate : min), datedStages[0].startDate),
+        end: datedStages.reduce((max, s) => (s.endDate > max ? s.endDate : max), datedStages[0].endDate),
       }
     : null;
 
@@ -309,6 +385,7 @@ export function BodyCarDialog({
         <fieldset className="planner-stage-fieldset">
           <legend>Этапы работ</legend>
           <div className="planner-stage-header">
+            <span />
             <span>Этап</span>
             <span>Сотрудник</span>
             <span>Заметка</span>
@@ -317,7 +394,49 @@ export function BodyCarDialog({
             <span />
           </div>
           {form.stages.map((stage, index) => (
-            <div className="planner-stage-row" key={index}>
+            <div
+              className={[
+                "planner-stage-row",
+                dragStage === index ? "planner-stage-row--dragging" : "",
+                dragStage !== null && overStage === index && dragStage !== index ? "planner-stage-row--over" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              key={index}
+              onDragOver={(event) => {
+                if (dragStage === null) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                if (overStage !== index) setOverStage(index);
+              }}
+              onDrop={(event) => {
+                if (dragStage === null) return;
+                event.preventDefault();
+                moveStage(dragStage, index);
+                setDragStage(null);
+                setOverStage(null);
+              }}
+            >
+              <span
+                className="planner-stage-handle"
+                draggable
+                title="Перетащить этап (даты нужно будет указать заново)"
+                aria-label="Перетащить этап"
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", String(index));
+                  const row = event.currentTarget.closest(".planner-stage-row");
+                  if (row) event.dataTransfer.setDragImage(row, 10, 10);
+                  // Не менять DOM строки внутри dragstart: Chrome в этом случае может сразу отменить перетаскивание.
+                  window.setTimeout(() => setDragStage(index), 0);
+                }}
+                onDragEnd={() => {
+                  setDragStage(null);
+                  setOverStage(null);
+                }}
+              >
+                ☰
+              </span>
               <select value={stage.stageName} onChange={(e) => updateStage(index, { stageName: e.target.value })}>
                 {BODY_STAGE_TYPES.map((type) => (
                   <option key={type} value={type}>
@@ -336,7 +455,7 @@ export function BodyCarDialog({
               <input value={stage.note} placeholder="заметка" onChange={(e) => updateStage(index, { note: e.target.value })} />
               <DateInput value={stage.startDate} onChange={(iso) => updateStageStart(index, iso)} />
               <DateInput value={stage.endDate} onChange={(iso) => updateStageEnd(index, iso)} />
-              {index > 0 ? (
+              {index > 0 || !stage.startDate ? (
                 <button type="button" className="admin-btn-link admin-btn-link--danger" onClick={() => removeStage(index)}>
                   ×
                 </button>

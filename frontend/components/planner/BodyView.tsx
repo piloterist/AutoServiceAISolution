@@ -249,6 +249,7 @@ function BodyViewInner({
   const [cars, setCars] = useState<BodyCar[]>([]);
   const [dialogDraft, setDialogDraft] = useState<CarDraft | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogSeq, setDialogSeq] = useState(0);
   const [stageDragError, setStageDragError] = useState<string | null>(null);
 
   // Dragging a tick mark shifts a date: "boundary" (between two этапы,
@@ -332,12 +333,16 @@ function BodyViewInner({
     })
     .sort((a, b) => compareCars(a, b, todayStr));
 
+  // Каждое открытие - новый экземпляр диалога (новый key), иначе «Отмена» оставляла бы
+  // правки в форме и при повторном открытии той же машины они снова были бы видны.
   const openCreate = (arriveDate: string) => {
     setDialogDraft(emptyCarDraft(arriveDate));
+    setDialogSeq((n) => n + 1);
     setDialogOpen(true);
   };
   const openEdit = (car: BodyCar) => {
     setDialogDraft(carToDraft(car));
+    setDialogSeq((n) => n + 1);
     setDialogOpen(true);
   };
   const closeDialog = () => setDialogOpen(false);
@@ -783,7 +788,7 @@ function BodyViewInner({
       </div>
 
       <BodyCarDialog
-        key={dialogDraft?.carId ?? `new-${dialogDraft?.stages[0]?.startDate}`}
+        key={`${dialogSeq}-${dialogDraft?.carId ?? "new"}`}
         open={dialogOpen}
         draft={dialogDraft}
         employees={employees}

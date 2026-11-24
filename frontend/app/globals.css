@@ -4026,10 +4026,31 @@ table.bt {
 .planner-stage-header,
 .planner-stage-row {
   display: grid;
-  grid-template-columns: 0.9fr 0.9fr 1fr 0.7fr 0.7fr 20px;
+  grid-template-columns: 18px 0.9fr 0.9fr 1fr 0.7fr 0.7fr 20px;
   gap: 5px;
   align-items: center;
   margin-top: 6px;
+}
+
+.planner-stage-handle {
+  cursor: grab;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.planner-stage-handle:hover {
+  color: var(--text);
+}
+
+.planner-stage-row--dragging {
+  opacity: 0.45;
+}
+
+.planner-stage-row--over {
+  box-shadow: 0 -2px 0 0 var(--accent, #3b82f6);
 }
 
 .planner-stage-header {
