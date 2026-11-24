@@ -7852,6 +7852,12 @@ main:has(.cockpit-page) {
   font-weight: 400;
 }
 
+/* Запланированное действие - темнее остальных надписей на плашке. */
+.task-card-line.task-card-line-next {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .task-card-meta {
   margin-top: 0.3rem;
   color: var(--text-muted);

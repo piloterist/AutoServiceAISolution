@@ -410,8 +410,8 @@ export function TaskBoard({
                       <div className="task-card-phone">{formatPhone(task.phone)}</div>
                       {task.client_name && <div className="task-card-line">{task.client_name}</div>}
                       {task.car_description && <div className="task-card-line">{task.car_description}</div>}
-                      {task.status === "control" && task.next_action_date && (
-                        <div className="task-card-line">
+                      {task.next_action_date && (
+                        <div className="task-card-line task-card-line-next">
                           Следующее действие: {formatDate(task.next_action_date)}
                         </div>
                       )}
