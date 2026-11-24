@@ -374,10 +374,12 @@ def list_bay_cards(db: Session, workshop_id: uuid.UUID | None = None) -> list[di
         work_order = None
         if open_interval is None:
             state, plate, since = "free", None, None
+            no_plate = False
         else:
             state = "review" if open_interval.review_status == REVIEW_NEEDS else "occupied"
             plate, since = open_interval.plate, open_interval.started_at
             entry = db.get(BayEvent, open_interval.entry_event_id)
+            no_plate = bool(entry and entry.note and NO_PLATE_NOTE in entry.note)
             if entry is not None and entry.work_order_id is not None:
                 work_order = db.get(WorkOrder, entry.work_order_id)
         cards.append(
@@ -398,6 +400,7 @@ def list_bay_cards(db: Session, workshop_id: uuid.UUID | None = None) -> list[di
                 ),
                 "state": state,
                 "plate": plate,
+                "no_plate": no_plate,
                 "occupied_since": since,
                 # Окно присылки кадров узлом (не часы работы цеха), см. VIDEO_FRAMES_FROM.
                 "work_start": _clock(VIDEO_FRAMES_FROM + NODE_FRAME_MARGIN) if workshop else None,
@@ -441,6 +444,9 @@ OTHER_CAR_CONFIDENCE = 0.70
 # Заезд, закрытый автоматически, потому что узел камеры долго не был на связи (bay_planner). Если
 # тот же номер увидят при первом запуске узла, заезд продолжается, а не открывается новый.
 OFFLINE_NOTE = "узел видеоконтроля не был на связи больше 3 часов: заезд закрыт автоматически"
+# Заезд, у которого оператор отметил «машина без номера» (bay_planner.correct_plate): номер, что
+# прочитала камера, был ложным (перекупщики гоняют машины без номеров).
+NO_PLATE_NOTE = "машина без номера (отмечено вручную)"
 # Другая машина между двумя въездами - только если она простояла в боксе не меньше этого: короткий
 # «заезд» - ложное срабатывание (опустили подъёмник, номер закрыли), а не реальная машина.
 OTHER_CAR_MIN_STAY = timedelta(minutes=10)
@@ -734,31 +740,33 @@ def list_history(
     if workshop_id is not None:
         query = query.where(Bay.workshop_id == workshop_id)
     now = datetime.now(UTC)
-    items = []
-    for interval, bay in db.execute(query).all():
-        entry = db.get(BayEvent, interval.entry_event_id)
-        exit_event = db.get(BayEvent, interval.exit_event_id) if interval.exit_event_id else None
-        work_order = (
-            db.get(WorkOrder, entry.work_order_id) if entry and entry.work_order_id else None
-        )
-        finished = interval.ended_at or now
-        items.append(
-            {
-                "id": interval.id,
-                "bay_id": bay.id,
-                "bay_name": bay.name,
-                "plate": interval.plate,
-                "started_at": interval.started_at,
-                "ended_at": interval.ended_at,
-                "duration_seconds": max(int((finished - interval.started_at).total_seconds()), 0),
-                "review_status": interval.review_status,
-                "entry": event_out(entry),
-                "exit": event_out(exit_event),
-                "work_order_id": work_order.id if work_order else None,
-                "work_order_number": work_order.external_number if work_order else None,
-            }
-        )
-    return items
+    return [history_item(db, interval, bay, now) for interval, bay in db.execute(query).all()]
+
+
+def history_item(
+    db: Session, interval: BayOccupancy, bay: Bay, now: datetime | None = None
+) -> dict:
+    now = now or datetime.now(UTC)
+    entry = db.get(BayEvent, interval.entry_event_id)
+    exit_event = db.get(BayEvent, interval.exit_event_id) if interval.exit_event_id else None
+    work_order = db.get(WorkOrder, entry.work_order_id) if entry and entry.work_order_id else None
+    finished = interval.ended_at or now
+    return {
+        "id": interval.id,
+        "bay_id": bay.id,
+        "bay_name": bay.name,
+        "plate": interval.plate,
+        "no_plate": bool(entry and entry.note and NO_PLATE_NOTE in entry.note),
+        "workshop_job_id": interval.workshop_job_id,
+        "started_at": interval.started_at,
+        "ended_at": interval.ended_at,
+        "duration_seconds": max(int((finished - interval.started_at).total_seconds()), 0),
+        "review_status": interval.review_status,
+        "entry": event_out(entry),
+        "exit": event_out(exit_event),
+        "work_order_id": work_order.id if work_order else None,
+        "work_order_number": work_order.external_number if work_order else None,
+    }
 
 
 # ---- последний кадр бокса (раз в минуту) --------------------------------------------------------

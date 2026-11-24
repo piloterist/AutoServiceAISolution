@@ -175,7 +175,9 @@ function BayTile({
         {bay.plate ? (
           <span className="bay-plate">{bay.plate}</span>
         ) : (
-          <span className="bay-plate bay-plate--empty">{bay.state === "free" ? "—" : "номер не распознан"}</span>
+          <span className="bay-plate bay-plate--empty">
+            {bay.state === "free" ? "—" : bay.no_plate ? "без номера" : "номер не распознан"}
+          </span>
         )}
       </header>
 

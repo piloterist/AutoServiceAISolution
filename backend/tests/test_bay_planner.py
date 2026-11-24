@@ -985,3 +985,179 @@ def test_a_stay_over_midnight_takes_the_planned_job_of_the_new_day_instead_of_a_
     assert db_session.scalars(select(BayOccupancy)).one().workshop_job_id == planned.id
     bay_planner.tick(db_session, now=_day3(8, 31))  # повторный проход ничего не меняет
     assert len(db_session.scalars(select(WorkshopJob)).all()) == 2
+
+
+# ---- исправление номера заезда (2026-11-24: камера прочитала номер у машины без номеров) ----
+
+
+def _patch_plate(client, headers, occupancy_id, **body):
+    return client.patch(
+        f"/api/v1/bays/stays/{occupancy_id}/plate",
+        json=body,
+        headers={**headers, "X-Actor-Name": "%D0%98%D0%B2%D0%B0%D0%BD"},  # «Иван»
+    )
+
+
+def test_a_car_without_plates_drops_the_false_plate_and_its_work_order(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    order = _order(db_session)  # номер А612СМ777 в заказ-наряде другой машины
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+    interval = db_session.scalars(select(BayOccupancy)).one()
+    job = _jobs(db_session, workshop)[0]
+    assert (job.plate, job.work_order_id) == ("А612СМ777", order.id)
+
+    response = _patch_plate(client, auth_headers, interval.id, no_plate=True)
+
+    assert response.status_code == 200, response.text
+    item = response.json()
+    assert (item["plate"], item["no_plate"], item["review_status"]) == (None, True, "confirmed")
+    assert item["work_order_id"] is None
+    assert "А612СМ777" in item["entry"]["note"]  # что прочитала камера - в примечании
+    db_session.expire_all()
+    job = db_session.get(WorkshopJob, job.id)
+    assert (job.plate, job.work_order_id, job.car_description) == (None, None, None)
+    issue = db_session.scalars(select(BayIssue).where(BayIssue.resolved_at.is_(None))).one()
+    assert issue.plate is None and "без номера" in issue.message
+    log = db_session.scalars(
+        select(ScheduleAuditLog).order_by(ScheduleAuditLog.created_at.desc())
+    ).first()
+    assert log.actor_name == "Иван"
+
+    # Заказ-наряд привязывают в записи планировщика: ошибка закрывается сама.
+    job.work_order_id = order.id
+    db_session.commit()
+    bay_planner.tick(db_session, now=moment(10, 20))
+    db_session.expire_all()
+    assert db_session.scalars(select(BayIssue).where(BayIssue.resolved_at.is_(None))).all() == []
+    # Выезд (его пришлёт узел с ложным номером) закрывает заезд по боксу, а не по номеру.
+    _event(client, auth_headers, bay_id, "exit_confirmed", "А612СМ777", moment(11, 0))
+    db_session.expire_all()
+    assert db_session.get(BayOccupancy, interval.id).ended_at is not None
+
+
+def test_a_misread_plate_is_corrected_and_the_work_order_is_found_again(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    wrong = _order(db_session, "ЗН-1", "Skoda № А612СМ777 VIN X")
+    right = _order(db_session, "ЗН-2", "Audi № Е560КС977 VIN Y")
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+    interval = db_session.scalars(select(BayOccupancy)).one()
+
+    response = _patch_plate(client, auth_headers, interval.id, plate="e560kc977")
+
+    assert response.status_code == 200, response.text
+    item = response.json()
+    assert (item["plate"], item["no_plate"], item["work_order_id"]) == (
+        "Е560КС977",
+        False,
+        str(right.id),
+    )
+    db_session.expire_all()
+    job = _jobs(db_session, workshop)[0]
+    assert (job.plate, job.work_order_id) == ("Е560КС977", right.id)
+    assert job.work_order_id != wrong.id
+    assert db_session.scalars(select(BayIssue).where(BayIssue.resolved_at.is_(None))).all() == []
+
+
+def test_a_work_order_linked_by_hand_to_another_car_is_kept_when_the_plate_is_fixed(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    mine = _order(db_session, "ЗН-9", "Kia № Х111ХХ99 VIN K")
+    job = _job(db_session, workshop, statuses["Запись"], time(10), time(11), "А612СМ", order=mine)
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+    interval = db_session.scalars(select(BayOccupancy)).one()
+
+    response = _patch_plate(client, auth_headers, interval.id, no_plate=True)
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, job.id).work_order_id == mine.id  # привязан не по номеру
+
+
+def test_correcting_an_unsure_stay_creates_the_plan_record_to_attach_the_order_to(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _event_with_confidence(
+        client, auth_headers, bay_id, "entry_confirmed", "В960НО098", 0.5, moment(11, 18)
+    )
+    interval = db_session.scalars(select(BayOccupancy)).one()
+    assert interval.workshop_job_id is None  # неуверенный номер: записи в плане нет
+
+    response = _patch_plate(client, auth_headers, interval.id, no_plate=True)
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    interval = db_session.get(BayOccupancy, interval.id)
+    job = db_session.get(WorkshopJob, interval.workshop_job_id)
+    assert (job.plate, job.post_number, job.status_id) == (None, 2, statuses["В работе"].id)
+
+
+def test_the_plate_fix_validates_input_and_the_stay(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+    interval = db_session.scalars(select(BayOccupancy)).one()
+
+    assert _patch_plate(client, auth_headers, interval.id, plate="123").status_code == 422
+    assert _patch_plate(client, auth_headers, interval.id).status_code == 422
+    assert _patch_plate(client, auth_headers, uuid.uuid4(), no_plate=True).status_code == 404
+
+
+def test_a_corrected_plate_without_a_work_order_is_an_error_even_after_the_car_left(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    _order(db_session)
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+    _event(client, auth_headers, bay_id, "exit_confirmed", "А612СМ777", moment(10, 40))
+    interval = db_session.scalars(select(BayOccupancy)).one()
+
+    response = _patch_plate(client, auth_headers, interval.id, plate="О777ОО777")  # в 1С такой нет
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    issue = db_session.scalars(select(BayIssue).where(BayIssue.resolved_at.is_(None))).one()
+    assert issue.plate == "О777ОО777"
+    assert issue.occupancy_id == interval.id
+
+
+def test_the_corrected_plate_moves_the_stay_to_the_masters_planned_record(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    order = _order(db_session)
+    planned = _job(
+        db_session, workshop, statuses["Запись"], time(10), time(11), "А612СМ", order=order
+    )
+    _event(client, auth_headers, bay_id, "entry_confirmed", "Х111ХХ99", moment(10, 5))
+    interval = db_session.scalars(select(BayOccupancy)).one()
+    camera_job = db_session.get(WorkshopJob, interval.workshop_job_id)
+    assert camera_job.id != planned.id  # ложный номер: камера завела свою запись
+
+    response = _patch_plate(client, auth_headers, interval.id, plate="А612СМ777")
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    interval = db_session.get(BayOccupancy, interval.id)
+    assert interval.workshop_job_id == planned.id
+    assert db_session.get(WorkshopJob, planned.id).status_id == statuses["В работе"].id
+    assert db_session.get(WorkshopJob, camera_job.id).status_id == statuses["Отмена"].id
+    assert response.json()["work_order_id"] == str(order.id)
+    assert db_session.scalars(select(BayIssue).where(BayIssue.resolved_at.is_(None))).all() == []
+
+
+def test_a_car_without_plates_is_never_matched_to_a_record_without_a_plate(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    other = _job(db_session, workshop, statuses["Запись"], time(10), time(11), None)  # чужая
+    _event(client, auth_headers, bay_id, "entry_confirmed", "Х111ХХ99", moment(10, 5))
+    interval = db_session.scalars(select(BayOccupancy)).one()
+    camera_job_id = interval.workshop_job_id
+    assert camera_job_id != other.id
+
+    response = _patch_plate(client, auth_headers, interval.id, no_plate=True)
+
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    assert db_session.get(BayOccupancy, interval.id).workshop_job_id == camera_job_id
+    assert db_session.get(WorkshopJob, other.id).status_id == statuses["Запись"].id
+    assert db_session.get(WorkshopJob, camera_job_id).plate is None

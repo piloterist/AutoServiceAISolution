@@ -33,6 +33,7 @@ from app.schemas.bays import (
     BayIssuesResponse,
     BayIssueSummary,
     BaysResponse,
+    BayStayPlateIn,
     BayUpdate,
     GateStayCreate,
     GateStayExit,
@@ -244,6 +245,26 @@ def read_history(
         job_id=job_id,
     )
     return BayHistoryResponse(items=[BayHistoryItem(**item) for item in items])
+
+
+@router.patch("/stays/{occupancy_id}/plate", response_model=BayHistoryItem)
+def correct_stay_plate(
+    occupancy_id: uuid.UUID,
+    payload: BayStayPlateIn,
+    x_actor_name: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> BayHistoryItem:
+    """Исправить номер заезда или отметить «машина без номера» (камера прочитала не то)."""
+    who = unquote(x_actor_name) if x_actor_name else "Неизвестно"
+    try:
+        interval, bay = bay_planner.correct_plate(
+            db, occupancy_id, plate=payload.plate, no_plate=payload.no_plate, who=who
+        )
+    except bay_planner.StayNotFound as exc:
+        raise _not_found(exc) from exc
+    except bay_planner.InvalidPlate as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return BayHistoryItem(**bay_service.history_item(db, interval, bay))
 
 
 @router.get("/snapshot-requests/pending", response_model=PendingSnapshotRequestsResponse)

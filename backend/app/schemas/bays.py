@@ -40,6 +40,7 @@ class BayCardOut(BaseModel):
     inside_count: int = 0
     state: BayState
     plate: str | None
+    no_plate: bool = False  # оператор отметил «машина без номера»
     occupied_since: datetime | None
     # Заказ-наряд, привязанный в момент въезда машины, которая сейчас в боксе.
     work_order_id: uuid.UUID | None
@@ -138,6 +139,8 @@ class BayHistoryItem(BaseModel):
     bay_id: uuid.UUID
     bay_name: str
     plate: str | None
+    no_plate: bool = False  # оператор отметил «машина без номера»
+    workshop_job_id: uuid.UUID | None = None
     started_at: datetime
     ended_at: datetime | None
     duration_seconds: int
@@ -146,6 +149,13 @@ class BayHistoryItem(BaseModel):
     exit: BayEventOut | None
     work_order_id: uuid.UUID | None
     work_order_number: str | None
+
+
+class BayStayPlateIn(BaseModel):
+    """Исправить номер у заезда: свой номер или «машина без номера» (no_plate)."""
+
+    plate: str | None = Field(default=None, max_length=20)
+    no_plate: bool = False
 
 
 class BayHistoryResponse(BaseModel):

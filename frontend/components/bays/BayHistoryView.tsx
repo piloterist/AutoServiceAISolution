@@ -34,6 +34,67 @@ function formatDuration(seconds: number): string {
 
 type Lightbox = { src: string; caption: string } | null;
 
+/** Камера прочитала не то (у перекупщиков машины без номеров) или ошиблась в знаках: оператор
+ * вводит верный номер или отмечает «Без номера». Заказ-наряд такой машины привязывают в записи
+ * планировщика. */
+function PlateFix({ item, onSaved }: { item: BayHistoryItem; onSaved: (updated: BayHistoryItem) => void }) {
+  const [open, setOpen] = useState(false);
+  const [plate, setPlate] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async (noPlate: boolean) => {
+    if (!noPlate && !plate.trim()) {
+      setError("Введите номер или нажмите «Без номера»");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await baysClient.correctPlate(item.id, { plate: plate.trim(), noPlate }));
+      setOpen(false);
+      setPlate("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="admin-btn" style={{ marginTop: 6 }} onClick={() => setOpen(true)}>
+        Исправить номер
+      </button>
+    );
+  }
+  return (
+    <div style={{ marginTop: 6, display: "grid", gap: 6 }}>
+      <input
+        value={plate}
+        onChange={(e) => setPlate(e.target.value)}
+        placeholder="Например, А123ВС777"
+        maxLength={20}
+        autoFocus
+        disabled={busy}
+        onKeyDown={(e) => e.key === "Enter" && void save(false)}
+      />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button type="button" className="admin-btn" disabled={busy} onClick={() => void save(false)}>
+          Сохранить
+        </button>
+        <button type="button" className="admin-btn" disabled={busy} onClick={() => void save(true)}>
+          Без номера
+        </button>
+        <button type="button" className="admin-btn" disabled={busy} onClick={() => setOpen(false)}>
+          Отмена
+        </button>
+      </div>
+      {error && <div className="bay-error">{error}</div>}
+    </div>
+  );
+}
+
 function Photo({
   label,
   event,
@@ -167,7 +228,7 @@ export function BayHistoryView({
       {items?.map((item) => (
         <section key={item.id} className="card bay-hist-row">
           <div className="bay-hist-info">
-            <span className="bay-plate">{item.plate ?? "номер не распознан"}</span>
+            <span className="bay-plate">{item.plate ?? (item.no_plate ? "без номера" : "номер не распознан")}</span>
             {!bayId && <div className="settings-description">{item.bay_name}</div>}
             <div className="bay-hist-fact">
               <span className="settings-description">В боксе</span>
@@ -187,6 +248,13 @@ export function BayHistoryView({
               )}
             </div>
             {item.review_status === "needs_review" && <div className="bay-error">Нужна проверка номера</div>}
+            {item.no_plate && !item.work_order_id && (
+              <div className="settings-description">Заказ-наряд привяжите в записи планировщика</div>
+            )}
+            <PlateFix
+              item={item}
+              onSaved={(updated) => setItems((prev) => prev && prev.map((x) => (x.id === updated.id ? updated : x)))}
+            />
           </div>
           <Photo label="Въезд" event={item.entry} emptyText="Нет данных" onOpen={setLightbox} />
           <Photo label="Выезд" event={item.exit} emptyText="Ещё в боксе" onOpen={setLightbox} />

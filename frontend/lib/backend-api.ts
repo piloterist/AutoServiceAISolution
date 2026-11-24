@@ -2255,6 +2255,7 @@ export type BayCard = {
   enabled: boolean;
   state: BayState;
   plate: string | null;
+  no_plate?: boolean;
   occupied_since: string | null;
   // Заказ-наряд, привязанный в момент въезда машины, которая сейчас в боксе.
   work_order_id: string | null;
@@ -2280,6 +2281,9 @@ export type BayHistoryItem = {
   bay_id: string;
   bay_name: string;
   plate: string | null;
+  /** Оператор отметил «машина без номера» (камера прочитала ложный номер). */
+  no_plate?: boolean;
+  workshop_job_id?: string | null;
   started_at: string;
   ended_at: string | null;
   duration_seconds: number;
@@ -2354,6 +2358,14 @@ export function resolveBayIssue(
   actor: { id: string; fullName: string },
 ): Promise<BayIssuesResponse> {
   return backendPost<BayIssuesResponse>(`/api/v1/bays/issues/${id}/resolve`, { note }, actorHeaders(actor));
+}
+
+export function correctBayStayPlate(
+  id: string,
+  payload: { plate?: string | null; no_plate?: boolean },
+  actor: { id: string; fullName: string },
+): Promise<BayHistoryItem> {
+  return backendPatch<BayHistoryItem>(`/api/v1/bays/stays/${id}/plate`, payload, actorHeaders(actor));
 }
 
 // Контроль заявок на ремонт (backend services/request_control_service.py).

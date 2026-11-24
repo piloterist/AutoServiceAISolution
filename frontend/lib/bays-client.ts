@@ -5,6 +5,7 @@
 // functions in lib/backend-api.ts - types are reused via `import type`).
 import type {
   BayEvent,
+  BayHistoryItem,
   BayHistoryResponse,
   BaySnapshotRequest,
   BaysResponse,
@@ -57,6 +58,13 @@ export const baysClient = {
     if (params.jobId) query.set("job_id", params.jobId);
     return proxyFetch<BayHistoryResponse>(`/api/bays/history?${query.toString()}`);
   },
+  // Исправить номер заезда или отметить «без номера» (камера прочитала ложный номер).
+  correctPlate: (id: string, payload: { plate?: string; noPlate?: boolean }) =>
+    proxyFetch<BayHistoryItem>(`/api/bays/stays/${id}/plate`, {
+      method: "PATCH",
+      headers: jsonHeaders,
+      body: JSON.stringify({ plate: payload.plate ?? null, no_plate: payload.noPlate ?? false }),
+    }),
   // Ворота кузовного цеха: машины внутри (status=inside) или все заезды за период.
   gateStays: (params: { workshopId: string; status: "inside" | "all"; dateFrom?: string; dateTo?: string }) => {
     const query = new URLSearchParams({ workshop_id: params.workshopId, status: params.status });

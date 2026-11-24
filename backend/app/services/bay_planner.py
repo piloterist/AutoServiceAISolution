@@ -31,6 +31,7 @@ from app.models.bay import (
     ISSUE_NO_WORK_ORDER,
     ISSUE_RESOLVED_AUTO,
     ISSUE_RESOLVED_MANUAL,
+    REVIEW_CONFIRMED,
     REVIEW_NEEDS,
     Bay,
     BayEvent,
@@ -43,9 +44,10 @@ from app.models.slesarka_status import SlesarkaStatus
 from app.models.work_order import WorkOrder
 from app.models.workshop import WORKSHOP_TYPE_MECHANICAL, Workshop
 from app.models.workshop_job import WorkshopJob
-from app.services import audit_log_service, gate_service
+from app.services import audit_log_service, gate_service, planner_service
 from app.services.bay_service import (
     CANCELLED_EXIT_MARK,
+    NO_PLATE_NOTE,
     OFFLINE_NOTE,
     REENTRY_NOTE,
     SAME_CAR_NOTE,
@@ -110,8 +112,8 @@ def _snapshot(job: WorkshopJob) -> dict:
     return {field: getattr(job, field) for field in _JOB_LOGGED_FIELDS}
 
 
-def _log(db: Session, job: WorkshopJob, before: dict | None) -> None:
-    """Запись в журнал планировщика: что поменял видеоконтроль."""
+def _log(db: Session, job: WorkshopJob, before: dict | None, actor: str = ACTOR_NAME) -> None:
+    """Запись в журнал планировщика: что поменял видеоконтроль (или оператор, actor)."""
     if before is None:
         action = "create"
         changes = {f: {"old": None, "new": _jsonable(getattr(job, f))} for f in _JOB_LOGGED_FIELDS}
@@ -131,7 +133,7 @@ def _log(db: Session, job: WorkshopJob, before: dict | None) -> None:
         action=action,
         changes=changes,
         actor_user_id=None,
-        actor_name=ACTOR_NAME,
+        actor_name=actor,
         work_order_id=job.work_order_id,
         car_description=job.car_description,
     )
@@ -259,7 +261,7 @@ def _actual_start(db: Session, job: WorkshopJob, arrived: datetime) -> tuple[tim
     return _at(start), _at(end)
 
 
-def _start_job(db: Session, job: WorkshopJob, event: BayEvent) -> None:
+def _start_job(db: Session, job: WorkshopJob, event: BayEvent, actor: str = ACTOR_NAME) -> None:
     before = _snapshot(job)
     status = _status(db, STATUS_IN_WORK)
     if status:
@@ -272,7 +274,7 @@ def _start_job(db: Session, job: WorkshopJob, event: BayEvent) -> None:
     job.plate = job.plate or event.plate
     if event.work_order_id and job.work_order_id is None:
         _fill_from_work_order(db, job, event.work_order_id)
-    _log(db, job, before)
+    _log(db, job, before, actor)
 
 
 def _open_issue(db: Session, bay: Bay, event: BayEvent, interval: BayOccupancy) -> None:
@@ -281,7 +283,12 @@ def _open_issue(db: Session, bay: Bay, event: BayEvent, interval: BayOccupancy) 
     ).first()
     if exists:
         return
-    who = f"Машина {event.plate}" if event.plate else "Машина (номер не распознан)"
+    if NO_PLATE_NOTE in (event.note or ""):  # оператор отметил: машина без номера
+        who = "Машина без номера"
+        message = f"{who} стоит в боксе «{bay.name}»: привяжите заказ-наряд в записи планировщика."
+    else:
+        who = f"Машина {event.plate}" if event.plate else "Машина (номер не распознан)"
+        message = f"{who} стоит в боксе «{bay.name}», а заказ-наряда по её номеру нет."
     db.add(
         BayIssue(
             bay_id=bay.id,
@@ -289,7 +296,7 @@ def _open_issue(db: Session, bay: Bay, event: BayEvent, interval: BayOccupancy) 
             entry_event_id=event.id,
             kind=ISSUE_NO_WORK_ORDER,
             plate=event.plate,
-            message=f"{who} стоит в боксе «{bay.name}», а заказ-наряда по её номеру нет.",
+            message=message,
             occurred_at=event.occurred_at,
         )
     )
@@ -564,6 +571,174 @@ def _close_orphaned(db: Session, now: datetime) -> int:
         on_exit(db, exit_event)  # запись плана - «Готова»
         closed += 1
     return closed
+
+
+# ---- исправление номера заезда (оператор) ----------------------------------------
+
+
+class StayNotFound(Exception):
+    pass
+
+
+class InvalidPlate(Exception):
+    pass
+
+
+def _wo_plate_prefix(db: Session, work_order_id: uuid.UUID | None) -> str | None:
+    work_order = db.get(WorkOrder, work_order_id) if work_order_id else None
+    if work_order is None:
+        return None
+    return plate_prefix(plate_from_description(work_order.vehicle_description))
+
+
+def _drop_false_order(db: Session, job: WorkshopJob, work_order_id: uuid.UUID) -> None:
+    """Отвязать заказ-наряд, найденный по ложному номеру, и то, что из него подтянулось."""
+    work_order = db.get(WorkOrder, work_order_id)
+    job.work_order_id = None
+    if work_order is None:
+        return
+    if job.car_description == work_order.vehicle_description:
+        job.car_description = None
+    if job.client_name == work_order.customer_name:
+        job.client_name = None
+    if job.vin == work_order.vin:
+        job.vin = None
+
+
+def correct_plate(
+    db: Session, occupancy_id: uuid.UUID, *, plate: str | None, no_plate: bool, who: str
+) -> tuple[BayOccupancy, Bay]:
+    """Оператор исправил номер заезда или отметил «машина без номера».
+
+    Камера иногда читает номер там, где его нет (перекупщики гоняют машины без номеров), или
+    ошибается в знаках. Исправляем заезд, его события и запись планировщика; заказ-наряд, что
+    прицепился по ложному номеру, отвязываем (привязанный руками, с другим номером, не трогаем),
+    по новому номеру ищем заново. У машины без номера заказ-наряд привязывается в записи плана -
+    если записи нет (номер был прочитан неуверенно), создаём её.
+    """
+    interval = db.get(BayOccupancy, occupancy_id)
+    if interval is None:
+        raise StayNotFound(str(occupancy_id))
+    bay = db.get(Bay, interval.bay_id)
+    entry = db.get(BayEvent, interval.entry_event_id)
+    if bay is None or entry is None:
+        raise StayNotFound(str(occupancy_id))
+    new_plate = None if no_plate else normalize_plate(plate)
+    if not no_plate and (new_plate is None or not 6 <= len(new_plate) <= 9):
+        raise InvalidPlate("Введите номер (6-9 знаков) или отметьте «Без номера»")
+    exit_event = db.get(BayEvent, interval.exit_event_id) if interval.exit_event_id else None
+    old_plate = interval.plate
+    old_prefix = plate_prefix(old_plate)
+    read = f"камера прочитала: {old_plate}" if old_plate else "камера номер не прочитала"
+    mark = NO_PLATE_NOTE if no_plate else f"номер исправлен вручную ({who}) на {new_plate}"
+    entry.note = f"{entry.note}; {mark}; {read}" if entry.note else f"{mark}; {read}"
+
+    # Заказ-наряд, найденный по ложному номеру, больше не верен.
+    old_wo_id = entry.work_order_id
+    if old_wo_id and old_prefix and _wo_plate_prefix(db, old_wo_id) == old_prefix:
+        entry.work_order_id = None
+    interval.plate = new_plate
+    for event in (entry, exit_event):
+        if event is not None:
+            event.plate = new_plate
+            event.review_status = REVIEW_CONFIRMED
+    interval.review_status = REVIEW_CONFIRMED
+
+    job = db.get(WorkshopJob, interval.workshop_job_id) if interval.workshop_job_id else None
+    workshop = db.get(Workshop, bay.workshop_id)
+    mechanical = workshop is not None and workshop.workshop_type == WORKSHOP_TYPE_MECHANICAL
+    new_prefix = plate_prefix(new_plate)
+
+    # Запись мастера на исправленный номер (машину ждали, а камера прочитала не то): заезд
+    # переезжает на неё, а запись, которую завела камера, отменяется. Только по номеру: записи
+    # без номера (машина без номера) ни с чем не сопоставляются.
+    if new_prefix and mechanical and (job is None or plate_prefix(job.plate) != new_prefix):
+        planned = _find_planned_job(
+            db,
+            workshop,
+            bay.sort_order,
+            entry.occurred_at.astimezone(SHOP_TZ),
+            new_prefix,
+            any_post=not get_app_settings(db).control_posts_enabled,
+        )
+        if planned is not None and (job is None or planned.id != job.id):
+            if job is not None:
+                before = _snapshot(job)
+                if old_wo_id and job.work_order_id == old_wo_id and entry.work_order_id is None:
+                    _drop_false_order(db, job, old_wo_id)
+                made_by_camera = (
+                    planner_service.audit_creator_name(db, ENTITY_WORKSHOP_JOB, job.id)
+                    == ACTOR_NAME
+                )
+                cancelled = _status(db, STATUS_CANCELLED)
+                if made_by_camera and cancelled is not None:
+                    job.status_id = cancelled.id
+                _log(db, job, before, actor=who)
+            _start_job(db, planned, entry, actor=who)
+            interval.workshop_job_id = planned.id
+            db.flush()
+            if exit_event is not None:
+                on_exit(db, exit_event)  # запись «Готова» с минутой выезда
+            job = planned
+            if entry.work_order_id is None and planned.work_order_id is not None:
+                entry.work_order_id = planned.work_order_id
+
+    if job is not None:
+        before = _snapshot(job)
+        if job.plate is None or plate_prefix(job.plate) == old_prefix:
+            job.plate = new_plate
+        if old_wo_id and job.work_order_id == old_wo_id and entry.work_order_id is None:
+            _drop_false_order(db, job, old_wo_id)  # подтянулось из чужого заказ-наряда
+        _log(db, job, before, actor=who)
+
+    # По новому номеру - заказ-наряд заново.
+    if new_prefix and entry.work_order_id is None:
+        for known in known_plates(db):
+            if plate_prefix(known["plate"]) == new_prefix:
+                entry.work_order_id = known["work_order_id"]
+                break
+    if entry.work_order_id is not None and job is not None and job.work_order_id is None:
+        before = _snapshot(job)
+        _fill_from_work_order(db, job, entry.work_order_id)
+        _log(db, job, before, actor=who)
+    if entry.work_order_id is None and job is not None and job.work_order_id is not None:
+        entry.work_order_id = job.work_order_id  # привязан в плане руками
+
+    # Нет записи плана (номер читался неуверенно): заводим, чтобы было куда привязать заказ-наряд.
+    if job is None and mechanical:
+        moment = interval.started_at.astimezone(SHOP_TZ)
+        job = _create_job(db, workshop, bay.sort_order, moment, entry)
+        if job is not None:
+            interval.workshop_job_id = job.id
+            db.flush()
+            if exit_event is not None:
+                on_exit(db, exit_event)  # запись «Готова» с минутой выезда
+
+    # Ошибка «нет заказ-наряда» этого заезда: актуализируем или закрываем, или заводим.
+    who_text = f"Машина {new_plate}" if new_plate else "Машина без номера"
+    for issue in db.scalars(
+        select(BayIssue).where(
+            BayIssue.occupancy_id == interval.id,
+            BayIssue.resolved_at.is_(None),
+            BayIssue.kind == ISSUE_NO_WORK_ORDER,
+        )
+    ):
+        issue.plate = new_plate
+        issue.message = (
+            f"{who_text} стоит в боксе «{bay.name}», а заказ-наряда по её номеру нет."
+            if new_plate
+            else f"{who_text} стоит в боксе «{bay.name}»: привяжите заказ-наряд в записи плана."
+        )
+        if entry.work_order_id is not None:
+            issue.resolved_at = datetime.now(UTC)
+            issue.resolution = ISSUE_RESOLVED_AUTO
+            issue.resolved_by = who
+            issue.resolution_note = "Номер исправлен, заказ-наряд найден"
+    if entry.work_order_id is None:  # и у уехавшей машины: работа без заказ-наряда остаётся ошибкой
+        _open_issue(db, bay, entry, interval)
+    db.commit()
+    db.refresh(interval)
+    return interval, bay
 
 
 def tick(db: Session, now: datetime | None = None) -> tuple[int, int]:
