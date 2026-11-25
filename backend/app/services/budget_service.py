@@ -28,6 +28,7 @@ from app.models.workshop import Workshop
 from app.services import finance_service
 from app.services.cockpit_service import (
     _closed_revenue,
+    _closed_revenue_filters,
     _closed_revenue_lines,
     _mapped_source_departments,
     _payments,
@@ -183,3 +184,46 @@ def set_budget_value(
     db.commit()
     db.refresh(entry)
     return entry
+
+
+def fact_order_filters(
+    db: Session,
+    *,
+    year: int,
+    month: int,
+    kind: str,
+    workshop_id: uuid.UUID | None = None,
+    now: datetime | None = None,
+) -> list:
+    """Условия отбора заказ-нарядов ячейки «Выручка факт страховые» (kind="insurance") или
+    «Выручка факт основные» (kind="main") за месяц: те же фильтры, что у суммы в get_budget_year
+    (_closed_revenue_filters). workshop_id не задан - «Вся компания»: отделы всех цехов вместе,
+    как и сумма в таблице (заказ-наряды без привязки к цеху в неё не входят)."""
+    if kind not in ("insurance", "main"):
+        raise ValueError(f"Unknown kind: {kind}")
+    now = now or datetime.now(UTC)
+    app_settings = get_app_settings(db)
+    if workshop_id is not None:
+        source_departments = _mapped_source_departments(db, workshop_id=workshop_id)
+    else:
+        source_departments = []
+        for workshop_ in db.scalars(select(Workshop)):
+            source_departments.extend(_mapped_source_departments(db, workshop_id=workshop_.id))
+        source_departments = sorted(set(source_departments))
+    if kind == "insurance":
+        only_types = (
+            [app_settings.insurance_repair_type] if app_settings.insurance_repair_type else []
+        )
+    else:
+        only_types = [MAIN_REPAIR_TYPE]
+    period_start, period_end = period_bounds(now, year=year, month=month)
+    filters = _closed_revenue_filters(
+        source_departments=source_departments,
+        period_start=period_start,
+        period_end=period_end,
+        revenue_statuses=get_settings().revenue_statuses_list,
+        exclusion=order_exclusion(app_settings),
+        excluded_repair_types=revenue_excluded_repair_types(app_settings),
+        only_repair_types=only_types,
+    )
+    return filters

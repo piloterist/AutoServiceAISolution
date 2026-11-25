@@ -77,6 +77,9 @@ export function getCachedWorkOrders(): CacheEntry | null {
   return null;
 }
 
+/** Ячейка Бюджета «Выручка факт страховые/основные» (kind) за месяц - что показать на листе ЗН. */
+export type BudgetRevenueFilter = { kind: "insurance" | "main"; year: number; month: number };
+
 /** Fetches work orders page by page, newest to oldest (the backend already
  * orders by document_date desc - see work_order_query_service.
  * list_work_orders), until it has all of them - no fixed cap, so this can
@@ -89,6 +92,7 @@ async function fetchAllWorkOrders(
     paidTo?: string;
     onlyReceivables?: boolean;
     onlyRevenue?: boolean;
+    budgetRevenue?: BudgetRevenueFilter;
     workshopId?: string;
     includeRequests?: boolean;
     onlyRequestIssues?: boolean;
@@ -105,6 +109,11 @@ async function fetchAllWorkOrders(
     if (params.paidTo) query.set("paid_to", params.paidTo);
     if (params.onlyReceivables) query.set("only_receivables", "true");
     if (params.onlyRevenue) query.set("only_revenue", "true");
+    if (params.budgetRevenue) {
+      query.set("budget_revenue", params.budgetRevenue.kind);
+      query.set("budget_year", String(params.budgetRevenue.year));
+      query.set("budget_month", String(params.budgetRevenue.month));
+    }
     if (params.workshopId) query.set("workshop_id", params.workshopId);
     if (params.includeRequests) query.set("include_requests", "true");
     if (params.onlyRequestIssues) query.set("only_request_issues", "true");
@@ -186,6 +195,7 @@ export function loadWorkOrdersFiltered(
     paidTo?: string;
     onlyReceivables?: boolean;
     onlyRevenue?: boolean;
+    budgetRevenue?: BudgetRevenueFilter;
     workshopId?: string;
     onlyRequestIssues?: boolean;
   },

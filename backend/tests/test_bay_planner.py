@@ -144,6 +144,22 @@ def test_a_car_that_came_early_still_finds_a_later_plan_of_the_day(
     assert len(_jobs(db_session, workshop)) == 1
 
 
+def test_a_plan_with_a_work_order_number_in_the_plate_field_is_found_by_its_work_order(
+    client, auth_headers, db_session, workshop, statuses, bay_id
+) -> None:
+    # 2026-11-24: мастер вписал в «Гос.номер» номер ЗН (СЦН0003190); госномер - только в ЗН.
+    order = _order(db_session)
+    job = _job(
+        db_session, workshop, statuses["Запись"], time(10), time(11), "СЦН0003190", order=order
+    )
+
+    _event(client, auth_headers, bay_id, "entry_confirmed", "А612СМ777", moment(10, 5))
+
+    db_session.expire_all()
+    assert db_session.get(WorkshopJob, job.id).status_id == statuses["В работе"].id
+    assert len(_jobs(db_session, workshop)) == 1  # дубль не создали
+
+
 def _control_posts(db, enabled: bool) -> None:
     settings = get_app_settings(db)
     settings.control_posts_enabled = enabled

@@ -27,6 +27,11 @@ type SearchParams = {
   // Arriving from the dashboard's Выручка tile - only the orders that make up
   // that figure (server-side).
   only_revenue?: string;
+  // Arriving from Финансы -> Бюджеты (клик по «Выручка факт страховые/основные»): только ЗН этой
+  // ячейки, workshop_id - цех (без него - вся компания).
+  budget_revenue?: string;
+  budget_year?: string;
+  budget_month?: string;
   workshop_id?: string;
   // Arriving from the Planner's bell (контроль заявок): only the repair requests of the
   // user's цех with an overdue call (server-side), the overdue rows painted pink.
@@ -77,6 +82,17 @@ export default async function WorkOrdersPage({
         paidTo={params.paid_to}
         onlyReceivables={params.only_receivables === "1"}
         onlyRevenue={params.only_revenue === "1"}
+        budgetRevenue={
+          (params.budget_revenue === "insurance" || params.budget_revenue === "main") &&
+          Number(params.budget_year) &&
+          Number(params.budget_month)
+            ? {
+                kind: params.budget_revenue,
+                year: Number(params.budget_year),
+                month: Number(params.budget_month),
+              }
+            : undefined
+        }
         workshopId={params.workshop_id}
         requestIssues={params.request_issues === "1"}
         initialOnlyIndividualCustomer={params.individual === "1"}

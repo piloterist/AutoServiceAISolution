@@ -6970,6 +6970,19 @@ main:has(.cockpit-page) {
   text-align: center;
 }
 
+/* Значение-кнопка: клик открывает список заказ-нарядов этой ячейки (Бюджет). */
+.budget-drill {
+  all: unset;
+  cursor: pointer;
+  color: var(--accent, #2563eb);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.budget-drill:hover {
+  text-decoration: underline;
+}
+
 /* Бюджеты: итоговый столбец «Вся компания» каждого месяца */
 .budget-th-company,
 .budget-td-company {

@@ -503,6 +503,9 @@ export function getWorkOrders(
      * Выручка tile links to; the period/department come from the link's own
      * closed_from/closed_to/departments. */
     onlyRevenue?: boolean;
+    /** Только ЗН ячейки Бюджета «Выручка факт страховые/основные» (цех - workshopId, без него -
+     * вся компания). */
+    budgetRevenue?: { kind: "insurance" | "main"; year: number; month: number };
     workshopId?: string;
     /** Also list the repair requests (Заявки на ремонт) - the work orders list page. */
     includeRequests?: boolean;
@@ -524,6 +527,9 @@ export function getWorkOrders(
       paid_to: dateToParam(params?.paidTo),
       only_receivables: params?.onlyReceivables ? "true" : "",
       only_revenue: params?.onlyRevenue ? "true" : "",
+      budget_revenue: params?.budgetRevenue?.kind ?? "",
+      budget_year: params?.budgetRevenue ? String(params.budgetRevenue.year) : "",
+      budget_month: params?.budgetRevenue ? String(params.budgetRevenue.month) : "",
       workshop_id: params?.workshopId ?? "",
       include_requests: params?.includeRequests ? "true" : "",
       only_request_issues: params?.onlyRequestIssues ? "true" : "",

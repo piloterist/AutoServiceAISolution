@@ -8,7 +8,27 @@ import { DateInput } from "@/components/DateInput";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import type { WorkOrderListItem } from "@/lib/backend-api";
 import type { ConversionWorkOrdersKind } from "@/lib/conversion-cohorts";
-import { getCachedWorkOrders, loadWorkOrdersCached, loadWorkOrdersFiltered } from "@/lib/work-orders-cache";
+import {
+  type BudgetRevenueFilter,
+  getCachedWorkOrders,
+  loadWorkOrdersCached,
+  loadWorkOrdersFiltered,
+} from "@/lib/work-orders-cache";
+
+const MONTH_NAMES = [
+  "январь",
+  "февраль",
+  "март",
+  "апрель",
+  "май",
+  "июнь",
+  "июль",
+  "август",
+  "сентябрь",
+  "октябрь",
+  "ноябрь",
+  "декабрь",
+];
 
 // Column widths as a CSS grid template (percentages), applied identically to
 // the header row, the filter row and every virtualized body row so they
@@ -453,6 +473,7 @@ export function WorkOrdersTable({
   paidTo,
   onlyReceivables,
   onlyRevenue,
+  budgetRevenue,
   workshopId,
   requestIssues,
   initialOnlyIndividualCustomer,
@@ -493,6 +514,9 @@ export function WorkOrdersTable({
   /** From the dashboard's Выручка tile: only the orders that make up that
    * figure (server-side, like onlyReceivables). */
   onlyRevenue?: boolean;
+  /** From Финансы -> Бюджеты: только ЗН кликнутой ячейки «Выручка факт страховые/основные»
+   * (server-side; цех - workshopId, без него - вся компания). */
+  budgetRevenue?: BudgetRevenueFilter;
   workshopId?: string;
   /** From the Planner's bell (контроль заявок): only the repair requests of the user's цех
    * whose first/second call to the client is overdue - server-side like onlyReceivables, so the
@@ -546,7 +570,7 @@ export function WorkOrdersTable({
     };
 
     const hasServerFilter = Boolean(
-      paidFrom || paidTo || onlyReceivables || onlyRevenue || requestIssues,
+      paidFrom || paidTo || onlyReceivables || onlyRevenue || budgetRevenue || requestIssues,
     );
 
     if (!hasServerFilter) {
@@ -564,7 +588,15 @@ export function WorkOrdersTable({
 
     const task = hasServerFilter
       ? loadWorkOrdersFiltered(
-          { paidFrom, paidTo, onlyReceivables, onlyRevenue, workshopId, onlyRequestIssues: requestIssues },
+          {
+            paidFrom,
+            paidTo,
+            onlyReceivables,
+            onlyRevenue,
+            budgetRevenue,
+            workshopId,
+            onlyRequestIssues: requestIssues,
+          },
           onProgress,
         )
       : loadWorkOrdersCached(onProgress);
@@ -585,7 +617,7 @@ export function WorkOrdersTable({
     return () => {
       cancelled = true;
     };
-  }, [paidFrom, paidTo, onlyReceivables, onlyRevenue, workshopId, requestIssues]);
+  }, [paidFrom, paidTo, onlyReceivables, onlyRevenue, budgetRevenue, workshopId, requestIssues]);
 
   // A link with real filter params (e.g. a dashboard status chip or the
   // revenue tile) always wins for this visit; otherwise restore whatever
@@ -603,6 +635,7 @@ export function WorkOrdersTable({
       initialUnpaid ||
       initialPhone ||
       requestIssues ||
+      budgetRevenue ||
       conversionFilter,
   );
   // "Открыть ЗН" of a phone (Конверсия): all its documents, work orders AND repair requests.
@@ -1035,6 +1068,13 @@ export function WorkOrdersTable({
       {onlyRevenue && (
         <p className="chart-subtitle">
           Показаны заказ-наряды, формирующие выручку за период (без гарантийных и виртуальных)
+        </p>
+      )}
+      {budgetRevenue && (
+        <p className="chart-subtitle">
+          Показаны заказ-наряды, формирующие «Выручка факт {budgetRevenue.kind === "insurance" ? "страховые" : "основные"}»
+          за {MONTH_NAMES[budgetRevenue.month - 1]} {budgetRevenue.year}
+          {workshopId ? " по выбранному цеху" : ", вся компания"}
         </p>
       )}
       {onlyReceivables && (

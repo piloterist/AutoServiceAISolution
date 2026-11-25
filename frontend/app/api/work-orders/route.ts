@@ -9,6 +9,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getWorkOrders } from "@/lib/backend-api";
 import { getCurrentUser } from "@/lib/session";
 
+function budgetRevenue(params: URLSearchParams) {
+  const kind = params.get("budget_revenue");
+  const year = Number(params.get("budget_year"));
+  const month = Number(params.get("budget_month"));
+  if ((kind !== "insurance" && kind !== "main") || !year || !month) return undefined;
+  return { kind, year, month } as const;
+}
+
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   // Requests with an overdue call are scoped to the caller's цех (the Planner bell's link).
@@ -22,6 +30,7 @@ export async function GET(request: NextRequest) {
       paidTo: params.get("paid_to") || undefined,
       onlyReceivables: params.get("only_receivables") === "true",
       onlyRevenue: params.get("only_revenue") === "true",
+      budgetRevenue: budgetRevenue(params),
       workshopId: params.get("workshop_id") || undefined,
       includeRequests: params.get("include_requests") === "true",
       limit: params.get("limit") ? Number(params.get("limit")) : undefined,

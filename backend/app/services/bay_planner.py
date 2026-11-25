@@ -139,15 +139,17 @@ def _log(db: Session, job: WorkshopJob, before: dict | None, actor: str = ACTOR_
     )
 
 
-def _job_prefix(db: Session, job: WorkshopJob) -> str | None:
-    """Номер записи плана: введённый вручную, иначе из привязанного заказ-наряда."""
-    prefix = plate_prefix(job.plate)
-    if prefix or job.work_order_id is None:
-        return prefix
-    work_order = db.get(WorkOrder, job.work_order_id)
-    if work_order is None:
-        return None
-    return plate_prefix(plate_from_description(work_order.vehicle_description))
+def _job_prefixes(db: Session, job: WorkshopJob) -> set[str]:
+    """Номера записи плана: введённый вручную И из привязанного заказ-наряда. В поле номера мастера
+    нередко лежит не госномер (номер ЗН «СЦН0003190»): по нему машину не найти, поэтому госномер
+    берём и из заказ-наряда (2026-11-24: запись мастера не нашлась, камера завела дубль)."""
+    prefixes = {plate_prefix(job.plate)}
+    if job.work_order_id is not None:
+        work_order = db.get(WorkOrder, job.work_order_id)
+        if work_order is not None:
+            prefixes.add(plate_prefix(plate_from_description(work_order.vehicle_description)))
+    prefixes.discard(None)
+    return prefixes
 
 
 def _fill_from_work_order(db: Session, job: WorkshopJob, work_order_id: uuid.UUID) -> None:
@@ -185,7 +187,7 @@ def _find_planned_job(
         conditions.append(WorkshopJob.post_number == post)
     jobs = db.scalars(select(WorkshopJob).where(*conditions)).all()
     candidates = [
-        job for job in jobs if job.status_id not in closed and _job_prefix(db, job) == prefix
+        job for job in jobs if job.status_id not in closed and prefix in _job_prefixes(db, job)
     ]
     now = _minutes(moment.time())
 

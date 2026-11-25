@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.cost_expense import CostExpense
@@ -235,6 +236,60 @@ def test_fact_revenue_is_two_rows_insurance_and_current_only(
     assert september.fact_revenue_insurance == Decimal("100")
     assert september.fact_revenue_main == Decimal("1020")
     assert september.fact_revenue == Decimal("1120")
+
+
+def test_the_orders_behind_a_fact_revenue_cell_add_up_to_the_cell(
+    db_session: Session, workshop: Workshop
+) -> None:
+    """Клик по ячейке «Выручка факт ...» открывает список ЗН: те же фильтры, та же сумма."""
+    from app.services.settings_service import get_app_settings
+
+    get_app_settings(db_session).insurance_repair_type = "Страховой"
+    other_dept = Department(name="Другой")
+    db_session.add(other_dept)
+    db_session.flush()
+    other = Workshop(
+        department_id=other_dept.id,
+        workshop_type="Кузовной",
+        posts_count=1,
+        start_time="08:00:00",
+        end_time="20:00:00",
+        working_days=[0, 1, 2, 3, 4],
+    )
+    db_session.add(other)
+    db_session.flush()
+    db_session.add(WorkshopSourceDepartment(workshop_id=other.id, source_department="Кузов"))
+    closed = datetime(2026, 9, 15, tzinfo=UTC)
+    db_session.add_all(
+        [
+            _work_order(closed_date=closed, amount=Decimal("100"), repair_type="Страховой"),
+            _work_order(closed_date=closed, amount=Decimal("1000"), repair_type="Текущий"),
+            _work_order(closed_date=closed, amount=Decimal("5"), repair_type="Основной"),
+            _work_order(  # другой месяц
+                closed_date=datetime(2026, 8, 15, tzinfo=UTC),
+                amount=Decimal("7"),
+                repair_type="Текущий",
+            ),
+            _work_order(
+                closed_date=closed, amount=Decimal("40"), repair_type="Текущий", department="Кузов"
+            ),
+        ]
+    )
+    db_session.commit()
+
+    def amounts(kind, workshop_id=None):
+        filters = budget_service.fact_order_filters(
+            db_session, year=2026, month=9, kind=kind, workshop_id=workshop_id, now=NOW
+        )
+        orders = db_session.scalars(select(WorkOrder).where(*filters)).all()
+        return sorted(order.amount for order in orders)
+
+    rows = budget_service.get_budget_year(db_session, 2026, now=NOW)
+    cell = next(r for r in rows if r.workshop_id == workshop.id).months[8]
+    assert sum(amounts("main", workshop.id)) == cell.fact_revenue_main == Decimal("1000")
+    assert sum(amounts("insurance", workshop.id)) == cell.fact_revenue_insurance
+    assert amounts("main") == [Decimal("40"), Decimal("1000")]  # вся компания: оба цеха
+    assert amounts("insurance") == [Decimal("100")]
 
 
 def test_set_budget_value_rejects_unknown_field(db_session: Session, workshop: Workshop) -> None:

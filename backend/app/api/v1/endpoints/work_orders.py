@@ -8,6 +8,7 @@ directly) must present API_TOKEN just like the 1C integration does.
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -45,7 +46,7 @@ from app.schemas.work_order import (
     WorkOrderListResponse,
     WorkOrderPartLineItem,
 )
-from app.services import planner_service, request_control_service
+from app.services import budget_service, planner_service, request_control_service
 from app.services.cockpit_service import _mapped_source_departments
 from app.services.internal_order_rules import is_physical_person
 from app.services.order_exclusion import (
@@ -105,6 +106,13 @@ def get_work_orders(
         default=False,
         description="Restrict to the work orders that make up the dashboard's Выручка figure",
     ),
+    budget_revenue: Literal["insurance", "main"] | None = Query(
+        default=None,
+        description="Только заказ-наряды ячейки Бюджета «Выручка факт страховые/основные» "
+        "за budget_year/budget_month (цех - workshop_id, без него - вся компания)",
+    ),
+    budget_year: int | None = Query(default=None),
+    budget_month: int | None = Query(default=None, ge=1, le=12),
     workshop_id: UUID | None = Query(
         default=None,
         description="Scopes only_receivables (like Cockpit's own filter) and only_request_issues "
@@ -151,6 +159,21 @@ def get_work_orders(
         # цех scope, never a hand-picked department list.
         resolved_departments = _mapped_source_departments(db, workshop_id=workshop_id)
 
+    budget_filters = None
+    if budget_revenue is not None:
+        if budget_year is None or budget_month is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="budget_revenue requires budget_year and budget_month",
+            )
+        budget_filters = budget_service.fact_order_filters(
+            db,
+            year=budget_year,
+            month=budget_month,
+            kind=budget_revenue,
+            workshop_id=workshop_id,
+        )
+
     items, total = list_work_orders(
         db,
         date_from=date_from,
@@ -160,6 +183,7 @@ def get_work_orders(
         paid_to=paid_to,
         only_receivables=only_receivables,
         only_revenue=only_revenue,
+        extra_filters=budget_filters,
         include_requests=include_requests,
         only_ids=issue_ids,
         limit=limit,

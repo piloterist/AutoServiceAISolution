@@ -101,6 +101,7 @@ def list_work_orders(
     paid_to: datetime | None = None,
     only_receivables: bool = False,
     only_revenue: bool = False,
+    extra_filters: list | None = None,
     include_requests: bool = False,
     only_ids: set[UUID] | None = None,
     limit: int = 100,
@@ -183,6 +184,10 @@ def list_work_orders(
         excluded = revenue_excluded_repair_types(app_settings)
         if excluded:
             filters.append(_not_excluded_repair_type(excluded))
+
+    if extra_filters:
+        # Готовые условия отбора (ячейка бюджета: budget_service.fact_order_filters).
+        filters.extend(extra_filters)
 
     base_query = select(WorkOrder).where(*filters)
 
