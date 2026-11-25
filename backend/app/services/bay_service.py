@@ -311,6 +311,8 @@ def event_out(event: BayEvent | None) -> dict | None:
         "review_status": event.review_status,
         "source": event.source,
         "note": event.note,
+        "created_at": event.created_at,
+        "created_by_name": event.created_by_name,
     }
 
 
@@ -604,11 +606,17 @@ def record_event(
     snapshot_base64: str | None = None,
     source: str = "auto",
     needs_review: bool = False,
+    actor_name: str | None = None,
 ) -> BayEvent:
     if event_type not in EVENT_TYPES:
         raise InvalidEvent(f"Unknown event_type: {event_type}")
     bay = get_bay(db, bay_id)
     image = _decode_image(snapshot_base64)
+    if source == "manual":
+        # Ручной ввод: время события обязательно и не должно ломать порядок въезд/выезд.
+        if occurred_at is None:
+            raise InvalidEvent("Укажите время события")
+        _check_manual_event_time(db, bay.id, event_type, normalize_plate(plate), occurred_at)
     occurred_at = occurred_at or datetime.now(UTC)
 
     event = BayEvent(
@@ -620,6 +628,7 @@ def record_event(
         ocr_confidence=ocr_confidence,
         note=note,
         source=source,
+        created_by_name=actor_name if source == "manual" else None,
         review_status=(
             "confirmed" if source == "manual" else REVIEW_NEEDS if needs_review else "auto"
         ),
@@ -659,7 +668,7 @@ def record_event(
 
     if event_type == EVENT_ENTRY_CONFIRMED:
         if not skip_interval:
-            _open_interval(db, event)
+            _open_interval(db, event, pair_with_exit=source == "manual")
     elif event_type == EVENT_EXIT_CONFIRMED:
         _close_interval(db, event)
     db.commit()
@@ -667,8 +676,123 @@ def record_event(
     return event
 
 
-def _open_interval(db: Session, event: BayEvent) -> None:
+def _fmt_local(moment: datetime) -> str:
+    return moment.astimezone(SHOP_TZ).strftime("%d.%m %H:%M")
+
+
+def _orphan_exit_after(
+    db: Session, bay_id: uuid.UUID, moment: datetime, plate: str | None
+) -> BayEvent | None:
+    """Ближайший после `moment` выезд бокса, у которого нет въезда (заезда), если между ними нет
+    другого въезда и номера не противоречат друг другу."""
+    exits = db.scalars(
+        select(BayEvent)
+        .where(
+            BayEvent.bay_id == bay_id,
+            BayEvent.event_type == EVENT_EXIT_CONFIRMED,
+            BayEvent.occurred_at > moment,
+            ~select(BayOccupancy.id).where(BayOccupancy.exit_event_id == BayEvent.id).exists(),
+        )
+        .order_by(BayEvent.occurred_at)
+    ).all()
+    for candidate in exits:
+        next_entry = db.scalars(
+            select(BayEvent.id).where(
+                BayEvent.bay_id == bay_id,
+                BayEvent.event_type == EVENT_ENTRY_CONFIRMED,
+                BayEvent.occurred_at > moment,
+                BayEvent.occurred_at < candidate.occurred_at,
+            )
+        ).first()
+        if next_entry is not None:
+            return None  # между ними чужой въезд: этот выезд - не наш
+        if plate and candidate.plate and not plates_match(plate, candidate.plate):
+            return None
+        return candidate
+    return None
+
+
+def _check_manual_event_time(
+    db: Session, bay_id: uuid.UUID, event_type: str, plate: str | None, moment: datetime
+) -> None:
+    """Время ручного события: не в будущем, выезд не раньше въезда, въезд не позже уже
+    записанного выезда и не посреди чужого заезда."""
+    if moment > datetime.now(UTC):
+        raise InvalidEvent("Время события не может быть в будущем")
+    if event_type == EVENT_EXIT_CONFIRMED:
+        interval = db.scalars(
+            select(BayOccupancy)
+            .where(BayOccupancy.bay_id == bay_id, BayOccupancy.ended_at.is_(None))
+            .order_by(BayOccupancy.started_at.desc())
+            .limit(1)
+        ).first()
+        if interval is not None and moment < interval.started_at:
+            raise InvalidEvent(
+                f"Выезд не может быть раньше въезда ({_fmt_local(interval.started_at)})"
+            )
+        return
+    if event_type != EVENT_ENTRY_CONFIRMED:
+        return
+    inside = db.scalars(
+        select(BayOccupancy).where(
+            BayOccupancy.bay_id == bay_id,
+            BayOccupancy.started_at < moment,
+            BayOccupancy.ended_at.is_not(None),
+            BayOccupancy.ended_at > moment,
+        )
+    ).first()
+    if inside is not None:
+        raise InvalidEvent(
+            f"В это время бокс был занят: заезд с {_fmt_local(inside.started_at)} "
+            f"по {_fmt_local(inside.ended_at)}"
+        )
+    # Выезд этой же машины уже записан (без въезда), а въезд указан позже него.
+    if plate:
+        earlier_exit = db.scalars(
+            select(BayEvent)
+            .where(
+                BayEvent.bay_id == bay_id,
+                BayEvent.event_type == EVENT_EXIT_CONFIRMED,
+                BayEvent.occurred_at <= moment,
+                ~select(BayOccupancy.id).where(BayOccupancy.exit_event_id == BayEvent.id).exists(),
+            )
+            .order_by(BayEvent.occurred_at.desc())
+            .limit(1)
+        ).first()
+        if earlier_exit is not None and plates_match(plate, earlier_exit.plate):
+            between = db.scalars(
+                select(BayEvent.id).where(
+                    BayEvent.bay_id == bay_id,
+                    BayEvent.event_type == EVENT_ENTRY_CONFIRMED,
+                    BayEvent.occurred_at > earlier_exit.occurred_at,
+                    BayEvent.occurred_at <= moment,
+                )
+            ).first()
+            if between is None:
+                raise InvalidEvent(
+                    "Въезд не может быть позже выезда: выезд этой машины уже записан "
+                    f"в {_fmt_local(earlier_exit.occurred_at)}"
+                )
+
+
+def _open_interval(db: Session, event: BayEvent, *, pair_with_exit: bool = False) -> None:
     review = event.review_status
+    if pair_with_exit:
+        # Ручной въезд за уже записанным выездом (машина «уехала» без въезда): заезд сразу закрыт.
+        orphan = _orphan_exit_after(db, event.bay_id, event.occurred_at, event.plate)
+        if orphan is not None:
+            db.add(
+                BayOccupancy(
+                    bay_id=event.bay_id,
+                    plate=event.plate or orphan.plate,
+                    started_at=event.occurred_at,
+                    entry_event_id=event.id,
+                    ended_at=orphan.occurred_at,
+                    exit_event_id=orphan.id,
+                    review_status=review,
+                )
+            )
+            return
     still_open = db.scalars(
         select(BayOccupancy).where(
             BayOccupancy.bay_id == event.bay_id, BayOccupancy.ended_at.is_(None)

@@ -11,6 +11,7 @@ from typing import Literal
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import verify_api_token
@@ -21,6 +22,7 @@ from app.models.bay import (
     EVENT_EXIT_CONFIRMED,
     SNAPSHOT_DONE,
     Bay,
+    BayOccupancy,
     BaySnapshotRequest,
 )
 from app.schemas.bays import (
@@ -382,7 +384,10 @@ def delete_bay(bay_id: uuid.UUID, db: Session = Depends(get_db)) -> Response:
 
 @router.post("/{bay_id}/events", response_model=BayEventOut, status_code=status.HTTP_201_CREATED)
 def create_bay_event(
-    bay_id: uuid.UUID, payload: BayEventCreate, db: Session = Depends(get_db)
+    bay_id: uuid.UUID,
+    payload: BayEventCreate,
+    x_actor_name: str | None = Header(default=None),
+    db: Session = Depends(get_db),
 ) -> BayEventOut:
     bay = db.get(Bay, bay_id)
     if bay is not None and bay.kind == BAY_KIND_GATE:
@@ -415,6 +420,7 @@ def create_bay_event(
             snapshot_base64=payload.snapshot_base64,
             source=payload.source,
             needs_review=payload.needs_review,
+            actor_name=unquote(x_actor_name) if x_actor_name else None,
         )
     except bay_service.BayNotFound as exc:
         raise _not_found(exc) from exc
@@ -425,6 +431,13 @@ def create_bay_event(
     # Планировщик и лист «Ошибки»: запись плана «В работе»/«Готова», ошибка без заказ-наряда.
     if event.event_type == EVENT_ENTRY_CONFIRMED:
         bay_planner.on_entry(db, event)
+        paired = db.scalars(
+            select(BayOccupancy).where(BayOccupancy.entry_event_id == event.id)
+        ).first()
+        if paired is not None and paired.exit_event_id is not None:
+            exit_event = bay_service.get_event(db, paired.exit_event_id)
+            if exit_event is not None:
+                bay_planner.on_exit(db, exit_event)  # въезд внесён за уже записанным выездом
     elif event.event_type == EVENT_EXIT_CONFIRMED:
         bay_planner.on_exit(db, event)
     db.refresh(event)

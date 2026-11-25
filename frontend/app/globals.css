@@ -6971,6 +6971,20 @@ main:has(.cockpit-page) {
 }
 
 /* Значение-кнопка: клик открывает список заказ-нарядов этой ячейки (Бюджет). */
+.bay-viewer-manual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  text-align: center;
+  padding: 0.5rem;
+}
+
+.bay-viewer-manual strong {
+  color: var(--text);
+}
+
 .budget-drill {
   all: unset;
   cursor: pointer;

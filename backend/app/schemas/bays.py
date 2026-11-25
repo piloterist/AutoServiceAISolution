@@ -26,6 +26,8 @@ class BayEventOut(BaseModel):
     review_status: str
     source: str
     note: str | None
+    created_at: datetime | None = None  # когда событие внесено в систему
+    created_by_name: str | None = None  # кто ввёл вручную (у событий узла - пусто)
 
 
 class BayCardOut(BaseModel):

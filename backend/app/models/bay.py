@@ -112,6 +112,8 @@ class BayEvent(Base):
         String(10), nullable=False, default=SOURCE_AUTO, server_default=SOURCE_AUTO
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Кто ввёл событие вручную (у событий узла - пусто); когда - created_at.
+    created_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -44,11 +44,11 @@ export const baysClient = {
       headers: jsonHeaders,
       body: JSON.stringify({ camera_code: cameraCode }),
     }),
-  addEvent: (bayId: string, eventType: string, plate: string) =>
+  addEvent: (bayId: string, eventType: string, plate: string, occurredAt: string) =>
     proxyFetch<BayEvent>(`/api/bays/${bayId}/events`, {
       method: "POST",
       headers: jsonHeaders,
-      body: JSON.stringify({ event_type: eventType, plate: plate || null }),
+      body: JSON.stringify({ event_type: eventType, plate: plate || null, occurred_at: occurredAt }),
     }),
   history: (params: { dateFrom?: string; dateTo?: string; bayId?: string; jobId?: string }) => {
     const query = new URLSearchParams();

@@ -121,7 +121,20 @@ function Photo({
             <img src={eventSnapshotUrl(event.id)} alt={caption} loading="lazy" />
           </button>
         ) : (
-          <div className="bay-viewer-empty">{event ? "Нет кадра" : emptyText}</div>
+          <div className={`bay-viewer-empty${event?.source === "manual" ? " bay-viewer-manual" : ""}`}>
+            {event?.source === "manual" ? (
+              <>
+                <strong>Ручное событие</strong>
+                <span>
+                  {event.created_by_name ?? "—"}, {event.created_at ? formatDateTime(event.created_at) : "—"}
+                </span>
+              </>
+            ) : event ? (
+              "Нет кадра"
+            ) : (
+              emptyText
+            )}
+          </div>
         )}
       </div>
     </figure>

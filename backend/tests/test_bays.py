@@ -1,6 +1,7 @@
 import base64
 import uuid
 from datetime import UTC, datetime, timedelta
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -140,6 +141,113 @@ def test_exit_without_an_open_interval_is_only_logged(
     bay_id = _bays(client, auth_headers, workshop.id)[0]["id"]
     assert _event(client, auth_headers, bay_id, "exit_confirmed").status_code == 201
     assert _bays(client, auth_headers, workshop.id)[0]["state"] == "free"
+
+
+def _manual(client, headers, bay_id, kind, plate, at, who="Иванов Иван"):
+    return client.post(
+        f"/api/v1/bays/{bay_id}/events",
+        json={
+            "event_type": kind,
+            "plate": plate,
+            "source": "manual",
+            "occurred_at": at.isoformat() if at else None,
+        },
+        headers={**headers, "X-Actor-Name": quote(who)},
+    )
+
+
+def _manual_bay(client, auth_headers, workshop) -> str:
+    client.post(f"/api/v1/bays/defaults?workshop_id={workshop.id}", headers=auth_headers)
+    return _bays(client, auth_headers, workshop.id)[0]["id"]
+
+
+def test_a_manual_event_needs_a_time_and_remembers_who_entered_it(
+    client: TestClient, auth_headers: dict, workshop: Workshop
+) -> None:
+    bay_id = _manual_bay(client, auth_headers, workshop)
+    no_time = _manual(client, auth_headers, bay_id, "entry_confirmed", "А123ВС77", None)
+    assert no_time.status_code == 422
+    assert "время" in no_time.json()["detail"].lower()
+
+    at = datetime.now(UTC) - timedelta(hours=2)
+    done = _manual(client, auth_headers, bay_id, "entry_confirmed", "А123ВС77", at)
+    assert done.status_code == 201, done.text
+    body = done.json()
+    assert (body["source"], body["created_by_name"], body["has_snapshot"]) == (
+        "manual",
+        "Иванов Иван",
+        False,
+    )
+    assert body["created_at"] is not None
+
+
+def test_a_manual_event_cannot_be_in_the_future(
+    client: TestClient, auth_headers: dict, workshop: Workshop
+) -> None:
+    bay_id = _manual_bay(client, auth_headers, workshop)
+    for delta in (timedelta(hours=1), timedelta(minutes=3)):
+        later = datetime.now(UTC) + delta
+        response = _manual(client, auth_headers, bay_id, "entry_confirmed", "А123ВС77", later)
+        assert response.status_code == 422, delta
+
+
+def test_a_manual_exit_cannot_be_earlier_than_the_entry(
+    client: TestClient, auth_headers: dict, workshop: Workshop
+) -> None:
+    bay_id = _manual_bay(client, auth_headers, workshop)
+    entered = datetime.now(UTC) - timedelta(hours=3)
+    assert (
+        _manual(client, auth_headers, bay_id, "entry_confirmed", "А123ВС77", entered).status_code
+        == 201
+    )
+    early = _manual(
+        client, auth_headers, bay_id, "exit_confirmed", "А123ВС77", entered - timedelta(minutes=10)
+    )
+    assert early.status_code == 422
+    assert "раньше въезда" in early.json()["detail"]
+    ok = _manual(
+        client, auth_headers, bay_id, "exit_confirmed", "А123ВС77", entered + timedelta(hours=1)
+    )
+    assert ok.status_code == 201
+
+
+def test_a_manual_entry_is_paired_with_the_exit_already_recorded(
+    client: TestClient, auth_headers: dict, workshop: Workshop
+) -> None:
+    bay_id = _manual_bay(client, auth_headers, workshop)
+    exit_at = datetime.now(UTC) - timedelta(hours=1)
+    # Выезд записан, а въезда нет (узел его пропустил).
+    assert (
+        _manual(client, auth_headers, bay_id, "exit_confirmed", "А123ВС77", exit_at).status_code
+        == 201
+    )
+
+    late = _manual(
+        client, auth_headers, bay_id, "entry_confirmed", "А123ВС77", exit_at + timedelta(minutes=5)
+    )
+    assert late.status_code == 422
+    assert "не может быть позже выезда" in late.json()["detail"]
+
+    ok = _manual(
+        client, auth_headers, bay_id, "entry_confirmed", "А123ВС77", exit_at - timedelta(hours=2)
+    )
+    assert ok.status_code == 201, ok.text
+    # Заезд сразу закрыт этим выездом: бокс свободен, а не «занят».
+    assert _bays(client, auth_headers, workshop.id)[0]["state"] == "free"
+
+
+def test_a_manual_entry_cannot_fall_inside_another_stay(
+    client: TestClient, auth_headers: dict, workshop: Workshop
+) -> None:
+    bay_id = _manual_bay(client, auth_headers, workshop)
+    start = datetime.now(UTC) - timedelta(hours=5)
+    _manual(client, auth_headers, bay_id, "entry_confirmed", "А123ВС77", start)
+    _manual(client, auth_headers, bay_id, "exit_confirmed", "А123ВС77", start + timedelta(hours=2))
+    inside = _manual(
+        client, auth_headers, bay_id, "entry_confirmed", "В777ОО77", start + timedelta(hours=1)
+    )
+    assert inside.status_code == 422
+    assert "бокс был занят" in inside.json()["detail"]
 
 
 def test_unknown_event_type_and_bad_image_are_rejected(

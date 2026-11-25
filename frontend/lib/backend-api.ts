@@ -2247,6 +2247,9 @@ export type BayEvent = {
   review_status: string;
   source: string;
   note: string | null;
+  /** Когда событие внесено в систему и кем (для ручных; у событий узла имени нет). */
+  created_at: string | null;
+  created_by_name: string | null;
 };
 
 export type BayCard = {
@@ -2652,6 +2655,8 @@ export type BayEventWrite = {
   plate?: string | null;
   note?: string | null;
   source?: "auto" | "manual";
+  /** ISO со смещением; у ручного события обязательно. */
+  occurred_at?: string | null;
 };
 
 export type BaySnapshotRequest = {
@@ -2741,8 +2746,16 @@ export function deleteBay(id: string): Promise<void> {
   return backendDelete(`/api/v1/bays/${id}`);
 }
 
-export function createBayEvent(bayId: string, payload: BayEventWrite): Promise<BayEvent> {
-  return backendPost<BayEvent>(`/api/v1/bays/${bayId}/events`, payload);
+export function createBayEvent(
+  bayId: string,
+  payload: BayEventWrite,
+  actor?: { id: string; fullName: string },
+): Promise<BayEvent> {
+  return backendPost<BayEvent>(
+    `/api/v1/bays/${bayId}/events`,
+    payload,
+    actor ? actorHeaders(actor) : undefined,
+  );
 }
 
 export function requestBaySnapshot(bayId: string): Promise<BaySnapshotRequest> {

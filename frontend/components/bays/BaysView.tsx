@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { formatTime, linkStatus } from "@/components/bays/bay-utils";
 import { GateView } from "@/components/bays/GateView";
-import type { BayCard, Workshop } from "@/lib/backend-api";
+import type { BayCard, BayEvent, Workshop } from "@/lib/backend-api";
 import { baysClient, eventSnapshotUrl, latestFrameUrl, requestImageUrl } from "@/lib/bays-client";
 
 const REFRESH_MS = 10_000;
@@ -29,6 +29,19 @@ type LiveState =
   | { status: "waiting" }
   | { status: "done"; requestId: string; at: number }
   | { status: "failed"; message: string };
+
+/** Сейчас по Москве в формате поля datetime-local (ГГГГ-ММ-ДДTЧЧ:ММ): верхняя граница ручного ввода. */
+function nowLocalInput(): string {
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Moscow",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date());
+  return parts.replace(" ", "T");
+}
 
 function BayTile({
   bay,
@@ -58,6 +71,7 @@ function BayTile({
   const [manualOpen, setManualOpen] = useState(false);
   const [manualType, setManualType] = useState("entry_confirmed");
   const [manualPlate, setManualPlate] = useState("");
+  const [manualTime, setManualTime] = useState(""); // datetime-local, время цеха (Москва)
   const [manualError, setManualError] = useState<string | null>(null);
 
   const getFrame = async () => {
@@ -82,9 +96,20 @@ function BayTile({
 
   const submitManual = async () => {
     setManualError(null);
+    if (!manualTime) {
+      setManualError("Укажите время события");
+      return;
+    }
+    if (manualTime > nowLocalInput()) {
+      setManualError("Время события не может быть в будущем");
+      return;
+    }
     try {
-      await baysClient.addEvent(bay.id, manualType, manualPlate);
+      // Время вводится по Москве (время цеха), как и всё на странице.
+      const local = manualTime.length === 16 ? `${manualTime}:00` : manualTime;
+      await baysClient.addEvent(bay.id, manualType, manualPlate, `${local}+03:00`);
       setManualPlate("");
+      setManualTime("");
       setManualOpen(false);
       onChanged();
     } catch (err) {
@@ -131,7 +156,7 @@ function BayTile({
     bay.last_exit !== null &&
     new Date(bay.last_exit.occurred_at) < new Date(bay.last_entry.occurred_at);
 
-  const pane = (label: string, frame: Frame, emptyText: string, extra = "") => (
+  const pane = (label: string, frame: Frame, emptyText: string, extra = "", manual: BayEvent | null = null) => (
     <figure className={`bay-pane ${extra}`.trim()}>
       <figcaption className="bay-pane-label">{label}</figcaption>
       <div className="bay-viewer">
@@ -140,6 +165,13 @@ function BayTile({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={frame.src} alt={frame.caption} />
           </button>
+        ) : manual?.source === "manual" ? (
+          <div className="bay-viewer-empty bay-viewer-manual">
+            <strong>Ручное событие</strong>
+            <span>
+              {manual.created_by_name ?? "—"}, {manual.created_at ? formatTime(manual.created_at) : "—"}
+            </span>
+          </div>
         ) : (
           <div className="bay-viewer-empty">{emptyText}</div>
         )}
@@ -193,11 +225,19 @@ function BayTile({
         </button>
       </div>
       <div className="bay-pair">
-        {pane("Въезд", emptyFrame ?? eventFrame(bay.last_entry, "Въезд"), bay.last_entry ? "Нет кадра" : "Въездов не было")}
+        {pane(
+          "Въезд",
+          emptyFrame ?? eventFrame(bay.last_entry, "Въезд"),
+          bay.last_entry ? "Нет кадра" : "Въездов не было",
+          "",
+          bay.last_entry,
+        )}
         {pane(
           "Выезд",
           emptyFrame ?? (exitIsStale ? null : eventFrame(bay.last_exit, "Выезд")),
           exitIsStale ? "Машина в боксе" : bay.last_exit ? "Нет кадра" : "Выездов не было",
+          "",
+          exitIsStale ? null : bay.last_exit,
         )}
       </div>
       <div className="bay-actions">
@@ -238,6 +278,15 @@ function BayTile({
               <option value="entry_confirmed">Въезд</option>
               <option value="exit_confirmed">Выезд</option>
             </select>
+            <input
+              type="datetime-local"
+              aria-label="Время события (по Москве)"
+              title="Время события (по Москве), обязательно"
+              required
+              max={nowLocalInput()}
+              value={manualTime}
+              onChange={(e) => setManualTime(e.target.value)}
+            />
             <input
               type="text"
               placeholder="Номер, например А123ВС77"
