@@ -506,7 +506,13 @@ export function getWorkOrders(
     onlyRevenue?: boolean;
     /** Только ЗН ячейки Бюджета «Выручка факт страховые/основные» (цех - workshopId, без него -
      * вся компания). */
-    budgetRevenue?: { kind: BudgetRevenueKind; year: number; month: number };
+    budgetRevenue?: {
+      kind: BudgetRevenueKind;
+      year: number;
+      month: number;
+      yearTo?: number;
+      monthTo?: number;
+    };
     workshopId?: string;
     /** Also list the repair requests (Заявки на ремонт) - the work orders list page. */
     includeRequests?: boolean;
@@ -531,6 +537,8 @@ export function getWorkOrders(
       budget_revenue: params?.budgetRevenue?.kind ?? "",
       budget_year: params?.budgetRevenue ? String(params.budgetRevenue.year) : "",
       budget_month: params?.budgetRevenue ? String(params.budgetRevenue.month) : "",
+      budget_year_to: params?.budgetRevenue?.yearTo ? String(params.budgetRevenue.yearTo) : "",
+      budget_month_to: params?.budgetRevenue?.monthTo ? String(params.budgetRevenue.monthTo) : "",
       workshop_id: params?.workshopId ?? "",
       include_requests: params?.includeRequests ? "true" : "",
       only_request_issues: params?.onlyRequestIssues ? "true" : "",

@@ -113,6 +113,8 @@ def get_work_orders(
     ),
     budget_year: int | None = Query(default=None),
     budget_month: int | None = Query(default=None, ge=1, le=12),
+    budget_year_to: int | None = Query(default=None, description="Конец периода (столбец ИТОГО)"),
+    budget_month_to: int | None = Query(default=None, ge=1, le=12),
     workshop_id: UUID | None = Query(
         default=None,
         description="Scopes only_receivables (like Cockpit's own filter) and only_request_issues "
@@ -172,6 +174,8 @@ def get_work_orders(
             month=budget_month,
             kind=budget_revenue,
             workshop_id=workshop_id,
+            year_to=budget_year_to,
+            month_to=budget_month_to,
         )
 
     items, total = list_work_orders(

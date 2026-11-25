@@ -79,7 +79,14 @@ export function getCachedWorkOrders(): CacheEntry | null {
 }
 
 /** Ячейка Бюджета «Выручка факт страховые/основные» (kind) за месяц - что показать на листе ЗН. */
-export type BudgetRevenueFilter = { kind: BudgetRevenueKind; year: number; month: number };
+// yearTo/monthTo - последний месяц периода (столбец ИТОГО); без них - один месяц.
+export type BudgetRevenueFilter = {
+  kind: BudgetRevenueKind;
+  year: number;
+  month: number;
+  yearTo?: number;
+  monthTo?: number;
+};
 
 /** Fetches work orders page by page, newest to oldest (the backend already
  * orders by document_date desc - see work_order_query_service.
@@ -114,6 +121,10 @@ async function fetchAllWorkOrders(
       query.set("budget_revenue", params.budgetRevenue.kind);
       query.set("budget_year", String(params.budgetRevenue.year));
       query.set("budget_month", String(params.budgetRevenue.month));
+      if (params.budgetRevenue.yearTo && params.budgetRevenue.monthTo) {
+        query.set("budget_year_to", String(params.budgetRevenue.yearTo));
+        query.set("budget_month_to", String(params.budgetRevenue.monthTo));
+      }
     }
     if (params.workshopId) query.set("workshop_id", params.workshopId);
     if (params.includeRequests) query.set("include_requests", "true");

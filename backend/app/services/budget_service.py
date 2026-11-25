@@ -211,6 +211,8 @@ def fact_order_filters(
     kind: str,
     workshop_id: uuid.UUID | None = None,
     now: datetime | None = None,
+    year_to: int | None = None,
+    month_to: int | None = None,
 ) -> list:
     """Условия отбора заказ-нарядов ячейки «Выручка факт страховые» (kind="insurance") или
     «Выручка факт основные» (kind="main"), «Выручка общая» (kind="all") или «Без оплат»
@@ -239,6 +241,10 @@ def fact_order_filters(
     else:  # "all" (Выручка общая) and "unpaid" (Без оплат): both revenue rows together
         only_types = [*insurance_types, MAIN_REPAIR_TYPE]
     period_start, period_end = period_bounds(now, year=year, month=month)
+    if year_to is not None and month_to is not None:
+        # Столбец ИТОГО: период из нескольких месяцев подряд - от начала первого до конца
+        # последнего (те же границы, что у сумм отдельных месяцев).
+        period_end = period_bounds(now, year=year_to, month=month_to)[1]
     filters = _closed_revenue_filters(
         source_departments=source_departments,
         period_start=period_start,

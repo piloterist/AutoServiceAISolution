@@ -336,18 +336,30 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
   // фильтр: ровно те заказ-наряды, из которых сложилась сумма (отбор делает сервер теми же
   // условиями, что и сумма). Цех - workshop_id, «Вся компания» - без него. Закрыт в этом месяце
   // (closed_from/closed_to) заодно не даёт странице подставить запомненные фильтры.
-  const renderValue = (key: MetricKey, value: string, year: number, month: number, workshopId: string | null) => {
+  const renderValue = (
+    key: MetricKey,
+    value: string,
+    year: number,
+    month: number,
+    workshopId: string | null,
+    end?: YearMonth, // последний месяц периода (столбец ИТОГО); без него - один месяц
+  ) => {
     const kind = DRILL_KIND[key];
     if (!kind || Number(value) === 0) return formatRub(value);
     const mm = String(month).padStart(2, "0");
-    const lastDay = new Date(year, month, 0).getDate();
+    const last = end ?? { year, month };
+    const lastDay = new Date(last.year, last.month, 0).getDate();
     const params = new URLSearchParams({
       budget_revenue: kind,
       budget_year: String(year),
       budget_month: String(month),
       closed_from: `${year}-${mm}-01`,
-      closed_to: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
+      closed_to: `${last.year}-${String(last.month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
     });
+    if (end) {
+      params.set("budget_year_to", String(end.year));
+      params.set("budget_month_to", String(end.month));
+    }
     if (workshopId) params.set("workshop_id", workshopId);
     return (
       <Link href={`/work-orders?${params.toString()}`} className="budget-drill" title="Показать заказ-наряды">
@@ -531,7 +543,7 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
                             .filter(Boolean)
                             .join(" ")}
                         >
-                          {formatRub(value)}
+                          {renderValue(metric.key, value, from.year, from.month, ws.workshop_id, to)}
                         </td>
                       );
                     }),
@@ -550,7 +562,7 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
                             .filter(Boolean)
                             .join(" ")}
                         >
-                          {formatRub(value)}
+                          {renderValue(metric.key, value, from.year, from.month, null, to)}
                         </td>
                       );
                     })(),

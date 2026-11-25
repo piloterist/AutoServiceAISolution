@@ -1075,6 +1075,9 @@ export function WorkOrdersTable({
         <p className="chart-subtitle">
           Показаны заказ-наряды, формирующие «{BUDGET_REVENUE_TITLES[budgetRevenue.kind]}»
           за {MONTH_NAMES[budgetRevenue.month - 1]} {budgetRevenue.year}
+          {budgetRevenue.yearTo && budgetRevenue.monthTo
+            ? ` – ${MONTH_NAMES[budgetRevenue.monthTo - 1]} ${budgetRevenue.yearTo}`
+            : ""}
           {workshopId ? " по выбранному цеху" : ", вся компания"}
         </p>
       )}

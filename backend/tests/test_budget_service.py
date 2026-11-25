@@ -196,6 +196,39 @@ def test_revenue_unpaid_is_revenue_minus_paid_and_lists_underpaid_orders(
     assert ids("all") == {partly.id, unpaid.id, full.id}
 
 
+def test_fact_order_filters_cover_a_period_of_several_months(
+    db_session: Session, workshop: Workshop
+) -> None:
+    july = _work_order(
+        closed_date=datetime(2026, 7, 20, 10, 0, 0, tzinfo=UTC),
+        amount=Decimal("100"),
+        repair_type="Текущий",
+    )
+    aug = _work_order(
+        closed_date=datetime(2026, 8, 10, 10, 0, 0, tzinfo=UTC),
+        amount=Decimal("200"),
+        repair_type="Текущий",
+    )
+    sep = _work_order(
+        closed_date=datetime(2026, 9, 5, 10, 0, 0, tzinfo=UTC),
+        amount=Decimal("400"),
+        repair_type="Текущий",
+    )
+    db_session.add_all([july, aug, sep])
+    db_session.commit()
+
+    def ids(**kw) -> set:
+        filters = budget_service.fact_order_filters(
+            db_session, kind="main", workshop_id=workshop.id, now=NOW, **kw
+        )
+        return set(db_session.scalars(select(WorkOrder.id).where(*filters)))
+
+    assert ids(year=2026, month=8) == {aug.id}
+    # Столбец ИТОГО: август-сентябрь - ровно заказ-наряды, из которых сложилась сумма периода
+    assert ids(year=2026, month=8, year_to=2026, month_to=9) == {aug.id, sep.id}
+    assert ids(year=2026, month=7, year_to=2026, month_to=9) == {july.id, aug.id, sep.id}
+
+
 def test_set_budget_value_upserts_plan_revenue(db_session: Session, workshop: Workshop) -> None:
     budget_service.set_budget_value(
         db_session,

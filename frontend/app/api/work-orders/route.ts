@@ -15,7 +15,9 @@ function budgetRevenue(params: URLSearchParams) {
   const year = Number(params.get("budget_year"));
   const month = Number(params.get("budget_month"));
   if (!isBudgetRevenueKind(kind) || !year || !month) return undefined;
-  return { kind, year, month } as const;
+  const yearTo = Number(params.get("budget_year_to")) || undefined;
+  const monthTo = Number(params.get("budget_month_to")) || undefined;
+  return { kind, year, month, yearTo, monthTo } as const;
 }
 
 export async function GET(request: NextRequest) {
