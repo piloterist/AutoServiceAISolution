@@ -8,6 +8,7 @@
 // writes' audit logging) via X-Actor-* headers instead.
 import "server-only";
 
+import type { BudgetRevenueKind } from "@/lib/budget-revenue";
 import { API_URL } from "@/lib/config";
 
 export type WorkOrderListItem = {
@@ -505,7 +506,7 @@ export function getWorkOrders(
     onlyRevenue?: boolean;
     /** Только ЗН ячейки Бюджета «Выручка факт страховые/основные» (цех - workshopId, без него -
      * вся компания). */
-    budgetRevenue?: { kind: "insurance" | "main"; year: number; month: number };
+    budgetRevenue?: { kind: BudgetRevenueKind; year: number; month: number };
     workshopId?: string;
     /** Also list the repair requests (Заявки на ремонт) - the work orders list page. */
     includeRequests?: boolean;
@@ -1856,6 +1857,7 @@ export type BudgetMonthValues = {
   fact_revenue: string;
   expenses: string; // sum of the cost items entered on Финансы -> Расходы
   profit: string; // fact_revenue - expenses
+  revenue_unpaid: string; // fact_revenue - revenue_paid (Без оплат)
   revenue_paid: string; // paid part of the orders behind fact_revenue (Оплачено)
   payments: string; // received payments, by paid_at (Приход денег)
   money: string; // payments - expenses

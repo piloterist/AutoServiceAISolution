@@ -7,13 +7,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getWorkOrders } from "@/lib/backend-api";
+import { isBudgetRevenueKind } from "@/lib/budget-revenue";
 import { getCurrentUser } from "@/lib/session";
 
 function budgetRevenue(params: URLSearchParams) {
   const kind = params.get("budget_revenue");
   const year = Number(params.get("budget_year"));
   const month = Number(params.get("budget_month"));
-  if ((kind !== "insurance" && kind !== "main") || !year || !month) return undefined;
+  if (!isBudgetRevenueKind(kind) || !year || !month) return undefined;
   return { kind, year, month } as const;
 }
 

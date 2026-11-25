@@ -161,6 +161,41 @@ def test_revenue_paid_counts_only_orders_behind_revenue(
     assert september.payments == Decimal("0")  # no payment events: a different measure
 
 
+def test_revenue_unpaid_is_revenue_minus_paid_and_lists_underpaid_orders(
+    db_session: Session, workshop: Workshop
+) -> None:
+    closed = datetime(2026, 9, 15, 10, 0, 0, tzinfo=UTC)
+    partly = _work_order(
+        closed_date=closed,
+        amount=Decimal("5000"),
+        paid_amount=Decimal("3000"),
+        repair_type="Текущий",
+    )
+    unpaid = _work_order(closed_date=closed, amount=Decimal("2000"), repair_type="Текущий")
+    full = _work_order(
+        closed_date=closed,
+        amount=Decimal("1000"),
+        paid_amount=Decimal("1000"),
+        repair_type="Текущий",
+    )
+    db_session.add_all([partly, unpaid, full])
+    db_session.commit()
+
+    september = budget_service.get_budget_year(db_session, 2026, now=NOW)[0].months[8]
+    assert september.fact_revenue == Decimal("8000")
+    assert september.revenue_paid == Decimal("4000")
+    assert september.revenue_unpaid == Decimal("4000")  # 8000 - 4000
+
+    def ids(kind: str) -> set:
+        filters = budget_service.fact_order_filters(
+            db_session, year=2026, month=9, kind=kind, workshop_id=workshop.id, now=NOW
+        )
+        return set(db_session.scalars(select(WorkOrder.id).where(*filters)))
+
+    assert ids("unpaid") == {partly.id, unpaid.id}
+    assert ids("all") == {partly.id, unpaid.id, full.id}
+
+
 def test_set_budget_value_upserts_plan_revenue(db_session: Session, workshop: Workshop) -> None:
     budget_service.set_budget_value(
         db_session,

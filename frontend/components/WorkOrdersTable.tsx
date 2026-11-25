@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DateInput } from "@/components/DateInput";
 import { MultiSelectDropdown } from "@/components/MultiSelectDropdown";
 import type { WorkOrderListItem } from "@/lib/backend-api";
+import { BUDGET_REVENUE_TITLES } from "@/lib/budget-revenue";
 import type { ConversionWorkOrdersKind } from "@/lib/conversion-cohorts";
 import {
   type BudgetRevenueFilter,
@@ -1072,7 +1073,7 @@ export function WorkOrdersTable({
       )}
       {budgetRevenue && (
         <p className="chart-subtitle">
-          Показаны заказ-наряды, формирующие «Выручка факт {budgetRevenue.kind === "insurance" ? "страховые" : "основные"}»
+          Показаны заказ-наряды, формирующие «{BUDGET_REVENUE_TITLES[budgetRevenue.kind]}»
           за {MONTH_NAMES[budgetRevenue.month - 1]} {budgetRevenue.year}
           {workshopId ? " по выбранному цеху" : ", вся компания"}
         </p>

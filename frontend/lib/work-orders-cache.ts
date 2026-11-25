@@ -5,6 +5,7 @@
 // by the time the operator navigates to /work-orders). Not imported by any
 // Server Component - both callers are "use client".
 import type { WorkOrderListItem } from "@/lib/backend-api";
+import type { BudgetRevenueKind } from "@/lib/budget-revenue";
 
 // Bump this suffix whenever WorkOrderListItem gains a field a cached row
 // might be missing - product incident, 2026-10-20: a stale v1 cache (any
@@ -78,7 +79,7 @@ export function getCachedWorkOrders(): CacheEntry | null {
 }
 
 /** Ячейка Бюджета «Выручка факт страховые/основные» (kind) за месяц - что показать на листе ЗН. */
-export type BudgetRevenueFilter = { kind: "insurance" | "main"; year: number; month: number };
+export type BudgetRevenueFilter = { kind: BudgetRevenueKind; year: number; month: number };
 
 /** Fetches work orders page by page, newest to oldest (the backend already
  * orders by document_date desc - see work_order_query_service.

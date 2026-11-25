@@ -64,6 +64,9 @@ class BudgetMonth:
     fact_revenue: Decimal
     expenses: Decimal
     profit: Decimal
+    # Выручка общая = страховые + основные (product ask, 2026-11-25) is `fact_revenue`;
+    # `revenue_unpaid` (Без оплат) = fact_revenue - revenue_paid.
+    revenue_unpaid: Decimal
     # Оплачено (product ask, 2026-11-25): how much of the work orders that make up
     # fact_revenue is paid (their WorkOrder.paid_amount, the current snapshot) - unlike
     # `payments`, which is any money received in the month, by payment date.
@@ -159,6 +162,7 @@ def get_budget_year(
                     expenses=expenses,
                     profit=fact_revenue - expenses,
                     revenue_paid=Decimal(revenue_paid),
+                    revenue_unpaid=fact_revenue - Decimal(revenue_paid),
                     payments=payments,
                     money=payments - expenses,
                 )
@@ -209,10 +213,12 @@ def fact_order_filters(
     now: datetime | None = None,
 ) -> list:
     """Условия отбора заказ-нарядов ячейки «Выручка факт страховые» (kind="insurance") или
-    «Выручка факт основные» (kind="main") за месяц: те же фильтры, что у суммы в get_budget_year
-    (_closed_revenue_filters). workshop_id не задан - «Вся компания»: отделы всех цехов вместе,
-    как и сумма в таблице (заказ-наряды без привязки к цеху в неё не входят)."""
-    if kind not in ("insurance", "main"):
+    «Выручка факт основные» (kind="main"), «Выручка общая» (kind="all") или «Без оплат»
+    (kind="unpaid": неоплаченные полностью заказ-наряды выручки) за месяц: те же фильтры, что
+    у суммы в get_budget_year (_closed_revenue_filters). workshop_id не задан - «Вся компания»:
+    отделы всех цехов вместе, как и сумма в таблице (заказ-наряды без привязки к цеху в неё не
+    входят)."""
+    if kind not in ("insurance", "main", "all", "unpaid"):
         raise ValueError(f"Unknown kind: {kind}")
     now = now or datetime.now(UTC)
     app_settings = get_app_settings(db)
@@ -223,12 +229,15 @@ def fact_order_filters(
         for workshop_ in db.scalars(select(Workshop)):
             source_departments.extend(_mapped_source_departments(db, workshop_id=workshop_.id))
         source_departments = sorted(set(source_departments))
+    insurance_types = (
+        [app_settings.insurance_repair_type] if app_settings.insurance_repair_type else []
+    )
     if kind == "insurance":
-        only_types = (
-            [app_settings.insurance_repair_type] if app_settings.insurance_repair_type else []
-        )
-    else:
+        only_types = insurance_types
+    elif kind == "main":
         only_types = [MAIN_REPAIR_TYPE]
+    else:  # "all" (Выручка общая) and "unpaid" (Без оплат): both revenue rows together
+        only_types = [*insurance_types, MAIN_REPAIR_TYPE]
     period_start, period_end = period_bounds(now, year=year, month=month)
     filters = _closed_revenue_filters(
         source_departments=source_departments,
@@ -239,4 +248,8 @@ def fact_order_filters(
         excluded_repair_types=revenue_excluded_repair_types(app_settings),
         only_repair_types=only_types,
     )
+    if kind == "unpaid":
+        # Без оплат: orders of the revenue not paid in full - their remaining debts add up
+        # to fact_revenue - revenue_paid (an overpaid order is the only way they can differ).
+        filters.append(func.coalesce(WorkOrder.paid_amount, 0) < WorkOrder.amount)
     return filters

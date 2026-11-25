@@ -1,4 +1,5 @@
 import { WorkOrdersTable } from "@/components/WorkOrdersTable";
+import { isBudgetRevenueKind } from "@/lib/budget-revenue";
 
 // Data loads client-side now (see WorkOrdersTable and lib/work-orders-cache.ts,
 // which lets it render instantly from the dashboard's prefetch instead of
@@ -83,7 +84,7 @@ export default async function WorkOrdersPage({
         onlyReceivables={params.only_receivables === "1"}
         onlyRevenue={params.only_revenue === "1"}
         budgetRevenue={
-          (params.budget_revenue === "insurance" || params.budget_revenue === "main") &&
+          isBudgetRevenueKind(params.budget_revenue) &&
           Number(params.budget_year) &&
           Number(params.budget_month)
             ? {

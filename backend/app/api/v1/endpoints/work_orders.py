@@ -106,7 +106,7 @@ def get_work_orders(
         default=False,
         description="Restrict to the work orders that make up the dashboard's Выручка figure",
     ),
-    budget_revenue: Literal["insurance", "main"] | None = Query(
+    budget_revenue: Literal["insurance", "main", "all", "unpaid"] | None = Query(
         default=None,
         description="Только заказ-наряды ячейки Бюджета «Выручка факт страховые/основные» "
         "за budget_year/budget_month (цех - workshop_id, без него - вся компания)",

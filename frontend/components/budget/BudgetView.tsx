@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import type { BudgetMonthValues, BudgetYear } from "@/lib/backend-api";
+import type { BudgetRevenueKind } from "@/lib/budget-revenue";
 
 const MONTH_LABELS = [
   "Янв",
@@ -37,6 +38,7 @@ const MONTH_NAMES = [
 
 type MetricKey =
   | "plan_revenue"
+  | "fact_revenue"
   | "fact_revenue_insurance"
   | "fact_revenue_insurance_labor"
   | "fact_revenue_insurance_parts"
@@ -46,6 +48,7 @@ type MetricKey =
   | "expenses"
   | "profit"
   | "revenue_paid"
+  | "revenue_unpaid"
   | "payments"
   | "money";
 type EditableKey = "plan_revenue";
@@ -54,6 +57,7 @@ type EditableKey = "plan_revenue";
 // the fact revenue rows are made up of their Работы and Запчасти.
 const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2; parent?: boolean }[] = [
   { key: "plan_revenue", label: "Выручка план", editable: true },
+  { key: "fact_revenue", label: "Выручка общая", editable: false, parent: true },
   { key: "fact_revenue_insurance", label: "Выручка факт страховые", editable: false, parent: true },
   { key: "fact_revenue_insurance_labor", label: "Работы", editable: false, level: 1 },
   { key: "fact_revenue_insurance_parts", label: "Запчасти", editable: false, level: 1 },
@@ -64,12 +68,15 @@ const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2
   { key: "expenses", label: "Расходы", editable: false },
   { key: "profit", label: "Прибыль", editable: false },
   { key: "revenue_paid", label: "Оплачено", editable: false },
+  { key: "revenue_unpaid", label: "Без оплат", editable: false },
   { key: "payments", label: "Приход денег", editable: false },
   { key: "money", label: "Деньги", editable: false },
 ];
 
 // Строки, значения которых ведут на лист «Заказ наряды» с готовым фильтром (клик по ячейке).
-const DRILL_KIND: Partial<Record<MetricKey, "insurance" | "main">> = {
+const DRILL_KIND: Partial<Record<MetricKey, BudgetRevenueKind>> = {
+  fact_revenue: "all",
+  revenue_unpaid: "unpaid",
   fact_revenue_insurance: "insurance",
   fact_revenue_main: "main",
 };
