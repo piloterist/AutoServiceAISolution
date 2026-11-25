@@ -20,6 +20,21 @@ const MONTH_LABELS = [
   "Дек",
 ];
 
+const MONTH_NAMES = [
+  "Январь",
+  "Февраль",
+  "Март",
+  "Апрель",
+  "Май",
+  "Июнь",
+  "Июль",
+  "Август",
+  "Сентябрь",
+  "Октябрь",
+  "Ноябрь",
+  "Декабрь",
+];
+
 type MetricKey =
   | "plan_revenue"
   | "fact_revenue_insurance"
@@ -74,16 +89,16 @@ function recompute(month: BudgetMonthValues): BudgetMonthValues {
   return { ...month, profit: String(fact - expenses), money: String(payments - expenses) };
 }
 
-// "Вся компания": every metric summed over the workshops of the month.
-function companyMonth(workshops: BudgetYear["workshops"], monthIdx: number): BudgetMonthValues {
-  const total = { ...workshops[0].months[monthIdx] } as Record<string, string | number>;
-  for (const metric of METRICS) {
-    total[metric.key] = String(
-      workshops.reduce((sum, ws) => sum + Number(ws.months[monthIdx][metric.key]), 0),
-    );
-  }
-  return total as unknown as BudgetMonthValues;
+// Сумма значений показателя по набору месяцев (по цехам одного месяца - "Вся компания",
+// по месяцам периода - столбец ИТОГО). Все показатели аддитивны: прибыль и деньги тоже
+// складываются (сумма разностей = разность сумм).
+function sumMetric(months: BudgetMonthValues[], key: MetricKey): string {
+  return String(months.reduce((sum, m) => sum + Number(m[key]), 0));
 }
+
+type YearMonth = { year: number; month: number };
+
+const YEAR_OPTIONS_BACK = 4;
 
 // Grouped with spaces while not focused (per product feedback, 2026-10-03:
 // a plain "5000000" wasn't readable) - plain digits while editing, since a
@@ -134,37 +149,63 @@ export function EditableCell({
  * the months across with the workshops side by side inside each month, large
  * cells, the item names pinned on the left, one scrollbar below (the table has
  * few rows), a "Вся компания" column closing each month and the previous month
- * first on screen. */
+ * first on screen.
+ *
+ * Период (product ask, 2026-11-25): the months shown are chosen "с месяц год по месяц год"
+ * (may span several years - each year is fetched once and kept), and an ИТОГО group closes
+ * the table: the same workshops and "Вся компания", every row summed over the chosen period. */
 export function BudgetView({ initialData }: { initialData: BudgetYear }) {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
-  const [year, setYear] = useState(initialData.year);
-  const [data, setData] = useState(initialData);
+  const [from, setFrom] = useState<YearMonth>({ year: initialData.year, month: 1 });
+  const [to, setTo] = useState<YearMonth>({ year: initialData.year, month: 12 });
+  const [dataByYear, setDataByYear] = useState<Record<number, BudgetYear>>({
+    [initialData.year]: initialData,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isFirstRender = useRef(true);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousMonthHeaderRef = useRef<HTMLTableCellElement | null>(null);
 
+  // Months of the chosen period, oldest first.
+  const cols: YearMonth[] = [];
+  for (let y = from.year; y <= to.year; y++) {
+    const first = y === from.year ? from.month : 1;
+    const last = y === to.year ? to.month : 12;
+    for (let m = first; m <= last; m++) cols.push({ year: y, month: m });
+  }
+  const years = Array.from(new Set(cols.map((c) => c.year)));
+  const multiYear = years.length > 1;
+  const missingYears = years.filter((y) => !dataByYear[y]);
+  const ready = missingYears.length === 0;
+  const rangeKey = `${from.year}-${from.month}:${to.year}-${to.month}`;
+
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
+    if (missingYears.length === 0) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetch(`/api/budget?year=${year}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json() as Promise<BudgetYear>;
-      })
+    Promise.all(
+      missingYears.map((y) =>
+        fetch(`/api/budget?year=${y}`).then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json() as Promise<BudgetYear>;
+        }),
+      ),
+    )
       .then((fresh) => {
-        if (!cancelled) setData(fresh);
+        if (cancelled) return;
+        setDataByYear((prev) => {
+          const next = { ...prev };
+          fresh.forEach((d, i) => {
+            next[missingYears[i]] = d;
+          });
+          return next;
+        });
       })
       .catch(() => {
-        if (!cancelled) setError("Не удалось загрузить данные за этот год");
+        if (!cancelled) setError("Не удалось загрузить данные за выбранный период");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -172,34 +213,45 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
     return () => {
       cancelled = true;
     };
-  }, [year]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missingYears.join(",")]);
 
-  // The month BEFORE the current one is the first on screen, right after the
-  // pinned "Показатель" column (so the closed month is in view); another year
-  // starts at January. Runs when the shown year changes, not on every edit.
-  const shownYear = data.year;
+  // The month BEFORE the current one is the first on screen, right after the pinned
+  // "Показатель" column (so the closed month is in view) when it is in the period; otherwise
+  // the first month. Runs when the period changes, not on every edit.
   useEffect(() => {
     const box = scrollRef.current;
-    if (!box) return;
-    const target = shownYear === currentYear ? previousMonthHeaderRef.current : null;
+    if (!box || !ready) return;
+    const target = previousMonthHeaderRef.current;
     const firstColumn = box.querySelector<HTMLElement>(".expenses-th-item");
     box.scrollLeft = target ? target.offsetLeft - (firstColumn?.offsetWidth ?? 0) : 0;
-  }, [shownYear, currentYear]);
+  }, [rangeKey, ready]);
 
-  const handleCommit = (workshopId: string, month: number, field: EditableKey, value: string) => {
-    setData((prev) => ({
-      ...prev,
-      workshops: prev.workshops.map((ws) =>
-        ws.workshop_id !== workshopId
-          ? ws
-          : {
-              ...ws,
-              months: ws.months.map((m) =>
-                m.month !== month ? m : recompute({ ...m, [field]: value }),
-              ),
-            },
-      ),
-    }));
+  const workshops = (dataByYear[years[0]] ?? initialData).workshops;
+  const monthOf = (workshopId: string, col: YearMonth): BudgetMonthValues | undefined =>
+    dataByYear[col.year]?.workshops.find((w) => w.workshop_id === workshopId)?.months[col.month - 1];
+
+  const handleCommit = (workshopId: string, year: number, month: number, field: EditableKey, value: string) => {
+    setDataByYear((prev) => {
+      const current = prev[year];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [year]: {
+          ...current,
+          workshops: current.workshops.map((ws) =>
+            ws.workshop_id !== workshopId
+              ? ws
+              : {
+                  ...ws,
+                  months: ws.months.map((m) =>
+                    m.month !== month ? m : recompute({ ...m, [field]: value }),
+                  ),
+                },
+          ),
+        },
+      };
+    });
 
     fetch("/api/budget", {
       method: "PUT",
@@ -208,11 +260,63 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
     }).catch(() => setError("Не удалось сохранить значение"));
   };
 
-  const cellClass = (month: number, workshopIndex: number, extra = "") =>
+  // Keeps from <= to: moving one edge past the other drags the other along.
+  const setFromChecked = (next: YearMonth) => {
+    setFrom(next);
+    if (next.year * 12 + next.month > to.year * 12 + to.month) setTo(next);
+  };
+  const setToChecked = (next: YearMonth) => {
+    setTo(next);
+    if (next.year * 12 + next.month < from.year * 12 + from.month) setFrom(next);
+  };
+  const shiftYears = (delta: number) => {
+    setFrom((f) => ({ ...f, year: f.year + delta }));
+    setTo((t) => ({ ...t, year: t.year + delta }));
+  };
+  const isCurrentYearWhole =
+    from.year === currentYear && from.month === 1 && to.year === currentYear && to.month === 12;
+
+  const yearOptions = Array.from({ length: YEAR_OPTIONS_BACK + 2 }, (_, i) => currentYear - YEAR_OPTIONS_BACK + i);
+  for (const y of [from.year, to.year]) if (!yearOptions.includes(y)) yearOptions.push(y);
+  yearOptions.sort((a, b) => a - b);
+
+  const periodSelect = (label: string, value: YearMonth, onChange: (v: YearMonth) => void) => (
+    <span className="budget-period">
+      <span className="budget-period-label">{label}</span>
+      <select
+        className="budget-select"
+        aria-label={`${label}: месяц`}
+        value={value.month}
+        onChange={(e) => onChange({ ...value, month: Number(e.target.value) })}
+      >
+        {MONTH_NAMES.map((name, i) => (
+          <option key={name} value={i + 1}>
+            {name}
+          </option>
+        ))}
+      </select>
+      <select
+        className="budget-select"
+        aria-label={`${label}: год`}
+        value={value.year}
+        onChange={(e) => onChange({ ...value, year: Number(e.target.value) })}
+      >
+        {yearOptions.map((y) => (
+          <option key={y} value={y}>
+            {y}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+
+  const monthParity = (idx: number) => ((idx + 1) % 2 === 0 ? "expenses-month-even" : "expenses-month-odd");
+
+  const cellClass = (col: YearMonth, idx: number, workshopIndex: number, extra = "") =>
     [
       "budget-td-month",
-      year === currentYear && month === currentMonth ? "budget-td-month--current" : "",
-      month % 2 === 0 ? "expenses-month-even" : "expenses-month-odd",
+      col.year === currentYear && col.month === currentMonth ? "budget-td-month--current" : "",
+      monthParity(idx),
       workshopIndex === 0 ? "expenses-month-start" : "",
       extra,
     ]
@@ -223,7 +327,7 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
   // фильтр: ровно те заказ-наряды, из которых сложилась сумма (отбор делает сервер теми же
   // условиями, что и сумма). Цех - workshop_id, «Вся компания» - без него. Закрыт в этом месяце
   // (closed_from/closed_to) заодно не даёт странице подставить запомненные фильтры.
-  const renderValue = (key: MetricKey, value: string, month: number, workshopId: string | null) => {
+  const renderValue = (key: MetricKey, value: string, year: number, month: number, workshopId: string | null) => {
     const kind = DRILL_KIND[key];
     if (!kind || Number(value) === 0) return formatRub(value);
     const mm = String(month).padStart(2, "0");
@@ -243,138 +347,211 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
     );
   };
 
+  const prevMonthCol: YearMonth =
+    currentMonth > 1 ? { year: currentYear, month: currentMonth - 1 } : { year: currentYear, month: 1 };
+  const colLabel = (col: YearMonth) =>
+    multiYear ? `${MONTH_LABELS[col.month - 1]} ${col.year}` : MONTH_LABELS[col.month - 1];
+
+  // ИТОГО: per workshop (summed over the period's months) and the whole company.
+  const periodMonthsOf = (workshopId: string): BudgetMonthValues[] =>
+    cols.map((c) => monthOf(workshopId, c)).filter((m): m is BudgetMonthValues => m !== undefined);
+  const allMonths = workshops.flatMap((ws) => periodMonthsOf(ws.workshop_id));
+  const totalIdx = cols.length;
+
   return (
     <div className="card budget-card">
       <div className="budget-toolbar">
-        <button type="button" className="admin-btn" onClick={() => setYear((y) => y - 1)} aria-label="Предыдущий год">
+        <button type="button" className="admin-btn" onClick={() => shiftYears(-1)} aria-label="Сдвинуть период на год назад">
           ←
         </button>
-        <span className="budget-year">{year}</span>
-        <button type="button" className="admin-btn" onClick={() => setYear((y) => y + 1)} aria-label="Следующий год">
+        {periodSelect("С", from, setFromChecked)}
+        {periodSelect("По", to, setToChecked)}
+        <button type="button" className="admin-btn" onClick={() => shiftYears(1)} aria-label="Сдвинуть период на год вперёд">
           →
         </button>
         <button
           type="button"
           className="admin-btn"
-          disabled={year === currentYear}
-          onClick={() => setYear(currentYear)}
+          disabled={isCurrentYearWhole}
+          onClick={() => {
+            setFrom({ year: currentYear, month: 1 });
+            setTo({ year: currentYear, month: 12 });
+          }}
         >
-          Текущий
+          Текущий год
         </button>
         {loading && <span className="admin-hint">Загрузка…</span>}
       </div>
 
       {error && <p className="admin-form-error">{error}</p>}
 
-      <div className="budget-scroll" ref={scrollRef}>
-        <table className="budget-table expenses-table">
-          <thead>
-            <tr>
-              <th className="expenses-th-item" rowSpan={2}>
-                Показатель
-              </th>
-              {MONTH_LABELS.map((label, idx) => {
-                const isCurrent = year === currentYear && idx + 1 === currentMonth;
-                // January has no month before it - start at the first column.
-                const isScrollTarget = year === currentYear && idx + 1 === Math.max(currentMonth - 1, 1);
-                return (
-                  <th
-                    key={label}
-                    colSpan={data.workshops.length + 1}
-                    ref={isScrollTarget ? previousMonthHeaderRef : undefined}
-                    className={[
-                      "budget-th-month expenses-th-month expenses-month-start",
-                      isCurrent ? "budget-th-month--current" : "",
-                      (idx + 1) % 2 === 0 ? "expenses-month-even" : "expenses-month-odd",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                  >
-                    {label}
-                  </th>
-                );
-              })}
-            </tr>
-            <tr>
-              {MONTH_LABELS.flatMap((label, monthIdx) => [
-                ...data.workshops.map((ws, wsIdx) => (
-                  <th
-                    key={`${label}-${ws.workshop_id}`}
-                    className={[
-                      "expenses-th-workshop",
-                      wsIdx === 0 ? "expenses-month-start" : "",
-                      (monthIdx + 1) % 2 === 0 ? "expenses-month-even" : "expenses-month-odd",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    title={ws.workshop_label}
-                  >
-                    {ws.workshop_label.replace(" — ", "\n")}
-                  </th>
-                )),
+      {ready && (
+        <div className="budget-scroll" ref={scrollRef}>
+          <table className="budget-table expenses-table">
+            <thead>
+              <tr>
+                <th className="expenses-th-item" rowSpan={2}>
+                  Показатель
+                </th>
+                {cols.map((col, idx) => {
+                  const isCurrent = col.year === currentYear && col.month === currentMonth;
+                  const isScrollTarget = col.year === prevMonthCol.year && col.month === prevMonthCol.month;
+                  return (
+                    <th
+                      key={`${col.year}-${col.month}`}
+                      colSpan={workshops.length + 1}
+                      ref={isScrollTarget ? previousMonthHeaderRef : undefined}
+                      className={[
+                        "budget-th-month expenses-th-month expenses-month-start",
+                        isCurrent ? "budget-th-month--current" : "",
+                        monthParity(idx),
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                    >
+                      {colLabel(col)}
+                    </th>
+                  );
+                })}
                 <th
-                  key={`${label}-company`}
-                  className={[
-                    "expenses-th-workshop budget-th-company",
-                    (monthIdx + 1) % 2 === 0 ? "expenses-month-even" : "expenses-month-odd",
-                  ].join(" ")}
+                  colSpan={workshops.length + 1}
+                  className={["budget-th-month expenses-th-month expenses-month-start budget-th-total", monthParity(totalIdx)].join(" ")}
                 >
-                  Вся компания
-                </th>,
-              ])}
-            </tr>
-          </thead>
-          <tbody>
-            {METRICS.map((metric) => (
-              <tr key={metric.key} className={metric.level ? "budget-row--sub" : metric.parent ? "budget-row--parent" : undefined}>
-                <td className="expenses-td-item">{metric.level ? `└ ${metric.label}` : metric.label}</td>
-                {MONTH_LABELS.flatMap((label, monthIdx) => [
-                  ...data.workshops.map((ws, wsIdx) => {
-                    const m = ws.months[monthIdx];
-                    const value = m[metric.key];
-                    const negative =
-                      (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
-                    return (
-                      <td
-                        key={`${label}-${ws.workshop_id}`}
-                        className={cellClass(monthIdx + 1, wsIdx, negative ? "budget-td-month--negative" : "")}
+                  ИТОГО
+                  <span className="budget-total-range">
+                    {" "}
+                    {MONTH_LABELS[from.month - 1]} {from.year} – {MONTH_LABELS[to.month - 1]} {to.year}
+                  </span>
+                </th>
+              </tr>
+              <tr>
+                {[...cols, null].flatMap((col, colIdx) => {
+                  const keyBase = col ? `${col.year}-${col.month}` : "total";
+                  return [
+                    ...workshops.map((ws, wsIdx) => (
+                      <th
+                        key={`${keyBase}-${ws.workshop_id}`}
+                        className={[
+                          "expenses-th-workshop",
+                          wsIdx === 0 ? "expenses-month-start" : "",
+                          monthParity(colIdx),
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        title={ws.workshop_label}
                       >
-                        {metric.editable ? (
-                          <EditableCell
-                            value={value}
-                            onCommit={(next) =>
-                              handleCommit(ws.workshop_id, m.month, metric.key as EditableKey, next)
-                            }
-                          />
-                        ) : (
-                          renderValue(metric.key, value, m.month, ws.workshop_id)
-                        )}
-                      </td>
+                        {ws.workshop_label.replace(" — ", "\n")}
+                      </th>
+                    )),
+                    <th
+                      key={`${keyBase}-company`}
+                      className={["expenses-th-workshop budget-th-company", monthParity(colIdx)].join(" ")}
+                    >
+                      Вся компания
+                    </th>,
+                  ];
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {METRICS.map((metric) => (
+                <tr key={metric.key} className={metric.level ? "budget-row--sub" : metric.parent ? "budget-row--parent" : undefined}>
+                  <td className="expenses-td-item">{metric.level ? `└ ${metric.label}` : metric.label}</td>
+                  {cols.flatMap((col, colIdx) => {
+                    const keyBase = `${col.year}-${col.month}`;
+                    const cells = workshops.map((ws, wsIdx) => {
+                      const m = monthOf(ws.workshop_id, col);
+                      const value = m ? m[metric.key] : "0";
+                      const negative =
+                        (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
+                      return (
+                        <td
+                          key={`${keyBase}-${ws.workshop_id}`}
+                          className={cellClass(col, colIdx, wsIdx, negative ? "budget-td-month--negative" : "")}
+                        >
+                          {metric.editable ? (
+                            <EditableCell
+                              value={value}
+                              onCommit={(next) =>
+                                handleCommit(ws.workshop_id, col.year, col.month, metric.key as EditableKey, next)
+                              }
+                            />
+                          ) : (
+                            renderValue(metric.key, value, col.year, col.month, ws.workshop_id)
+                          )}
+                        </td>
+                      );
+                    });
+                    const companyValue = sumMetric(
+                      workshops
+                        .map((ws) => monthOf(ws.workshop_id, col))
+                        .filter((m): m is BudgetMonthValues => m !== undefined),
+                      metric.key,
                     );
-                  }),
-                  (() => {
-                    const value = companyMonth(data.workshops, monthIdx)[metric.key];
                     const negative =
-                      (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
-                    return (
+                      (metric.key === "profit" || metric.key === "money") && Number(companyValue) < 0;
+                    return [
+                      ...cells,
                       <td
-                        key={`${label}-company`}
+                        key={`${keyBase}-company`}
                         className={cellClass(
-                          monthIdx + 1,
+                          col,
+                          colIdx,
                           1,
                           ["budget-td-company", negative ? "budget-td-month--negative" : ""].join(" "),
                         )}
                       >
-                        {renderValue(metric.key, value, monthIdx + 1, null)}
-                      </td>
-                    );
-                  })(),
-                ])}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                        {renderValue(metric.key, companyValue, col.year, col.month, null)}
+                      </td>,
+                    ];
+                  })}
+                  {[
+                    ...workshops.map((ws, wsIdx) => {
+                      const value = sumMetric(periodMonthsOf(ws.workshop_id), metric.key);
+                      const negative =
+                        (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
+                      return (
+                        <td
+                          key={`total-${ws.workshop_id}`}
+                          className={[
+                            "budget-td-month budget-td-total",
+                            monthParity(totalIdx),
+                            wsIdx === 0 ? "expenses-month-start" : "",
+                            negative ? "budget-td-month--negative" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          {formatRub(value)}
+                        </td>
+                      );
+                    }),
+                    (() => {
+                      const value = sumMetric(allMonths, metric.key);
+                      const negative =
+                        (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
+                      return (
+                        <td
+                          key="total-company"
+                          className={[
+                            "budget-td-month budget-td-total budget-td-company",
+                            monthParity(totalIdx),
+                            negative ? "budget-td-month--negative" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
+                          {formatRub(value)}
+                        </td>
+                      );
+                    })(),
+                  ]}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

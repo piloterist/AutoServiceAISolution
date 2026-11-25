@@ -8592,3 +8592,57 @@ a.task-detail-navbtn:hover {
     justify-content: flex-start;
   }
 }
+
+/* Бюджеты: выбор периода и итоговая группа столбцов */
+.budget-toolbar {
+  flex-wrap: wrap;
+}
+
+.budget-period {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.budget-period-label {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.budget-td-total {
+  font-weight: 600;
+}
+
+/* Выбор месяца и года: скруглённые поля со своей стрелкой, в тон остальному интерфейсу. */
+.budget-select {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  font-size: 0.92rem;
+  color: var(--text);
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%238b95a5' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.42rem 2rem 0.42rem 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.budget-select:hover {
+  border-color: var(--text-muted);
+}
+
+.budget-select:focus-visible {
+  outline: none;
+  border-color: var(--accent, #4f8cff);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #4f8cff) 22%, transparent);
+}
+
+.budget-total-range {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
