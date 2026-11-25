@@ -1856,7 +1856,8 @@ export type BudgetMonthValues = {
   fact_revenue: string;
   expenses: string; // sum of the cost items entered on Финансы -> Расходы
   profit: string; // fact_revenue - expenses
-  payments: string; // received payments, by paid_at
+  revenue_paid: string; // paid part of the orders behind fact_revenue (Оплачено)
+  payments: string; // received payments, by paid_at (Приход денег)
   money: string; // payments - expenses
 };
 

@@ -18,12 +18,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models.budget_entry import BudgetEntry
 from app.models.department import Department
+from app.models.work_order import WorkOrder
 from app.models.workshop import Workshop
 from app.services import finance_service
 from app.services.cockpit_service import (
@@ -63,6 +64,10 @@ class BudgetMonth:
     fact_revenue: Decimal
     expenses: Decimal
     profit: Decimal
+    # Оплачено (product ask, 2026-11-25): how much of the work orders that make up
+    # fact_revenue is paid (their WorkOrder.paid_amount, the current snapshot) - unlike
+    # `payments`, which is any money received in the month, by payment date.
+    revenue_paid: Decimal
     payments: Decimal
     money: Decimal
 
@@ -123,6 +128,13 @@ def get_budget_year(
             insurance_parts = _closed_revenue_lines(db, kind="parts", **insurance_kwargs)
             main_labor = _closed_revenue_lines(db, kind="labor", **main_kwargs)
             main_parts = _closed_revenue_lines(db, kind="parts", **main_kwargs)
+            revenue_paid = db.execute(
+                select(func.coalesce(func.sum(WorkOrder.paid_amount), 0)).where(
+                    *_closed_revenue_filters(
+                        **common, only_repair_types=[*insurance_types, MAIN_REPAIR_TYPE]
+                    )
+                )
+            ).scalar_one()
             payments = _payments(
                 db,
                 source_departments=source_departments,
@@ -146,6 +158,7 @@ def get_budget_year(
                     fact_revenue=fact_revenue,
                     expenses=expenses,
                     profit=fact_revenue - expenses,
+                    revenue_paid=Decimal(revenue_paid),
                     payments=payments,
                     money=payments - expenses,
                 )

@@ -45,6 +45,7 @@ type MetricKey =
   | "fact_revenue_main_parts"
   | "expenses"
   | "profit"
+  | "revenue_paid"
   | "payments"
   | "money";
 type EditableKey = "plan_revenue";
@@ -62,7 +63,8 @@ const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2
   // Not typed in here any more: the sum of the cost items on Финансы -> Расходы.
   { key: "expenses", label: "Расходы", editable: false },
   { key: "profit", label: "Прибыль", editable: false },
-  { key: "payments", label: "Оплаты", editable: false },
+  { key: "revenue_paid", label: "Оплачено", editable: false },
+  { key: "payments", label: "Приход денег", editable: false },
   { key: "money", label: "Деньги", editable: false },
 ];
 

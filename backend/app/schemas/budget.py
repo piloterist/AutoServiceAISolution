@@ -20,6 +20,7 @@ class BudgetMonthOut(BaseModel):
     fact_revenue: Decimal
     expenses: Decimal
     profit: Decimal
+    revenue_paid: Decimal  # paid part of the orders behind fact_revenue (Оплачено)
     payments: Decimal
     money: Decimal
 

@@ -130,6 +130,37 @@ def test_payments_count_in_their_own_paid_month(db_session: Session, workshop: W
     assert september.money == Decimal("300")  # no expenses entered yet
 
 
+def test_revenue_paid_counts_only_orders_behind_revenue(
+    db_session: Session, workshop: Workshop
+) -> None:
+    closed = datetime(2026, 9, 15, 10, 0, 0, tzinfo=UTC)
+    db_session.add_all(
+        [
+            _work_order(
+                closed_date=closed,
+                amount=Decimal("5000"),
+                paid_amount=Decimal("3000"),
+                repair_type="Текущий",
+            ),
+            # warranty is not revenue - its payment must not count either
+            _work_order(
+                closed_date=closed,
+                amount=Decimal("700"),
+                paid_amount=Decimal("700"),
+                repair_type="Гарантийный",
+            ),
+            # not closed in September - no revenue, no "Оплачено"
+            _work_order(amount=Decimal("900"), paid_amount=Decimal("900"), repair_type="Текущий"),
+        ]
+    )
+    db_session.commit()
+
+    september = budget_service.get_budget_year(db_session, 2026, now=NOW)[0].months[8]
+    assert september.fact_revenue == Decimal("5000")
+    assert september.revenue_paid == Decimal("3000")
+    assert september.payments == Decimal("0")  # no payment events: a different measure
+
+
 def test_set_budget_value_upserts_plan_revenue(db_session: Session, workshop: Workshop) -> None:
     budget_service.set_budget_value(
         db_session,
