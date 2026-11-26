@@ -80,6 +80,8 @@ const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2
   { key: "money", label: "Деньги", editable: false, hidden: true },
 ];
 
+const HIDDEN_WORKSHOPS_KEY = "budget-hidden-workshops";
+
 // Короткие пояснения «как считается» - по клику на «?» справа от названия строки.
 const METRIC_HINTS: Record<MetricKey, string> = {
   plan_revenue: "Плановая выручка, вводится вручную.",
@@ -209,6 +211,25 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
   });
   const [loading, setLoading] = useState(false);
   const [hintKey, setHintKey] = useState<MetricKey | null>(null);
+  const [hiddenWorkshops, setHiddenWorkshops] = useState<string[]>([]);
+  const [wsMenuOpen, setWsMenuOpen] = useState(false);
+  const wsMenuRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(HIDDEN_WORKSHOPS_KEY);
+      if (saved) setHiddenWorkshops(JSON.parse(saved) as string[]);
+    } catch {
+      /* нет сохранённого выбора */
+    }
+  }, []);
+  useEffect(() => {
+    if (!wsMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (wsMenuRef.current && !wsMenuRef.current.contains(e.target as Node)) setWsMenuOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [wsMenuOpen]);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousMonthHeaderRef = useRef<HTMLTableCellElement | null>(null);
@@ -272,7 +293,21 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
     box.scrollLeft = target ? target.offsetLeft - (firstColumn?.offsetWidth ?? 0) : 0;
   }, [rangeKey, ready]);
 
-  const workshops = (dataByYear[years[0]] ?? initialData).workshops;
+  const allWorkshops = (dataByYear[years[0]] ?? initialData).workshops;
+  // Подразделения, снятые галкой в фильтре; хранятся «скрытые», чтобы новые цеха показывались сами.
+  const workshops = allWorkshops.filter((w) => !hiddenWorkshops.includes(w.workshop_id));
+  const toggleWorkshop = (id: string) => {
+    const next = hiddenWorkshops.includes(id)
+      ? hiddenWorkshops.filter((x) => x !== id)
+      : [...hiddenWorkshops, id];
+    if (allWorkshops.every((w) => next.includes(w.workshop_id))) return; // хотя бы один остаётся
+    setHiddenWorkshops(next);
+    try {
+      window.localStorage.setItem(HIDDEN_WORKSHOPS_KEY, JSON.stringify(next));
+    } catch {
+      /* storage недоступен - выбор живёт до перезагрузки */
+    }
+  };
   const monthOf = (workshopId: string, col: YearMonth): BudgetMonthValues | undefined =>
     dataByYear[col.year]?.workshops.find((w) => w.workshop_id === workshopId)?.months[col.month - 1];
 
@@ -437,6 +472,30 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
         >
           Текущий год
         </button>
+        <span className="budget-ws-filter" ref={wsMenuRef}>
+          <button
+            type="button"
+            className="budget-select budget-ws-btn"
+            aria-expanded={wsMenuOpen}
+            onClick={() => setWsMenuOpen((o) => !o)}
+          >
+            Подразделения: {workshops.length === allWorkshops.length ? "все" : `${workshops.length} из ${allWorkshops.length}`}
+          </button>
+          {wsMenuOpen && (
+            <div className="budget-ws-menu">
+              {allWorkshops.map((ws) => (
+                <label key={ws.workshop_id} className="budget-ws-item">
+                  <input
+                    type="checkbox"
+                    checked={!hiddenWorkshops.includes(ws.workshop_id)}
+                    onChange={() => toggleWorkshop(ws.workshop_id)}
+                  />
+                  {ws.workshop_label}
+                </label>
+              ))}
+            </div>
+          )}
+        </span>
         {loading && <span className="admin-hint">Загрузка…</span>}
       </div>
 

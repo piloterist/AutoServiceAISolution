@@ -8609,6 +8609,43 @@ a.task-detail-navbtn:hover {
   font-size: 0.9rem;
 }
 
+.budget-ws-filter {
+  position: relative;
+  display: inline-block;
+}
+
+.budget-ws-btn {
+  cursor: pointer;
+  text-align: left;
+}
+
+.budget-ws-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 100%;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.budget-ws-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.budget-ws-item:hover {
+  background: var(--surface-muted, #eef1f5);
+}
+
 .budget-hint-btn {
   margin-left: 6px;
   width: 16px;
