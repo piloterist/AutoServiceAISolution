@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -25,9 +25,11 @@ from app.core.config import get_settings
 from app.models.budget_entry import BudgetEntry
 from app.models.department import Department
 from app.models.work_order import WorkOrder
+from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.workshop import Workshop
 from app.services import finance_service
 from app.services.cockpit_service import (
+    MSK,
     _closed_revenue,
     _closed_revenue_filters,
     _closed_revenue_lines,
@@ -35,6 +37,7 @@ from app.services.cockpit_service import (
     _payments,
     period_bounds,
 )
+from app.services.internal_order_rules import is_physical_person
 from app.services.order_exclusion import (
     order_exclusion,
 )
@@ -47,6 +50,13 @@ BUDGET_FIELDS = ("plan_revenue",)
 # Repair type behind "Выручка факт основные" (product ask, 2026-10-26). The
 # insurance one comes from AppSettings.insurance_repair_type.
 MAIN_REPAIR_TYPE = "Текущий"
+
+# «Просрочено» (product ask, 2026-11-26): a revenue order not paid in full is overdue when, by
+# today (Moscow), the days below have passed - for an individual since the closing date (no
+# payment the next day), for a company since the invoice date (21 days; no invoice - the
+# closing date). Same individual/company heuristic as the work orders list.
+OVERDUE_DAYS_INDIVIDUAL = 1
+OVERDUE_DAYS_LEGAL = 21
 
 
 @dataclass
@@ -65,8 +75,12 @@ class BudgetMonth:
     expenses: Decimal
     profit: Decimal
     # Выручка общая = страховые + основные (product ask, 2026-11-25) is `fact_revenue`;
-    # `revenue_unpaid` (Без оплат) = fact_revenue - revenue_paid.
+    # `revenue_unpaid` (Без оплат) = the remaining debts of the orders not paid in full (differs
+    # from fact_revenue - revenue_paid only by the overpayments of other orders).
     revenue_unpaid: Decimal
+    # ... split by the overdue rule above: revenue_overdue + revenue_not_due == revenue_unpaid.
+    revenue_overdue: Decimal
+    revenue_not_due: Decimal
     # Оплачено (product ask, 2026-11-25): how much of the work orders that make up
     # fact_revenue is paid (their WorkOrder.paid_amount, the current snapshot) - unlike
     # `payments`, which is any money received in the month, by payment date.
@@ -80,6 +94,37 @@ class BudgetWorkshopRow:
     workshop_id: uuid.UUID
     workshop_label: str  # "<Подразделение> — <Тип цеха>", same shape as Cockpit's
     months: list[BudgetMonth]  # always 12, index 0 = January
+
+
+def classify_unpaid_orders(
+    db: Session, filters: list, now: datetime
+) -> list[tuple[uuid.UUID, Decimal, bool]]:
+    """(id, unpaid amount, overdue) for every order of `filters` not paid in full."""
+    invoice_date = (
+        select(func.min(WorkOrderInvoice.document_date))
+        .where(WorkOrderInvoice.work_order_id == WorkOrder.id)
+        .scalar_subquery()
+    )
+    paid = func.coalesce(WorkOrder.paid_amount, 0)
+    rows = db.execute(
+        select(
+            WorkOrder.id,
+            WorkOrder.customer_name,
+            WorkOrder.closed_date,
+            WorkOrder.amount,
+            paid,
+            invoice_date,
+        ).where(*filters, paid < WorkOrder.amount)
+    ).all()
+    today = now.astimezone(MSK).date()
+    result: list[tuple[uuid.UUID, Decimal, bool]] = []
+    for order_id, customer, closed, amount, paid_amount, invoiced in rows:
+        individual = is_physical_person(customer)
+        base = closed if individual or invoiced is None else invoiced
+        days = OVERDUE_DAYS_INDIVIDUAL if individual else OVERDUE_DAYS_LEGAL
+        overdue = today >= base.astimezone(MSK).date() + timedelta(days=days)
+        result.append((order_id, Decimal(amount) - Decimal(paid_amount), overdue))
+    return result
 
 
 def get_budget_year(
@@ -138,6 +183,15 @@ def get_budget_year(
                     )
                 )
             ).scalar_one()
+            unpaid_orders = classify_unpaid_orders(
+                db,
+                _closed_revenue_filters(
+                    **common, only_repair_types=[*insurance_types, MAIN_REPAIR_TYPE]
+                ),
+                now,
+            )
+            revenue_unpaid = sum((debt for _, debt, _ in unpaid_orders), Decimal(0))
+            revenue_overdue = sum((debt for _, debt, late in unpaid_orders if late), Decimal(0))
             payments = _payments(
                 db,
                 source_departments=source_departments,
@@ -162,7 +216,9 @@ def get_budget_year(
                     expenses=expenses,
                     profit=fact_revenue - expenses,
                     revenue_paid=Decimal(revenue_paid),
-                    revenue_unpaid=fact_revenue - Decimal(revenue_paid),
+                    revenue_unpaid=revenue_unpaid,
+                    revenue_overdue=revenue_overdue,
+                    revenue_not_due=revenue_unpaid - revenue_overdue,
                     payments=payments,
                     money=payments - expenses,
                 )
@@ -220,7 +276,7 @@ def fact_order_filters(
     у суммы в get_budget_year (_closed_revenue_filters). workshop_id не задан - «Вся компания»:
     отделы всех цехов вместе, как и сумма в таблице (заказ-наряды без привязки к цеху в неё не
     входят)."""
-    if kind not in ("insurance", "main", "all", "unpaid"):
+    if kind not in ("insurance", "main", "all", "unpaid", "overdue", "not_due"):
         raise ValueError(f"Unknown kind: {kind}")
     now = now or datetime.now(UTC)
     app_settings = get_app_settings(db)
@@ -238,7 +294,7 @@ def fact_order_filters(
         only_types = insurance_types
     elif kind == "main":
         only_types = [MAIN_REPAIR_TYPE]
-    else:  # "all" (Выручка общая) and "unpaid" (Без оплат): both revenue rows together
+    else:  # all / unpaid / overdue / not_due: both revenue rows together
         only_types = [*insurance_types, MAIN_REPAIR_TYPE]
     period_start, period_end = period_bounds(now, year=year, month=month)
     if year_to is not None and month_to is not None:
@@ -255,7 +311,13 @@ def fact_order_filters(
         only_repair_types=only_types,
     )
     if kind == "unpaid":
-        # Без оплат: orders of the revenue not paid in full - their remaining debts add up
-        # to fact_revenue - revenue_paid (an overpaid order is the only way they can differ).
+        # Без оплат: the orders of the revenue not paid in full - exactly the ones whose
+        # remaining debts the row sums up.
         filters.append(func.coalesce(WorkOrder.paid_amount, 0) < WorkOrder.amount)
+    elif kind in ("overdue", "not_due"):
+        # Просрочено / Ожидание: the unpaid orders split by the overdue rule (a Python
+        # heuristic - individual or company - so the ids are picked here, not in SQL).
+        wanted = kind == "overdue"
+        classified = classify_unpaid_orders(db, filters, now)
+        filters.append(WorkOrder.id.in_([i for i, _, overdue in classified if overdue == wanted]))
     return filters

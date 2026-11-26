@@ -20,7 +20,9 @@ class BudgetMonthOut(BaseModel):
     fact_revenue: Decimal
     expenses: Decimal
     profit: Decimal
-    revenue_unpaid: Decimal  # fact_revenue - revenue_paid (Без оплат)
+    revenue_unpaid: Decimal  # remaining debts of the unpaid orders (Без оплат)
+    revenue_overdue: Decimal  # ... of which overdue (Просрочено)
+    revenue_not_due: Decimal  # ... of which not yet overdue (Ожидание)
     revenue_paid: Decimal  # paid part of the orders behind fact_revenue (Оплачено)
     payments: Decimal
     money: Decimal

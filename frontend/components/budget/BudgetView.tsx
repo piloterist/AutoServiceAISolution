@@ -49,6 +49,8 @@ type MetricKey =
   | "profit"
   | "revenue_paid"
   | "revenue_unpaid"
+  | "revenue_overdue"
+  | "revenue_not_due"
   | "payments"
   | "money";
 type EditableKey = "plan_revenue";
@@ -68,7 +70,9 @@ const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2
   { key: "expenses", label: "Расходы", editable: false },
   { key: "profit", label: "Прибыль", editable: false },
   { key: "revenue_paid", label: "Оплачено", editable: false },
-  { key: "revenue_unpaid", label: "Без оплат", editable: false },
+  { key: "revenue_unpaid", label: "Без оплат", editable: false, parent: true },
+  { key: "revenue_overdue", label: "Просрочено", editable: false, level: 1 },
+  { key: "revenue_not_due", label: "Ожидание", editable: false, level: 1 },
   { key: "payments", label: "Приход денег", editable: false },
   { key: "money", label: "Деньги", editable: false },
 ];
@@ -77,6 +81,8 @@ const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2
 const DRILL_KIND: Partial<Record<MetricKey, BudgetRevenueKind>> = {
   fact_revenue: "all",
   revenue_unpaid: "unpaid",
+  revenue_overdue: "overdue",
+  revenue_not_due: "not_due",
   fact_revenue_insurance: "insurance",
   fact_revenue_main: "main",
 };

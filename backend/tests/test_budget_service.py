@@ -18,6 +18,7 @@ from app.models.cost_expense import CostExpense
 from app.models.cost_item import CostItem
 from app.models.department import Department
 from app.models.work_order import WorkOrder
+from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.work_order_payment_event import WorkOrderPaymentEvent
 from app.models.workshop import Workshop
 from app.models.workshop_source_department import WorkshopSourceDepartment
@@ -227,6 +228,73 @@ def test_fact_order_filters_cover_a_period_of_several_months(
     # Столбец ИТОГО: август-сентябрь - ровно заказ-наряды, из которых сложилась сумма периода
     assert ids(year=2026, month=8, year_to=2026, month_to=9) == {aug.id, sep.id}
     assert ids(year=2026, month=7, year_to=2026, month_to=9) == {july.id, aug.id, sep.id}
+
+
+def test_unpaid_is_split_into_overdue_and_not_due(db_session: Session, workshop: Workshop) -> None:
+    # NOW = 28.09.2026. Физлицо - просрочено со следующего дня после закрытия; юрлицо - через
+    # 21 день от даты счёта (нет счёта - от даты закрытия).
+    def order(closed_day: int, customer: str, **kw) -> WorkOrder:
+        return _work_order(
+            closed_date=datetime(2026, 9, closed_day, 10, 0, 0, tzinfo=UTC),
+            amount=Decimal("1000"),
+            repair_type="Текущий",
+            customer_name=customer,
+            **kw,
+        )
+
+    person = "Иванов Иван Иванович"
+    company = 'ООО "Ромашка"'
+    person_overdue = order(27, person)  # закрыт вчера
+    person_today = order(28, person)  # закрыт сегодня - ещё не просрочен
+    company_overdue = order(5, company)  # 23 дня без счёта
+    company_fresh = order(10, company)  # 18 дней без счёта
+    company_invoiced = order(1, company)  # закрыт давно, но счёт выставлен 15.09 - 13 дней
+    company_old_invoice = order(25, company)  # счёт от 01.09 - 27 дней
+    paid = order(1, company, paid_amount=Decimal("1500"))  # оплачен с переплатой - не в долгах
+    partly = order(2, person, paid_amount=Decimal("400"))  # долг 600, просрочен
+    db_session.add_all(
+        [
+            person_overdue,
+            person_today,
+            company_overdue,
+            company_fresh,
+            company_invoiced,
+            company_old_invoice,
+            paid,
+            partly,
+        ]
+    )
+    db_session.flush()
+    for wo, day in ((company_invoiced, 15), (company_old_invoice, 1)):
+        db_session.add(
+            WorkOrderInvoice(
+                work_order_id=wo.id,
+                source_document_id=f"inv-{wo.id}",
+                document_date=datetime(2026, 9, day, 9, 0, 0, tzinfo=UTC),
+                amount=Decimal("1000"),
+            )
+        )
+    db_session.commit()
+
+    september = budget_service.get_budget_year(db_session, 2026, now=NOW)[0].months[8]
+    assert september.revenue_unpaid == Decimal("6600")  # 7 x 1000 - 400
+    assert september.revenue_overdue == Decimal("3600")  # 1000 + 1000 + 1000 + 600
+    assert september.revenue_not_due == Decimal("3000")
+    assert september.revenue_overdue + september.revenue_not_due == september.revenue_unpaid
+
+    def ids(kind: str) -> set:
+        filters = budget_service.fact_order_filters(
+            db_session, year=2026, month=9, kind=kind, workshop_id=workshop.id, now=NOW
+        )
+        return set(db_session.scalars(select(WorkOrder.id).where(*filters)))
+
+    assert ids("overdue") == {
+        person_overdue.id,
+        company_overdue.id,
+        company_old_invoice.id,
+        partly.id,
+    }
+    assert ids("not_due") == {person_today.id, company_fresh.id, company_invoiced.id}
 
 
 def test_set_budget_value_upserts_plan_revenue(db_session: Session, workshop: Workshop) -> None:
