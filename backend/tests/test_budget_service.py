@@ -461,6 +461,108 @@ def test_the_orders_behind_a_fact_revenue_cell_add_up_to_the_cell(
     assert amounts("insurance") == [Decimal("100")]
 
 
+def test_allocate_external_splits_insurance_revenue_between_the_internal_orders_workshops(
+    db_session: Session, workshop: Workshop
+) -> None:
+    """«Аллоцировать внешние»: выручка страхового ЗН делится между цехами внутренних ЗН той же
+    машины пропорционально их суммам; итог по компании не меняется; список ЗН цеха согласован."""
+    from app.services.settings_service import get_app_settings
+
+    app_settings = get_app_settings(db_session)
+    app_settings.insurance_repair_type = "Страховой"
+    body_dept = Department(name="Кузов-отдел")
+    db_session.add(body_dept)
+    db_session.flush()
+    body = Workshop(
+        department_id=body_dept.id,
+        workshop_type="Кузовной",
+        posts_count=1,
+        start_time="08:00:00",
+        end_time="20:00:00",
+        working_days=[0, 1, 2, 3, 4],
+    )
+    db_session.add(body)
+    db_session.flush()
+    db_session.add(WorkshopSourceDepartment(workshop_id=body.id, source_department="Кузов"))
+    closed = datetime(2026, 9, 15, tzinfo=UTC)
+    vin = "WAUZZZ4M9MD015350"
+    insurance = _work_order(
+        department="Кузов",
+        closed_date=closed,
+        amount=Decimal("10000"),
+        paid_amount=Decimal("4000"),
+        repair_type="Страховой",
+        car_key=vin,
+    )
+    alone = _work_order(  # внутренние ЗН только в одном цехе - остаётся как есть
+        department="Кузов",
+        closed_date=closed,
+        amount=Decimal("500"),
+        repair_type="Страховой",
+        car_key="XTAGFK440MY559444",
+    )
+    db_session.add_all(
+        [
+            insurance,
+            alone,
+            _work_order(
+                amount=Decimal("1000"), repair_type="Текущий", car_key=vin, is_internal=True
+            ),
+            _work_order(  # отказ - вес не имеет, как будто его нет
+                department="Кузов",
+                amount=Decimal("50000"),
+                repair_type="Текущий",
+                car_key=vin,
+                is_internal=True,
+                status="Отказ",
+            ),
+            _work_order(
+                department="Кузов",
+                amount=Decimal("3000"),
+                repair_type="Текущий",
+                car_key=vin,
+                is_internal=True,
+            ),
+            _work_order(
+                department="Кузов",
+                amount=Decimal("700"),
+                repair_type="Текущий",
+                car_key="XTAGFK440MY559444",
+                is_internal=True,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    def september(workshop_id):
+        rows = budget_service.get_budget_year(db_session, 2026, now=NOW)
+        return next(r for r in rows if r.workshop_id == workshop_id).months[8]
+
+    # Выключено: всё в цехе самого ЗН
+    assert september(body.id).fact_revenue_insurance == Decimal("10500")
+    assert september(workshop.id).fact_revenue_insurance == Decimal("0")
+
+    app_settings.allocate_external = True
+    db_session.commit()
+    mech, kuzov = september(workshop.id), september(body.id)
+    assert mech.fact_revenue_insurance == Decimal("2500.00")  # 1000 / 4000 от 10 000
+    assert kuzov.fact_revenue_insurance == Decimal("8000.00")  # 7500 + 500 остаётся
+    assert mech.revenue_paid == Decimal("1000.00")
+    assert kuzov.revenue_paid == Decimal("3000.00")
+    assert mech.revenue_unpaid + kuzov.revenue_unpaid == Decimal("6500")  # 6000 + 500
+    assert mech.fact_revenue + kuzov.fact_revenue == Decimal("10500")  # итог не меняется
+
+    def order_ids(workshop_id):
+        filters = budget_service.fact_order_filters(
+            db_session, year=2026, month=9, kind="insurance", workshop_id=workshop_id, now=NOW
+        )
+        return set(db_session.scalars(select(WorkOrder.id).where(*filters)))
+
+    assert order_ids(workshop.id) == {insurance.id}
+    assert order_ids(body.id) == {insurance.id, alone.id}
+    assert order_ids(None) == {insurance.id, alone.id}
+
+
 def test_set_budget_value_rejects_unknown_field(db_session: Session, workshop: Workshop) -> None:
     with pytest.raises(ValueError):
         budget_service.set_budget_value(

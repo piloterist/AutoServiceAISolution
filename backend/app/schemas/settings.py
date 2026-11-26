@@ -27,6 +27,7 @@ class AppSettingsResponse(BaseModel):
     exclude_internal_insurance: bool
     # "Специфика PanMotors" group - see models/app_settings.py.
     order_exclusion_mode: Literal["none", "internal", "external"]
+    allocate_external: bool
     receivables_max_age_days: int | None
     hide_internal_orders: bool
     warranty_repair_types: list[str]
@@ -67,6 +68,7 @@ class AppSettingsUpdate(BaseModel):
     insurance_repair_type: str | None = None
     exclude_internal_insurance: bool = False
     order_exclusion_mode: Literal["none", "internal", "external"] = "none"
+    allocate_external: bool = False
     receivables_max_age_days: int | None = Field(default=None, ge=1, le=36500)
     hide_internal_orders: bool = False
     warranty_repair_types: list[str] = Field(default_factory=list)

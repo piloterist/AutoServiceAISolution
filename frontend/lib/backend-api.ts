@@ -159,6 +159,9 @@ export type AppSettings = {
   // "Специфика PanMotors" group - what the dashboard-style figures leave out:
   // nothing / the internal orders / the insurance ones (backend services/order_exclusion.py).
   order_exclusion_mode: OrderExclusionMode;
+  // «Аллоцировать внешние»: на Бюджетах выручка страхового ЗН делится между цехами его
+  // внутренних ЗН пропорционально их суммам (backend services/insurance_allocation.py).
+  allocate_external: boolean;
   // Debts older than this many days are not shown (ДЗ table, ESP plate); null = no limit.
   receivables_max_age_days: number | null;
   // Not wired to any filtering logic yet - deliberately inert (see

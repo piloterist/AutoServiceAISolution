@@ -32,6 +32,7 @@ export function SettingsForm({
   const [orderExclusionMode, setOrderExclusionMode] = useState<OrderExclusionMode>(
     initialSettings.order_exclusion_mode,
   );
+  const [allocateExternal, setAllocateExternal] = useState(initialSettings.allocate_external ?? false);
   const [receivablesMaxAgeDays, setReceivablesMaxAgeDays] = useState(
     initialSettings.receivables_max_age_days ? String(initialSettings.receivables_max_age_days) : "",
   );
@@ -121,6 +122,7 @@ export function SettingsForm({
           insurance_repair_type: insuranceRepairType || null,
           exclude_internal_insurance: excludeInternal,
           order_exclusion_mode: orderExclusionMode,
+          allocate_external: allocateExternal,
           receivables_max_age_days: Number(receivablesMaxAgeDays) > 0 ? Number(receivablesMaxAgeDays) : null,
           hide_internal_orders: hideInternalOrders,
           warranty_repair_types: warrantyRepairTypes,
@@ -234,6 +236,22 @@ export function SettingsForm({
             внутренние заказ-наряды; «Внешние» — не учитываются заказ-наряды с видом ремонта «Вид
             ремонта для страховых» (выбирается выше; пока он не выбран, ничего не исключается). На
             список заказ-нарядов настройка не влияет.
+          </p>
+        </div>
+
+        <div className="settings-field">
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={allocateExternal}
+              onChange={(event) => setAllocateExternal(event.target.checked)}
+            />
+            Аллоцировать внешние
+          </label>
+          <p className="settings-description">
+            На листе Бюджеты выручка страхового заказ-наряда распределяется между цехами, на которые
+            оформлены связанные внутренние заказ-наряды (та же машина), пропорционально их суммам.
+            Если внутренние оформлены на один цех или их нет — выручка остаётся в цехе самого заказ-наряда.
           </p>
         </div>
 

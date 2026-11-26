@@ -14,6 +14,7 @@ def test_get_settings_returns_defaults_on_first_access(client, auth_headers) -> 
     assert body["insurance_repair_type"] is None
     assert body["exclude_internal_insurance"] is False
     assert body["order_exclusion_mode"] == "none"
+    assert body["allocate_external"] is False
     assert body["hide_internal_orders"] is False
     assert body["warranty_repair_types"] == []
     assert body["fivesystems_api_enabled"] is False
@@ -29,6 +30,7 @@ def test_put_settings_persists_values(client, auth_headers) -> None:
             "insurance_repair_type": "Гарантийный ремонт",
             "exclude_internal_insurance": True,
             "order_exclusion_mode": "internal",
+            "allocate_external": True,
             "hide_internal_orders": True,
             "fivesystems_api_enabled": True,
             "daily_logout_time": "22:00",
@@ -40,6 +42,7 @@ def test_put_settings_persists_values(client, auth_headers) -> None:
     assert body["insurance_repair_type"] == "Гарантийный ремонт"
     assert body["exclude_internal_insurance"] is True
     assert body["order_exclusion_mode"] == "internal"
+    assert body["allocate_external"] is True
     assert body["hide_internal_orders"] is True
     assert body["fivesystems_api_enabled"] is True
     assert body["daily_logout_time"] == "22:00"

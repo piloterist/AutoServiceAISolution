@@ -202,6 +202,7 @@ def _closed_revenue_filters(
     exclusion: OrderExclusion | None,
     excluded_repair_types: list[str] | None = None,
     only_repair_types: list[str] | None = None,
+    exclude_order_ids: list[uuid.UUID] | None = None,
 ) -> list:
     """The work orders that make up a period's revenue (closed in it, a revenue
     status, ...) - shared by the total (_closed_revenue) and by its split into
@@ -220,6 +221,9 @@ def _closed_revenue_filters(
     if only_repair_types is not None:
         # Budget's split rows: exactly these repair types (an empty list = none).
         filters.append(WorkOrder.repair_type.in_(only_repair_types))
+    if exclude_order_ids:
+        # Budget's «Аллоцировать внешние»: these orders are counted by their shares instead.
+        filters.append(WorkOrder.id.not_in(exclude_order_ids))
     if excluded_repair_types:
         # Гарантийные/Виртуальные are not revenue; NULL repair_type stays in.
         filters.append(

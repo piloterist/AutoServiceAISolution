@@ -43,6 +43,12 @@ class AppSettings(Base):
     order_exclusion_mode: Mapped[str] = mapped_column(
         String(10), nullable=False, default="none", server_default="none"
     )
+    # «Аллоцировать внешние» (product ask, 2026-11-26): on the Бюджеты page the revenue of an
+    # insurance order is split between the workshops of its internal orders in proportion to
+    # their amounts (services/insurance_allocation.py) instead of going to its own workshop.
+    allocate_external: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # "Не показывать дебиторку старше" N days (product ask, 2026-10-29): a debt older
     # than this (counted as in the aging table: from its latest invoice, else from the
     # closing date) is hidden everywhere the ДЗ is shown (services/receivables_age.py).

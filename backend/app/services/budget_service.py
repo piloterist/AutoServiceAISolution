@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -27,7 +27,7 @@ from app.models.department import Department
 from app.models.work_order import WorkOrder
 from app.models.work_order_invoice import WorkOrderInvoice
 from app.models.workshop import Workshop
-from app.services import finance_service
+from app.services import finance_service, insurance_allocation
 from app.services.cockpit_service import (
     MSK,
     _closed_revenue,
@@ -155,6 +155,28 @@ def get_budget_year(
         for entry in db.scalars(select(BudgetEntry).where(BudgetEntry.year == year))
     }
 
+    # «Аллоцировать внешние»: per month, the insurance orders split between workshops and the
+    # shares each workshop gets from them (services/insurance_allocation.py).
+    month_splits: dict[int, tuple[list[uuid.UUID], dict]] = {}
+    if app_settings.allocate_external and insurance_types:
+        for month in range(1, 13):
+            period_start, period_end = period_bounds(now, year=year, month=month)
+            split = insurance_allocation.split_insurance_orders(
+                db,
+                period_start=period_start,
+                period_end=period_end,
+                revenue_statuses=revenue_statuses,
+                exclusion=exclusion,
+                excluded_repair_types=excluded_types,
+                insurance_types=insurance_types,
+            )
+            if split:
+                unpaid_split = classify_unpaid_orders(db, [WorkOrder.id.in_(list(split))], now)
+                month_splits[month] = (
+                    list(split),
+                    insurance_allocation.workshop_shares(db, split, unpaid_split),
+                )
+
     rows: list[BudgetWorkshopRow] = []
     for workshop, department_name in workshops:
         source_departments = _mapped_source_departments(db, workshop_id=workshop.id)
@@ -168,6 +190,7 @@ def get_budget_year(
                 revenue_statuses=revenue_statuses,
                 exclusion=exclusion,
                 excluded_repair_types=excluded_types,
+                exclude_order_ids=month_splits.get(month, ([], {}))[0],
             )
             fact_insurance = _closed_revenue(db, only_repair_types=insurance_types, **common)
             fact_main = _closed_revenue(db, only_repair_types=[MAIN_REPAIR_TYPE], **common)
@@ -194,6 +217,15 @@ def get_budget_year(
             )
             revenue_unpaid = sum((debt for _, debt, _ in unpaid_orders), Decimal(0))
             revenue_overdue = sum((debt for _, debt, late in unpaid_orders if late), Decimal(0))
+            share = month_splits.get(month, ([], {}))[1].get(workshop.id)
+            if share is not None:
+                fact_insurance += share.revenue
+                insurance_labor += share.labor
+                insurance_parts += share.parts
+                fact_revenue += share.revenue
+                revenue_paid += share.paid
+                revenue_unpaid += share.unpaid
+                revenue_overdue += share.overdue
             payments = _payments(
                 db,
                 source_departments=source_departments,
@@ -304,15 +336,44 @@ def fact_order_filters(
         # Столбец ИТОГО: период из нескольких месяцев подряд - от начала первого до конца
         # последнего (те же границы, что у сумм отдельных месяцев).
         period_end = period_bounds(now, year=year_to, month=month_to)[1]
+    revenue_statuses = get_settings().revenue_statuses_list
+    exclusion = order_exclusion(app_settings)
+    excluded_types = revenue_excluded_repair_types(app_settings)
+    # «Аллоцировать внешние»: a workshop's list = its own orders minus the split insurance ones,
+    # plus the split insurance orders that give it a share (whole company: nothing changes).
+    shared_ids: list[uuid.UUID] = []
+    split_ids: list[uuid.UUID] = []
+    if app_settings.allocate_external and workshop_id is not None and kind != "main":
+        split = insurance_allocation.split_insurance_orders(
+            db,
+            period_start=period_start,
+            period_end=period_end,
+            revenue_statuses=revenue_statuses,
+            exclusion=exclusion,
+            excluded_repair_types=excluded_types,
+            insurance_types=insurance_types,
+        )
+        split_ids = list(split)
+        shared_ids = [i for i, shares in split.items() if any(w == workshop_id for w, _ in shares)]
     filters = _closed_revenue_filters(
-        source_departments=source_departments,
+        source_departments=None if split_ids else source_departments,
         period_start=period_start,
         period_end=period_end,
-        revenue_statuses=get_settings().revenue_statuses_list,
-        exclusion=order_exclusion(app_settings),
-        excluded_repair_types=revenue_excluded_repair_types(app_settings),
+        revenue_statuses=revenue_statuses,
+        exclusion=exclusion,
+        excluded_repair_types=excluded_types,
         only_repair_types=only_types,
     )
+    if split_ids:
+        filters.append(
+            or_(
+                and_(
+                    WorkOrder.department.in_(source_departments or []),
+                    WorkOrder.id.not_in(split_ids),
+                ),
+                WorkOrder.id.in_(shared_ids),
+            )
+        )
     if kind == "unpaid":
         # Без оплат: the orders of the revenue not paid in full - exactly the ones whose
         # remaining debts the row sums up.
