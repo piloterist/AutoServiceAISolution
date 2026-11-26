@@ -494,17 +494,31 @@ def test_allocate_external_splits_insurance_revenue_between_the_internal_orders_
         repair_type="Страховой",
         car_key=vin,
     )
-    alone = _work_order(  # внутренние ЗН только в одном цехе - остаётся как есть
+    alone = _work_order(  # внутренние ЗН в том же цехе - остаётся как есть
         department="Кузов",
         closed_date=closed,
         amount=Decimal("500"),
         repair_type="Страховой",
         car_key="XTAGFK440MY559444",
     )
+    moved = _work_order(  # внутренние ЗН только в другом цехе - вся выручка уходит туда
+        department="Кузов",
+        closed_date=closed,
+        amount=Decimal("2000"),
+        repair_type="Страховой",
+        car_key="Z6FBXXESWBHK74622",
+    )
     db_session.add_all(
         [
             insurance,
             alone,
+            moved,
+            _work_order(
+                amount=Decimal("900"),
+                repair_type="Текущий",
+                car_key="Z6FBXXESWBHK74622",
+                is_internal=True,
+            ),
             _work_order(
                 amount=Decimal("1000"), repair_type="Текущий", car_key=vin, is_internal=True
             ),
@@ -539,18 +553,19 @@ def test_allocate_external_splits_insurance_revenue_between_the_internal_orders_
         return next(r for r in rows if r.workshop_id == workshop_id).months[8]
 
     # Выключено: всё в цехе самого ЗН
-    assert september(body.id).fact_revenue_insurance == Decimal("10500")
+    assert september(body.id).fact_revenue_insurance == Decimal("12500")
     assert september(workshop.id).fact_revenue_insurance == Decimal("0")
 
     app_settings.allocate_external = True
     db_session.commit()
     mech, kuzov = september(workshop.id), september(body.id)
-    assert mech.fact_revenue_insurance == Decimal("2500.00")  # 1000 / 4000 от 10 000
+    # 1000 / 4000 от 10 000 + весь «переехавший» ЗН на 2000
+    assert mech.fact_revenue_insurance == Decimal("4500.00")
     assert kuzov.fact_revenue_insurance == Decimal("8000.00")  # 7500 + 500 остаётся
     assert mech.revenue_paid == Decimal("1000.00")
     assert kuzov.revenue_paid == Decimal("3000.00")
-    assert mech.revenue_unpaid + kuzov.revenue_unpaid == Decimal("6500")  # 6000 + 500
-    assert mech.fact_revenue + kuzov.fact_revenue == Decimal("10500")  # итог не меняется
+    assert mech.revenue_unpaid + kuzov.revenue_unpaid == Decimal("8500")  # 6000 + 500 + 2000
+    assert mech.fact_revenue + kuzov.fact_revenue == Decimal("12500")  # итог не меняется
 
     def order_ids(workshop_id):
         filters = budget_service.fact_order_filters(
@@ -558,9 +573,9 @@ def test_allocate_external_splits_insurance_revenue_between_the_internal_orders_
         )
         return set(db_session.scalars(select(WorkOrder.id).where(*filters)))
 
-    assert order_ids(workshop.id) == {insurance.id}
+    assert order_ids(workshop.id) == {insurance.id, moved.id}
     assert order_ids(body.id) == {insurance.id, alone.id}
-    assert order_ids(None) == {insurance.id, alone.id}
+    assert order_ids(None) == {insurance.id, alone.id, moved.id}
 
 
 def test_set_budget_value_rejects_unknown_field(db_session: Session, workshop: Workshop) -> None:

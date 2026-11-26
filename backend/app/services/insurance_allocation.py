@@ -2,10 +2,10 @@
 
 Normally the revenue of an insurance order goes to the workshop of its own department. With
 AppSettings.allocate_external on, the Бюджеты page looks at the internal orders of the same
-car (by VIN, WorkOrder.car_key): when they are written out to two or more different workshops,
-the insurance order's amounts are split between those workshops in proportion to the sums of
-the internal orders. An order whose internal orders sit in one workshop (or that has none)
-stays where it is. Only orders of a mapped department are split, so the company-wide total
+car (by VIN, WorkOrder.car_key) and split the insurance order's amounts between the workshops
+they are written out to in proportion to their sums; when that is one workshop, it gets the
+whole order, even if it is not the order's own. An order with no internal orders stays where
+it is. Only orders of a mapped department are split, so the company-wide total
 never changes - the shares of an order always add up to the order.
 """
 
@@ -57,7 +57,8 @@ def split_insurance_orders(
     excluded_repair_types: list[str] | None,
     insurance_types: list[str],
 ) -> Split:
-    """The insurance revenue orders of the period that are split between workshops."""
+    """The insurance revenue orders of the period that are moved to / split between the
+    workshops of their internal orders."""
     if not insurance_types:
         return {}
     dept_workshop = dict(
@@ -100,7 +101,7 @@ def split_insurance_orders(
     split: Split = {}
     for order_id, car in orders:
         by_workshop = weights.get(car)
-        if not by_workshop or len(by_workshop) < 2:
+        if not by_workshop:
             continue
         total = sum(by_workshop.values(), Decimal(0))
         split[order_id] = [(ws, w / total) for ws, w in sorted(by_workshop.items())]
