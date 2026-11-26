@@ -8665,6 +8665,17 @@ a.task-detail-navbtn:hover {
   background: #eef1f5;
 }
 
+/* Бюджеты: колонка «Показатель» шире, чтобы название и «?» не переносились на вторую строку */
+.budget-table .expenses-th-item,
+.budget-table .expenses-td-item {
+  min-width: 16rem;
+  max-width: 16rem;
+}
+
+.budget-table .expenses-td-item {
+  white-space: nowrap;
+}
+
 .expenses-table .expenses-td-item.budget-td--hint {
   z-index: 6;
 }
