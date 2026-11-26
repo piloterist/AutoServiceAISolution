@@ -47,6 +47,7 @@ type MetricKey =
   | "fact_revenue_main_parts"
   | "expenses"
   | "profit"
+  | "cash_profit"
   | "revenue_paid"
   | "revenue_unpaid"
   | "revenue_overdue"
@@ -57,7 +58,7 @@ type EditableKey = "plan_revenue";
 
 // `level`: 1 = a sub-row of the row above it (shown indented, in a lighter style) -
 // the fact revenue rows are made up of their Работы and Запчасти.
-const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2; parent?: boolean }[] = [
+const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2; parent?: boolean; hidden?: boolean }[] = [
   { key: "plan_revenue", label: "Выручка план", editable: true },
   { key: "fact_revenue", label: "Выручка общая", editable: false, parent: true },
   { key: "fact_revenue_insurance", label: "Выручка факт страховые", editable: false, parent: true },
@@ -68,14 +69,37 @@ const METRICS: { key: MetricKey; label: string; editable: boolean; level?: 1 | 2
   { key: "fact_revenue_main_parts", label: "Запчасти", editable: false, level: 1 },
   // Not typed in here any more: the sum of the cost items on Финансы -> Расходы.
   { key: "expenses", label: "Расходы", editable: false },
-  { key: "profit", label: "Прибыль", editable: false },
+  { key: "profit", label: "Чистая прибыль", editable: false },
   { key: "revenue_paid", label: "Оплачено", editable: false },
   { key: "revenue_unpaid", label: "Без оплат", editable: false, parent: true },
   { key: "revenue_overdue", label: "Просрочено", editable: false, level: 1 },
   { key: "revenue_not_due", label: "Ожидание", editable: false, level: 1 },
+  { key: "cash_profit", label: "Денежная прибыль", editable: false },
   { key: "payments", label: "Приход денег", editable: false },
-  { key: "money", label: "Деньги", editable: false },
+  // Скрыта по просьбе (2026-11-26): расчёт остаётся, строка не показывается.
+  { key: "money", label: "Деньги", editable: false, hidden: true },
 ];
+
+// Короткие пояснения «как считается» - по клику на «?» справа от названия строки.
+const METRIC_HINTS: Record<MetricKey, string> = {
+  plan_revenue: "Плановая выручка, вводится вручную.",
+  fact_revenue: "Страховые + основные: заказ-наряды, закрытые в периоде.",
+  fact_revenue_insurance: "Сумма заказ-нарядов страховых, закрытых в периоде.",
+  fact_revenue_insurance_labor: "Работы в страховых заказ-нарядах.",
+  fact_revenue_insurance_parts: "Запчасти в страховых заказ-нарядах.",
+  fact_revenue_main: "Сумма заказ-нарядов «Текущий», закрытых в периоде.",
+  fact_revenue_main_labor: "Работы в основных заказ-нарядах.",
+  fact_revenue_main_parts: "Запчасти в основных заказ-нарядах.",
+  expenses: "Сумма статей на листе Финансы → Расходы.",
+  profit: "Выручка общая − Расходы.",
+  cash_profit: "Чистая прибыль − Без оплат.",
+  revenue_paid: "Сколько из выручки периода уже оплачено.",
+  revenue_unpaid: "Остаток долга по заказ-нарядам выручки, оплаченным не полностью.",
+  revenue_overdue: "Часть «Без оплат», по которой истёк срок: физлица - день после закрытия, юрлица - 21 день от счёта (нет счёта - от закрытия).",
+  revenue_not_due: "Часть «Без оплат», по которой срок ещё не истёк.",
+  payments: "Все поступления денег в периоде по любым заказ-нарядам (в т.ч. закрытым раньше).",
+  money: "Приход денег − Расходы.",
+};
 
 // Строки, значения которых ведут на лист «Заказ наряды» с готовым фильтром (клик по ячейке).
 const DRILL_KIND: Partial<Record<MetricKey, BudgetRevenueKind>> = {
@@ -101,7 +125,12 @@ function recompute(month: BudgetMonthValues): BudgetMonthValues {
   const fact = Number(month.fact_revenue_insurance) + Number(month.fact_revenue_main);
   const expenses = Number(month.expenses);
   const payments = Number(month.payments);
-  return { ...month, profit: String(fact - expenses), money: String(payments - expenses) };
+  return {
+    ...month,
+    profit: String(fact - expenses),
+    cash_profit: String(fact - expenses - Number(month.revenue_unpaid)),
+    money: String(payments - expenses),
+  };
 }
 
 // Сумма значений показателя по набору месяцев (по цехам одного месяца - "Вся компания",
@@ -179,6 +208,7 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
     [initialData.year]: initialData,
   });
   const [loading, setLoading] = useState(false);
+  const [hintKey, setHintKey] = useState<MetricKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const previousMonthHeaderRef = useRef<HTMLTableCellElement | null>(null);
@@ -481,16 +511,29 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
               </tr>
             </thead>
             <tbody>
-              {METRICS.map((metric) => (
+              {METRICS.filter((metric) => !metric.hidden).map((metric) => (
                 <tr key={metric.key} className={metric.level ? "budget-row--sub" : metric.parent ? "budget-row--parent" : undefined}>
-                  <td className="expenses-td-item">{metric.level ? `└ ${metric.label}` : metric.label}</td>
+                  <td className={hintKey === metric.key ? "expenses-td-item budget-td--hint" : "expenses-td-item"}>
+                    {metric.level ? `└ ${metric.label}` : metric.label}
+                    <button
+                      type="button"
+                      className="budget-hint-btn"
+                      aria-label={`Как считается «${metric.label}»`}
+                      aria-expanded={hintKey === metric.key}
+                      onClick={() => setHintKey(hintKey === metric.key ? null : metric.key)}
+                    >
+                      ?
+                    </button>
+                    {hintKey === metric.key && <div className="budget-hint">{METRIC_HINTS[metric.key]}</div>}
+                  </td>
                   {cols.flatMap((col, colIdx) => {
                     const keyBase = `${col.year}-${col.month}`;
                     const cells = workshops.map((ws, wsIdx) => {
                       const m = monthOf(ws.workshop_id, col);
                       const value = m ? m[metric.key] : "0";
                       const negative =
-                        (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
+                        (metric.key === "profit" || metric.key === "cash_profit" || metric.key === "money") &&
+                        Number(value) < 0;
                       return (
                         <td
                           key={`${keyBase}-${ws.workshop_id}`}
@@ -516,7 +559,8 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
                       metric.key,
                     );
                     const negative =
-                      (metric.key === "profit" || metric.key === "money") && Number(companyValue) < 0;
+                      (metric.key === "profit" || metric.key === "cash_profit" || metric.key === "money") &&
+                      Number(companyValue) < 0;
                     return [
                       ...cells,
                       <td
@@ -536,7 +580,8 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
                     ...workshops.map((ws, wsIdx) => {
                       const value = sumMetric(periodMonthsOf(ws.workshop_id), metric.key);
                       const negative =
-                        (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
+                        (metric.key === "profit" || metric.key === "cash_profit" || metric.key === "money") &&
+                        Number(value) < 0;
                       return (
                         <td
                           key={`total-${ws.workshop_id}`}
@@ -556,7 +601,8 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
                     (() => {
                       const value = sumMetric(allMonths, metric.key);
                       const negative =
-                        (metric.key === "profit" || metric.key === "money") && Number(value) < 0;
+                        (metric.key === "profit" || metric.key === "cash_profit" || metric.key === "money") &&
+                        Number(value) < 0;
                       return (
                         <td
                           key="total-company"

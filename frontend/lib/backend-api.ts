@@ -1864,7 +1864,8 @@ export type BudgetMonthValues = {
   fact_revenue_main_parts: string;
   fact_revenue: string;
   expenses: string; // sum of the cost items entered on Финансы -> Расходы
-  profit: string; // fact_revenue - expenses
+  profit: string; // fact_revenue - expenses (Чистая прибыль)
+  cash_profit: string; // profit - revenue_unpaid (Денежная прибыль)
   revenue_unpaid: string; // remaining debts of the orders not paid in full (Без оплат)
   revenue_overdue: string; // ... of which overdue (Просрочено)
   revenue_not_due: string; // ... of which not yet overdue (Ожидание)

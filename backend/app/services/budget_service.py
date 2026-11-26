@@ -73,7 +73,9 @@ class BudgetMonth:
     fact_revenue_main_parts: Decimal
     fact_revenue: Decimal
     expenses: Decimal
-    profit: Decimal
+    profit: Decimal  # Чистая прибыль
+    # Денежная прибыль (product ask, 2026-11-26) = profit - revenue_unpaid.
+    cash_profit: Decimal
     # Выручка общая = страховые + основные (product ask, 2026-11-25) is `fact_revenue`;
     # `revenue_unpaid` (Без оплат) = the remaining debts of the orders not paid in full (differs
     # from fact_revenue - revenue_paid only by the overpayments of other orders).
@@ -215,6 +217,7 @@ def get_budget_year(
                     fact_revenue=fact_revenue,
                     expenses=expenses,
                     profit=fact_revenue - expenses,
+                    cash_profit=fact_revenue - expenses - revenue_unpaid,
                     revenue_paid=Decimal(revenue_paid),
                     revenue_unpaid=revenue_unpaid,
                     revenue_overdue=revenue_overdue,

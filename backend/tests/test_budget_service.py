@@ -352,6 +352,8 @@ def test_expenses_are_the_sum_of_cost_items_and_feed_profit_and_money(
     september = rows[0].months[8]
     assert september.expenses == Decimal("1200")
     assert september.profit == Decimal("3800")
+    # Денежная прибыль = чистая - «Без оплат» (ничего не оплачено - весь долг вычитается)
+    assert september.cash_profit == september.profit - september.revenue_unpaid
     assert september.money == Decimal("-1200")  # no payments this month
 
 
