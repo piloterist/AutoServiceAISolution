@@ -87,3 +87,27 @@ def test_reported_ip_lands_in_the_directory(client: TestClient, auth_headers: di
         f"{URL}/report-ip", headers=auth_headers, json={"code": "nope", "ip": "192.168.0.9"}
     )
     assert unknown.status_code == 204
+
+
+def test_camera_mode_defaults_to_bay_and_can_be_a_gate(
+    client: TestClient, auth_headers: dict
+) -> None:
+    bay = client.post(URL, headers=auth_headers, json={"code": "cam1", "mac": "9ca2f4da22ea"})
+    assert bay.json()["mode"] == "bay"
+
+    gate = client.post(
+        URL, headers=auth_headers, json={"code": "gate1", "mac": "3C7895D6C70E", "mode": "gate"}
+    )
+    assert gate.status_code == 201 and gate.json()["mode"] == "gate"
+
+    bad = client.post(
+        URL, headers=auth_headers, json={"code": "x", "mac": "AABBCCDDEEFF", "mode": "garage"}
+    )
+    assert bad.status_code == 422
+
+    changed = client.put(
+        f"{URL}/{bay.json()['id']}",
+        headers=auth_headers,
+        json={"code": "cam1", "mac": "9C-A2-F4-DA-22-EA", "mode": "gate"},
+    )
+    assert changed.json()["mode"] == "gate"

@@ -1416,6 +1416,8 @@ export type Camera = {
   id: string;
   code: string;
   mac: string;
+  // Что снимает камера: бокс или ворота кузовного цеха.
+  mode: "bay" | "gate";
   name: string | null;
   model: string | null;
   note: string | null;
@@ -1429,6 +1431,7 @@ export type Camera = {
 export type CameraWrite = {
   code: string;
   mac: string;
+  mode: "bay" | "gate";
   name: string | null;
   model: string | null;
   note: string | null;

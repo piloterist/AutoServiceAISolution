@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -9,6 +10,7 @@ from app.services.camera_service import normalize_mac
 class CameraWrite(BaseModel):
     code: str = Field(min_length=1, max_length=50)
     mac: str
+    mode: Literal["bay", "gate"] = "bay"
     name: str | None = Field(default=None, max_length=100)
     model: str | None = Field(default=None, max_length=100)
     note: str | None = None
@@ -38,6 +40,7 @@ class CameraOut(BaseModel):
     id: uuid.UUID
     code: str
     mac: str
+    mode: str
     name: str | None
     model: str | None
     note: str | None

@@ -27,9 +27,16 @@ def list_cameras(db: Session) -> list[Camera]:
 
 
 def create_camera(
-    db: Session, *, code: str, mac: str, name: str | None, model: str | None, note: str | None
+    db: Session,
+    *,
+    code: str,
+    mac: str,
+    mode: str = "bay",
+    name: str | None,
+    model: str | None,
+    note: str | None,
 ) -> Camera:
-    camera = Camera(code=code, mac=normalize_mac(mac), name=name, model=model, note=note)
+    camera = Camera(code=code, mac=normalize_mac(mac), mode=mode, name=name, model=model, note=note)
     db.add(camera)
     db.commit()
     db.refresh(camera)
@@ -42,6 +49,7 @@ def update_camera(
     *,
     code: str,
     mac: str,
+    mode: str = "bay",
     name: str | None,
     model: str | None,
     note: str | None,
@@ -53,7 +61,7 @@ def update_camera(
     if new_mac != camera.mac:
         camera.ip = None  # другая камера - прежний IP ей не принадлежит
         camera.ip_seen_at = None
-    camera.code, camera.mac = code, new_mac
+    camera.code, camera.mac, camera.mode = code, new_mac, mode
     camera.name, camera.model, camera.note = name, model, note
     db.commit()
     db.refresh(camera)

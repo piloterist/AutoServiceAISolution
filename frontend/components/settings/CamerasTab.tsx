@@ -41,7 +41,14 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
   const [cameras, setCameras] = useState(initialCameras);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Camera | "new" | null>(null);
-  const [form, setForm] = useState({ code: "", mac: "", name: "", model: "", note: "" });
+  const [form, setForm] = useState<{
+    code: string;
+    mac: string;
+    mode: "bay" | "gate";
+    name: string;
+    model: string;
+    note: string;
+  }>({ code: "", mac: "", mode: "bay", name: "", model: "", note: "" });
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Camera | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -49,7 +56,7 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
   const selected = cameras.find((c) => c.id === selectedId) ?? null;
 
   const openNew = () => {
-    setForm({ code: "", mac: "", name: "", model: "TP-Link VIGI C440 4mm", note: "" });
+    setForm({ code: "", mac: "", mode: "bay", name: "", model: "TP-Link VIGI C440 4mm", note: "" });
     setError(null);
     setEditing("new");
   };
@@ -58,6 +65,7 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
     setForm({
       code: selected.code,
       mac: selected.mac,
+      mode: selected.mode,
       name: selected.name ?? "",
       model: selected.model ?? "",
       note: selected.note ?? "",
@@ -73,6 +81,7 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
     const payload: CameraWrite = {
       code: form.code.trim(),
       mac: form.mac.trim(),
+      mode: form.mode,
       name: form.name.trim() || null,
       model: form.model.trim() || null,
       note: form.note.trim() || null,
@@ -111,7 +120,11 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
     }
   };
 
-  const field = (key: keyof typeof form, label: string, placeholder?: string) => (
+  const field = (
+    key: "code" | "mac" | "name" | "model" | "note",
+    label: string,
+    placeholder?: string,
+  ) => (
     <div className="admin-form-field">
       <label htmlFor={`camera-${key}`}>{label}</label>
       <input
@@ -138,6 +151,7 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
               <tr>
                 <th>Код</th>
                 <th>MAC</th>
+                <th>Режим</th>
                 <th>Текущий IP</th>
                 <th>Видео</th>
                 <th>Модель</th>
@@ -155,6 +169,7 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
                   >
                     <td>{camera.code}</td>
                     <td>{camera.mac}</td>
+                    <td>{camera.mode === "gate" ? "Ворота" : "Бокс"}</td>
                     <td title={camera.ip_seen_at ? `найден ${formatSeen(camera.ip_seen_at)}` : undefined}>
                       {camera.ip ?? "—"}
                     </td>
@@ -166,7 +181,7 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
               })}
               {cameras.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="admin-empty-row">
+                  <td colSpan={7} className="admin-empty-row">
                     Камер пока нет
                   </td>
                 </tr>
@@ -202,6 +217,17 @@ export function CamerasTab({ initialCameras }: { initialCameras: Camera[] }) {
       >
         {field("code", "Код камеры", "cam2")}
         {field("mac", "MAC-адрес", "9C-A2-F4-DA-22-EA")}
+        <div className="admin-form-field">
+          <label htmlFor="camera-mode">Режим</label>
+          <select
+            id="camera-mode"
+            value={form.mode}
+            onChange={(e) => setForm((prev) => ({ ...prev, mode: e.target.value as "bay" | "gate" }))}
+          >
+            <option value="bay">Бокс (въезд и выезд)</option>
+            <option value="gate">Ворота (проезд под камерой)</option>
+          </select>
+        </div>
         {field("name", "Название", "Бокс 2")}
         {field("model", "Модель")}
         {field("note", "Примечание")}

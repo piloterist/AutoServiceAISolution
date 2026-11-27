@@ -24,6 +24,11 @@ class Camera(Base):
     code: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     # «9C-A2-F4-DA-22-EA»: заглавные, через дефис (services/camera_service.normalize_mac).
     mac: Mapped[str] = mapped_column(String(17), nullable=False, unique=True)
+    # Что снимает камера: "bay" - бокс (слежение за въездом/выездом), "gate" - ворота
+    # кузовного цеха (проезд под камерой). По нему узел заводит камеру, найденную по MAC.
+    mode: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="bay", server_default="bay"
+    )
     name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
