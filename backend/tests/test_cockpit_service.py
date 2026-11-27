@@ -1091,3 +1091,38 @@ def test_receivables_hide_debts_older_than_the_configured_days(
     )
 
     assert snapshot.receivables_rub == Decimal("7000.00")
+
+
+def test_receivables_debt_is_amount_minus_linked_payments(db_session: Session, monkeypatch) -> None:
+    """ПМ00000009-like: 1C still says the full debt, but a payment is linked - the debt is
+    the amount minus the payments. An order with no linked payments keeps 1C's debt."""
+    _patch_settings(monkeypatch)
+    linked = _make_work_order(
+        external_number="WO-LINKED",
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+        amount=Decimal("10000.00"),
+        debt_amount=Decimal("10000.00"),
+    )
+    only_1c = _make_work_order(
+        external_number="WO-ONLY-1C",
+        closed_date=datetime(2026, 9, 1, tzinfo=UTC),
+        amount=Decimal("7000.00"),
+        debt_amount=Decimal("2000.00"),
+    )
+    db_session.add_all([linked, only_1c])
+    db_session.flush()
+    db_session.add(
+        WorkOrderPaymentEvent(
+            work_order_id=linked.id,
+            paid_at=datetime(2026, 3, 1, tzinfo=UTC),
+            amount=Decimal("8000.00"),
+            source_document_id="pay-linked",
+        )
+    )
+    db_session.commit()
+
+    snapshot = cockpit_service.get_snapshot(
+        db_session, workshop_id=None, include_nzp=False, now=NOW
+    )
+
+    assert snapshot.receivables_rub == Decimal("4000.00")  # 2000 (linked) + 2000 (1C)

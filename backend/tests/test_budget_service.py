@@ -667,3 +667,40 @@ def test_fact_revenue_sub_rows_use_the_line_total_after_the_discount(
         september.fact_revenue_main_labor + september.fact_revenue_main_parts
         == september.fact_revenue_main
     )
+
+
+def test_paid_and_unpaid_come_from_linked_payments_else_from_1c(
+    db_session: Session, workshop: Workshop
+) -> None:
+    """ПМ00000009-like: 1C says nothing is paid, but a payment is linked to the order - the
+    row's «Оплачено» / «Без оплат» use it. An order without linked payments keeps 1C's paid."""
+    closed = datetime(2026, 9, 15, 10, 0, 0, tzinfo=UTC)
+    linked = _work_order(
+        closed_date=closed,
+        amount=Decimal("5000"),
+        paid_amount=Decimal("0"),
+        debt_amount=Decimal("5000"),
+        repair_type="Текущий",
+    )
+    only_1c = _work_order(
+        closed_date=closed,
+        amount=Decimal("2000"),
+        paid_amount=Decimal("500"),
+        debt_amount=Decimal("1500"),
+        repair_type="Текущий",
+    )
+    db_session.add_all([linked, only_1c])
+    db_session.flush()
+    db_session.add(
+        WorkOrderPaymentEvent(
+            work_order_id=linked.id,
+            amount=Decimal("4000"),
+            paid_at=datetime(2026, 3, 1, tzinfo=UTC),
+            source_document_id="pay-linked",
+        )
+    )
+    db_session.commit()
+
+    september = budget_service.get_budget_year(db_session, 2026, now=NOW)[0].months[8]
+    assert september.revenue_paid == Decimal("4500")  # 4000 linked + 500 from 1C
+    assert september.revenue_unpaid == Decimal("2500")  # 1000 + 1500

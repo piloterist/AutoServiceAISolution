@@ -32,6 +32,7 @@ from app.schemas.import_work_order import (
     ImportWorkOrdersRequest,
 )
 from app.services.internal_order_rules import classify_car_group, normalize_vin
+from app.services.payment_duplicates import mark_duplicate_payments
 
 logger = structlog.get_logger(__name__)
 
@@ -558,6 +559,7 @@ def process_work_order_import(db: Session, payload: ImportWorkOrdersRequest) -> 
                     observed_at,
                 )
                 _record_payment_events(db, work_order_id, record.payment_events)
+                mark_duplicate_payments(db, [work_order_id])
                 _record_invoices(db, work_order_id, record.invoices)
                 if was_inserted:
                     chunk_inserted += 1

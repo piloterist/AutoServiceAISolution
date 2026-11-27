@@ -337,13 +337,18 @@ export function WorkOrderLineTabs({
             </thead>
             <tbody>
               {paymentEvents.map((entry, index) => (
-                <tr key={index}>
+                <tr
+                  key={index}
+                  className={entry.is_fictitious ? "payment-fictitious" : undefined}
+                  title={entry.is_fictitious ? "Дубль платежа - не учитывается в сумме и проценте оплаты" : undefined}
+                >
                   <td>{formatDateTime(entry.paid_at)}</td>
                   <td className="num">{formatMoney(entry.amount)}</td>
                   <td>
                     {[entry.source_document_type, entry.source_document_number]
                       .filter(Boolean)
                       .join(" ") || "—"}
+                    {entry.is_fictitious && " · Фиктивный"}
                   </td>
                 </tr>
               ))}

@@ -63,6 +63,7 @@ from app.services.order_exclusion import (
     exclusion_filters,
     order_exclusion,
 )
+from app.services.order_payments import effective_debt, linked_payments_total
 from app.services.receivables_age import max_age_days as receivable_max_age_days
 from app.services.receivables_age import receivable_age_filters
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
@@ -301,6 +302,7 @@ def _has_unpaid_individual_closed_orders(db: Session, *, now: datetime) -> bool:
     set to just closed, underpaid orders in the window), then checks the
     customer_name heuristic in Python only against that much smaller set."""
     window_start = now - timedelta(days=90)
+    payments_total = linked_payments_total()
     customer_names = (
         db.execute(
             select(WorkOrder.customer_name).where(
@@ -309,12 +311,12 @@ def _has_unpaid_individual_closed_orders(db: Session, *, now: datetime) -> bool:
                 WorkOrder.amount > 0,
                 WorkOrder.closed_date >= window_start,
                 WorkOrder.closed_date <= now,
-                # Same rule as the list's «% оплаты» (schemas.work_order.effective_payment_percent):
-                # by paid_amount when there is one, else the percent 1C sent.
+                # Same rule as the list's «% оплаты» (schemas.work_order.effective_payment): the
+                # linked payments when there are any, else the percent 1C sent.
                 or_(
-                    WorkOrder.paid_amount < WorkOrder.amount,
+                    and_(payments_total.is_not(None), payments_total < WorkOrder.amount),
                     and_(
-                        WorkOrder.paid_amount.is_(None),
+                        payments_total.is_(None),
                         or_(WorkOrder.payment_percent.is_(None), WorkOrder.payment_percent < 100),
                     ),
                 ),
@@ -337,6 +339,7 @@ def _payments(
     filters = [
         WorkOrderPaymentEvent.paid_at >= period_start,
         WorkOrderPaymentEvent.paid_at < period_end,
+        WorkOrderPaymentEvent.is_fictitious.is_(False),
     ]
     query = select(func.sum(WorkOrderPaymentEvent.amount))
     if source_departments is not None or exclusion_active(exclusion):
@@ -409,7 +412,7 @@ def _receivables(
     receivable. NULL repair_type stays in (plain NOT IN would drop it)."""
     filters = [
         WorkOrder.closed_date.is_not(None),
-        WorkOrder.debt_amount > 0,
+        effective_debt() > 0,
         WorkOrder.closed_without_payment.is_(False),
     ]
     if source_departments is not None:
@@ -427,7 +430,7 @@ def _receivables(
                 WorkOrder.repair_type.not_in(warranty_repair_types),
             )
         )
-    total = db.execute(select(func.sum(WorkOrder.debt_amount)).where(*filters)).scalar_one()
+    total = db.execute(select(func.sum(effective_debt())).where(*filters)).scalar_one()
     return total or Decimal("0")
 
 

@@ -8751,3 +8751,9 @@ a.task-detail-navbtn:hover {
   color: var(--text-muted);
   font-size: 0.85em;
 }
+
+/* «Фиктивный» платёж в истории оплат (дубль, не учитывается в суммах). */
+.data-table--payments tr.payment-fictitious td {
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.08);
+}

@@ -27,6 +27,7 @@ from app.services.order_exclusion import (
     exclusion_filters,
     order_exclusion,
 )
+from app.services.order_payments import effective_debt, effective_paid
 from app.services.receivables_age import max_age_days, receivable_age_filters
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
@@ -144,14 +145,18 @@ def list_work_orders(
         payment_filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, paid_from, paid_to)
         filters.append(
             select(WorkOrderPaymentEvent.id)
-            .where(WorkOrderPaymentEvent.work_order_id == WorkOrder.id, *payment_filters)
+            .where(
+                WorkOrderPaymentEvent.work_order_id == WorkOrder.id,
+                WorkOrderPaymentEvent.is_fictitious.is_(False),
+                *payment_filters,
+            )
             .exists()
         )
     if only_receivables:
         settings = get_settings()
         app_settings = get_app_settings(db)
         filters.append(WorkOrder.closed_date.is_not(None))
-        filters.append(WorkOrder.debt_amount > 0)
+        filters.append(effective_debt() > 0)
         filters.append(WorkOrder.closed_without_payment.is_(False))
         if settings.revenue_statuses_list:
             filters.append(WorkOrder.status.in_(settings.revenue_statuses_list))
@@ -309,7 +314,7 @@ def revenue_paid_amount(
         filters.append(_not_excluded_repair_type(excluded_repair_types))
 
     return db.execute(
-        select(func.coalesce(func.sum(WorkOrder.paid_amount), 0)).where(*filters)
+        select(func.coalesce(func.sum(effective_paid()), 0)).where(*filters)
     ).scalar_one()
 
 
@@ -458,6 +463,7 @@ def payment_trend_summary(
     granularity = _resolve_granularity(date_from, date_to, granularity)
 
     filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, date_from, date_to)
+    filters.append(WorkOrderPaymentEvent.is_fictitious.is_(False))
     query = select(WorkOrderPaymentEvent.paid_at, WorkOrderPaymentEvent.amount)
     if departments or exclusion_active(exclusion):
         query = query.join(WorkOrder, WorkOrder.id == WorkOrderPaymentEvent.work_order_id)
@@ -559,6 +565,7 @@ def payment_department_summary(
     WorkOrder here regardless, so no extra join needed.
     """
     filters = _date_range_filters(WorkOrderPaymentEvent.paid_at, date_from, date_to)
+    filters.append(WorkOrderPaymentEvent.is_fictitious.is_(False))
     filters.append(WorkOrder.department.is_not(None))
     filters.append(WorkOrder.department != "")
     if departments:
@@ -790,6 +797,21 @@ def list_payment_history(db: Session, work_order_id: UUID) -> list[WorkOrderPaym
         .order_by(WorkOrderPaymentHistory.observed_at)
     ).scalars()
     return list(rows)
+
+
+def payment_event_totals(db: Session, work_order_ids: list[UUID]) -> dict[UUID, Decimal]:
+    """The sum of the linked payments of each work order that has any (the others are absent)."""
+    if not work_order_ids:
+        return {}
+    rows = db.execute(
+        select(WorkOrderPaymentEvent.work_order_id, func.sum(WorkOrderPaymentEvent.amount))
+        .where(
+            WorkOrderPaymentEvent.work_order_id.in_(work_order_ids),
+            WorkOrderPaymentEvent.is_fictitious.is_(False),
+        )
+        .group_by(WorkOrderPaymentEvent.work_order_id)
+    ).all()
+    return {order_id: Decimal(total) for order_id, total in rows}
 
 
 def list_payment_events(db: Session, work_order_id: UUID) -> list[WorkOrderPaymentEvent]:

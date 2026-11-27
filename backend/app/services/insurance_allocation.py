@@ -25,6 +25,7 @@ from app.models.work_order_line import WorkOrderLaborLine, WorkOrderPartLine
 from app.models.workshop_source_department import WorkshopSourceDepartment
 from app.services.cockpit_service import _closed_revenue_filters
 from app.services.order_exclusion import OrderExclusion
+from app.services.order_payments import effective_paid
 
 CENT = Decimal("0.01")
 
@@ -125,9 +126,7 @@ def workshop_shares(
     amounts = {
         order_id: (Decimal(amount), Decimal(paid or 0))
         for order_id, amount, paid in db.execute(
-            select(WorkOrder.id, WorkOrder.amount, WorkOrder.paid_amount).where(
-                WorkOrder.id.in_(ids)
-            )
+            select(WorkOrder.id, WorkOrder.amount, effective_paid()).where(WorkOrder.id.in_(ids))
         )
     }
     lines: dict[str, dict[uuid.UUID, Decimal]] = {}

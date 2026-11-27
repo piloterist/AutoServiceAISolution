@@ -41,6 +41,7 @@ from app.services.internal_order_rules import is_physical_person
 from app.services.order_exclusion import (
     order_exclusion,
 )
+from app.services.order_payments import effective_paid
 from app.services.settings_service import get_app_settings, revenue_excluded_repair_types
 
 # "Расходы" is no longer typed in here: it is the sum of the cost items entered on
@@ -84,7 +85,8 @@ class BudgetMonth:
     revenue_overdue: Decimal
     revenue_not_due: Decimal
     # Оплачено (product ask, 2026-11-25): how much of the work orders that make up
-    # fact_revenue is paid (their WorkOrder.paid_amount, the current snapshot) - unlike
+    # fact_revenue is paid (order_payments.effective_paid: the linked payments, else the 1C
+    # WorkOrder.paid_amount snapshot) - unlike
     # `payments`, which is any money received in the month, by payment date.
     revenue_paid: Decimal
     payments: Decimal
@@ -107,7 +109,7 @@ def classify_unpaid_orders(
         .where(WorkOrderInvoice.work_order_id == WorkOrder.id)
         .scalar_subquery()
     )
-    paid = func.coalesce(WorkOrder.paid_amount, 0)
+    paid = func.coalesce(effective_paid(), 0)
     rows = db.execute(
         select(
             WorkOrder.id,
@@ -202,7 +204,7 @@ def get_budget_year(
             main_labor = _closed_revenue_lines(db, kind="labor", **main_kwargs)
             main_parts = _closed_revenue_lines(db, kind="parts", **main_kwargs)
             revenue_paid = db.execute(
-                select(func.coalesce(func.sum(WorkOrder.paid_amount), 0)).where(
+                select(func.coalesce(func.sum(effective_paid()), 0)).where(
                     *_closed_revenue_filters(
                         **common, only_repair_types=[*insurance_types, MAIN_REPAIR_TYPE]
                     )
@@ -377,7 +379,7 @@ def fact_order_filters(
     if kind == "unpaid":
         # Без оплат: the orders of the revenue not paid in full - exactly the ones whose
         # remaining debts the row sums up.
-        filters.append(func.coalesce(WorkOrder.paid_amount, 0) < WorkOrder.amount)
+        filters.append(func.coalesce(effective_paid(), 0) < WorkOrder.amount)
     elif kind in ("overdue", "not_due"):
         # Просрочено / Ожидание: the unpaid orders split by the overdue rule (a Python
         # heuristic - individual or company - so the ids are picked here, not in SQL).

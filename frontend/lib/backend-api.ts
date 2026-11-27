@@ -277,6 +277,8 @@ export type PaymentEventItem = {
   amount: string;
   source_document_type: string | null;
   source_document_number: string | null;
+  // A duplicate line of the same payment - not counted anywhere, shown in red.
+  is_fictitious: boolean;
 };
 
 // Счёт на оплату linked to this work order - see backend

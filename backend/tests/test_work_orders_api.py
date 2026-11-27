@@ -1779,3 +1779,55 @@ def test_only_revenue_list_matches_the_revenue_figure(client, db_session, auth_h
         "WO-CURRENT",
         "WO-NONE",
     ]
+
+
+def test_paid_amount_and_percent_come_from_linked_payments_else_from_1c(
+    client, db_session, auth_headers
+) -> None:
+    """ПМ00000009-like: 1C sent paid 0 / 0%, but a payment is linked to the order - the list
+    and the card show the payments' sum and percent. An order with no linked payments keeps
+    what 1C sent."""
+    paid_in_system = _make_work_order(
+        external_number="WO-LINKED",
+        amount=Decimal("100000.00"),
+        paid_amount=Decimal("0"),
+        debt_amount=Decimal("100000.00"),
+        payment_percent=Decimal("0"),
+    )
+    only_1c = _make_work_order(
+        external_number="WO-ONLY-1C",
+        amount=Decimal("100000.00"),
+        paid_amount=Decimal("30000.00"),
+        debt_amount=Decimal("70000.00"),
+        payment_percent=Decimal("30"),
+    )
+    db_session.add_all([paid_in_system, only_1c])
+    db_session.commit()
+    db_session.add(
+        WorkOrderPaymentEvent(
+            work_order_id=paid_in_system.id,
+            paid_at=datetime(2026, 3, 1, 20, 59, 59),
+            amount=Decimal("80000.00"),
+            source_document_id="22222222-2222-2222-2222-222222222222",
+            source_document_type="Банковская выписка",
+            source_document_number="ПМ00000038",
+        )
+    )
+    db_session.commit()
+
+    items = {
+        item["external_number"]: item
+        for item in client.get(LIST_URL, headers=auth_headers).json()["items"]
+    }
+    assert items["WO-LINKED"]["paid_amount"] == "80000.00"
+    assert items["WO-LINKED"]["debt_amount"] == "20000.00"
+    assert items["WO-LINKED"]["payment_percent"] == "80.00"
+    assert items["WO-ONLY-1C"]["paid_amount"] == "30000.00"
+    assert items["WO-ONLY-1C"]["debt_amount"] == "70000.00"
+    assert items["WO-ONLY-1C"]["payment_percent"] == "30.00"
+
+    detail = client.get(f"{LIST_URL}/{paid_in_system.id}", headers=auth_headers).json()
+    assert detail["paid_amount"] == "80000.00"
+    assert detail["debt_amount"] == "20000.00"
+    assert detail["payment_percent"] == "80.00"
+    assert "payments_total" not in detail

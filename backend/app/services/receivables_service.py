@@ -32,6 +32,7 @@ from app.services.order_exclusion import (
     exclusion_filters,
     order_exclusion,
 )
+from app.services.order_payments import effective_debt
 from app.services.receivables_age import max_age_days, receivable_age_filters
 from app.services.settings_service import get_app_settings
 
@@ -84,7 +85,7 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
 
     filters = [
         WorkOrder.closed_date.is_not(None),
-        WorkOrder.debt_amount > 0,
+        effective_debt() > 0,
         WorkOrder.closed_without_payment.is_(False),
     ]
     if revenue_statuses:
@@ -94,11 +95,11 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
 
     # Most recently closed first (product ask, 2026-10-21) - not the
     # overdue-aging order, just a plain browsing order for the table.
-    work_orders = (
-        db.execute(select(WorkOrder).where(*filters).order_by(WorkOrder.closed_date.desc()))
-        .scalars()
-        .all()
-    )
+    debt_rows = db.execute(
+        select(WorkOrder, effective_debt()).where(*filters).order_by(WorkOrder.closed_date.desc())
+    ).all()
+    work_orders = [wo for wo, _ in debt_rows]
+    debts = {wo.id: Decimal(debt or 0) for wo, debt in debt_rows}
 
     latest_invoice_date: dict[object, datetime] = {}
     if work_orders:
@@ -121,7 +122,7 @@ def get_aging_report(db: Session, *, now: datetime | None = None) -> Receivables
         reference_date = invoice_date or wo.closed_date
         days_overdue = max(0, (effective_now.date() - reference_date.date()).days)
         bucket = _bucket_key(days_overdue)
-        debt = wo.debt_amount or Decimal("0")
+        debt = debts[wo.id]
         totals[bucket] += debt
         rows.append(
             ReceivablesAgingRow(

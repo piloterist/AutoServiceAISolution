@@ -70,6 +70,7 @@ from app.services.work_order_query_service import (
     list_work_orders,
     monthly_summary,
     payment_department_summary,
+    payment_event_totals,
     payment_trend_summary,
     revenue_paid_amount,
     status_summary,
@@ -197,7 +198,9 @@ def get_work_orders(
     scheduled_ids = planner_service.scheduled_work_order_ids(db, [item.id for item in items])
     request_issues = request_control_service.overdue_for_items(db, items)
     control_enabled = get_app_settings(db).request_control_enabled
+    payments_totals = payment_event_totals(db, [item.id for item in items])
     for item in items:
+        item.payments_total = payments_totals.get(item.id)
         # Not a real column - see WorkOrderListItem.is_scheduled's own
         # comment for why a plain transient attribute works fine here.
         item.is_scheduled = item.id in scheduled_ids
@@ -434,6 +437,7 @@ def get_work_order_detail(work_order_id: UUID, db: Session = Depends(get_db)) ->
     work_order.is_scheduled = record is not None
     work_order.has_comment = work_order.comment is not None
     work_order.is_individual_customer = is_physical_person(work_order.customer_name)
+    work_order.payments_total = payment_event_totals(db, [work_order_id]).get(work_order_id)
 
     return WorkOrderDetail(
         **WorkOrderListItem.model_validate(work_order).model_dump(),

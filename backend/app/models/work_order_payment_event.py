@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,6 +54,12 @@ class WorkOrderPaymentEvent(Base):
     source_document_type: Mapped[str | None] = mapped_column(String(150), nullable=True)
     source_document_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     line_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # «Фиктивный» (product ask, 2026-11-27): a duplicate of another line of the same payment
+    # (same sums, the order is paid k times over) - marked by services/payment_duplicates.py,
+    # shown in red on the card and not counted anywhere (sums, percent, budgets).
+    is_fictitious: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return (

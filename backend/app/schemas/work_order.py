@@ -9,17 +9,28 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
-def effective_payment_percent(
-    paid_amount: Decimal | None, amount: Decimal | None, source_percent: Decimal | None
-) -> Decimal | None:
-    """«% оплаты» ЗН (product ask, 2026-11-27): от суммы оплаты, привязанной к заказ-наряду
-    (paid_amount / amount), а если суммы оплаты нет - тот процент, что прислала 1С."""
-    if paid_amount is not None and amount:
-        return (Decimal(paid_amount) / Decimal(amount) * 100).quantize(Decimal("0.01"))
-    return source_percent
+def effective_payment(
+    payments_total: Decimal | None,
+    amount: Decimal | None,
+    source_paid: Decimal | None,
+    source_debt: Decimal | None,
+    source_percent: Decimal | None,
+) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
+    """(«Оплачено», «Долг», «% оплаты») ЗН (product ask, 2026-11-27): если к заказ-наряду
+    привязаны платежи (история оплат), то оплачено - их итог, долг - сумма ЗН минус итог, процент -
+    итог / сумма ЗН; если ничего не привязано - все три так, как пришли из 1С. Тот же выбор в SQL
+    у services/order_payments.py (Бюджеты, дебиторка)."""
+    if payments_total is None:
+        return source_paid, source_debt, source_percent
+    total = Decimal(payments_total)
+    amount = Decimal(amount or 0)
+    debt = amount - total
+    if not amount:
+        return total, debt, source_percent
+    return total, debt, (total / amount * 100).quantize(Decimal("0.01"))
 
 
 class WorkOrderListItem(BaseModel):
@@ -62,8 +73,12 @@ class WorkOrderListItem(BaseModel):
     deal_amount: Decimal | None
     debt_amount: Decimal | None
     paid_amount: Decimal | None
-    # See effective_payment_percent: paid_amount / amount, else the percent 1C sent.
+    # paid_amount / payment_percent: see effective_payment - the linked payments when there
+    # are any, else what 1C sent.
     payment_percent: Decimal | None
+    # Sum of the work order's linked payments (work_order_payment_events), None when there are
+    # none. Same attach-before-validate pattern as is_scheduled; not part of the response.
+    payments_total: Decimal | None = Field(default=None, exclude=True)
     # Whether this ЗН has any Планировщик record (WorkshopJob or BodyCar,
     # either цех) - see services/planner_service.scheduled_work_order_ids.
     # Not a real WorkOrder column - the endpoint attaches it as a plain
@@ -99,8 +114,12 @@ class WorkOrderListItem(BaseModel):
 
     @model_validator(mode="after")
     def _payment_percent_from_paid_amount(self):
-        self.payment_percent = effective_payment_percent(
-            self.paid_amount, self.amount, self.payment_percent
+        self.paid_amount, self.debt_amount, self.payment_percent = effective_payment(
+            self.payments_total,
+            self.amount,
+            self.paid_amount,
+            self.debt_amount,
+            self.payment_percent,
         )
         return self
 
@@ -241,6 +260,8 @@ class PaymentEventItem(BaseModel):
     amount: Decimal
     source_document_type: str | None
     source_document_number: str | None
+    # A duplicate line (see services/payment_duplicates.py): not counted anywhere.
+    is_fictitious: bool = False
 
     model_config = {"from_attributes": True}
 
