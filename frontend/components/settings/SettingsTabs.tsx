@@ -6,6 +6,7 @@ import { SettingsForm } from "@/components/SettingsForm";
 import type {
   AppSettings,
   AuditLogEntry,
+  Camera,
   Employee,
   LeadsSettings,
   OrgDepartment,
@@ -20,6 +21,7 @@ import type {
 } from "@/lib/backend-api";
 
 import { AuditLogTab } from "./AuditLogTab";
+import { CamerasTab } from "./CamerasTab";
 import { CostItemsTab } from "./CostItemsTab";
 import { EmployeesTab } from "./EmployeesTab";
 import { LeadsTab } from "./LeadsTab";
@@ -36,6 +38,7 @@ type TabKey =
   | "telephony"
   | "finance"
   | "leads"
+  | "cameras"
   | "log";
 
 const TABS: { key: TabKey; label: string }[] = [
@@ -46,6 +49,7 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: "telephony", label: "IP-телефония" },
   { key: "finance", label: "Финансы" },
   { key: "leads", label: "Заявки" },
+  { key: "cameras", label: "Камеры" },
   { key: "log", label: "Логи" },
 ];
 
@@ -65,6 +69,7 @@ export function SettingsTabs({
   workshopPhoneMappings,
   leadsSettings,
   auditLog,
+  cameras,
 }: {
   appSettings: AppSettings;
   repairTypes: string[];
@@ -81,6 +86,7 @@ export function SettingsTabs({
   workshopPhoneMappings: WorkshopPhoneMapping[];
   leadsSettings: LeadsSettings;
   auditLog: AuditLogEntry[];
+  cameras: Camera[];
 }) {
   const [tab, setTab] = useState<TabKey>("general");
 
@@ -133,6 +139,7 @@ export function SettingsTabs({
       )}
       {tab === "finance" && <CostItemsTab />}
       {tab === "leads" && <LeadsTab initialSettings={leadsSettings} />}
+      {tab === "cameras" && <CamerasTab initialCameras={cameras} />}
       {tab === "log" && <AuditLogTab initialEntries={auditLog} />}
     </div>
   );

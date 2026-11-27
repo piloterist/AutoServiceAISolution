@@ -2,6 +2,7 @@ import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import {
   getAppSettings,
   getAuditLog,
+  getCameras,
   getEmployees,
   getLeadsSettings,
   getOrgDepartments,
@@ -46,6 +47,7 @@ export default async function SettingsPage() {
       workshopPhoneMappings,
       leadsSettings,
       auditLog,
+      cameras,
     ] = await Promise.all([
       getAppSettings(),
       getRepairTypes(),
@@ -62,6 +64,7 @@ export default async function SettingsPage() {
       getWorkshopPhoneMappings(),
       getLeadsSettings(),
       getAuditLog(),
+      getCameras(),
     ]);
     data = {
       appSettings,
@@ -79,6 +82,7 @@ export default async function SettingsPage() {
       workshopPhoneMappings,
       leadsSettings,
       auditLog,
+      cameras,
     };
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error";
@@ -111,6 +115,7 @@ export default async function SettingsPage() {
           workshopPhoneMappings={data.workshopPhoneMappings}
           leadsSettings={data.leadsSettings}
           auditLog={data.auditLog}
+          cameras={data.cameras}
         />
       )}
     </div>

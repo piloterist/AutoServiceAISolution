@@ -1410,6 +1410,46 @@ export type PhoneSource = {
   sort_order: number;
 };
 
+// ---- Справочник камер (Настройки -> Камеры) -------------------------------
+
+export type Camera = {
+  id: string;
+  code: string;
+  mac: string;
+  name: string | null;
+  model: string | null;
+  note: string | null;
+  // Текущий IP присылает узел, найдя камеру по MAC; вручную не вводится.
+  ip: string | null;
+  ip_seen_at: string | null;
+  node_seen_at: string | null;
+  camera_ok: boolean | null;
+};
+
+export type CameraWrite = {
+  code: string;
+  mac: string;
+  name: string | null;
+  model: string | null;
+  note: string | null;
+};
+
+export function getCameras(): Promise<Camera[]> {
+  return backendGet<Camera[]>("/api/v1/cameras");
+}
+
+export function createCamera(payload: CameraWrite): Promise<Camera> {
+  return backendPost<Camera>("/api/v1/cameras", payload);
+}
+
+export function updateCamera(id: string, payload: CameraWrite): Promise<Camera> {
+  return backendPut<Camera>(`/api/v1/cameras/${id}`, payload);
+}
+
+export function deleteCamera(id: string): Promise<void> {
+  return backendDelete(`/api/v1/cameras/${id}`);
+}
+
 export type PhoneSourceWrite = {
   line_code: string;
   name: string;

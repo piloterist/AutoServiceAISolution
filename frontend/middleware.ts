@@ -110,8 +110,11 @@ export async function middleware(request: NextRequest) {
     (pathname === "/api/bays" && request.method === "POST") ||
     (/^\/api\/bays\/[^/]+$/.test(pathname) &&
       (request.method === "PATCH" || request.method === "DELETE"));
+  // Справочник камер (Настройки -> Камеры): только Админ.
+  const isCamerasAdminApi = pathname.startsWith("/api/cameras");
   const isAdminApi =
     pathname.startsWith("/api/admin") ||
+    isCamerasAdminApi ||
     isTelephonyAdminApi ||
     isLeadsAdminApi ||
     isWorkOrdersAdminApi ||

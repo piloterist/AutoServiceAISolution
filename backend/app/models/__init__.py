@@ -17,6 +17,7 @@ from app.models.body_car import BodyCar
 from app.models.body_car_stage import BodyCarStage
 from app.models.budget_entry import BudgetEntry
 from app.models.call_record import CallRecord
+from app.models.camera import Camera
 from app.models.cash_entry import CashEntry
 from app.models.cost_expense import CostExpense
 from app.models.cost_item import CostItem
@@ -79,6 +80,7 @@ __all__ = [
     "BayEvent",
     "BayIssue",
     "BayLatestFrame",
+    "Camera",
     "CameraStatus",
     "BayOccupancy",
     "GateStay",
