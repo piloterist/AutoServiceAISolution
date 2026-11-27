@@ -86,6 +86,8 @@ export type BudgetRevenueFilter = {
   month: number;
   yearTo?: number;
   monthTo?: number;
+  // «Вся компания» при скрытых подразделениях: только эти цеха (без него - все цеха).
+  workshopIds?: string[];
 };
 
 /** Fetches work orders page by page, newest to oldest (the backend already
@@ -124,6 +126,9 @@ async function fetchAllWorkOrders(
       if (params.budgetRevenue.yearTo && params.budgetRevenue.monthTo) {
         query.set("budget_year_to", String(params.budgetRevenue.yearTo));
         query.set("budget_month_to", String(params.budgetRevenue.monthTo));
+      }
+      if (params.budgetRevenue.workshopIds?.length) {
+        query.set("workshop_ids", params.budgetRevenue.workshopIds.join(","));
       }
     }
     if (params.workshopId) query.set("workshop_id", params.workshopId);

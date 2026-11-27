@@ -432,6 +432,10 @@ export function BudgetView({ initialData }: { initialData: BudgetYear }) {
       params.set("budget_month_to", String(end.month));
     }
     if (workshopId) params.set("workshop_id", workshopId);
+    // «Вся компания» при скрытых подразделениях - только по видимым цехам, как и сумма.
+    else if (hiddenWorkshops.length > 0) {
+      params.set("workshop_ids", workshops.map((w) => w.workshop_id).join(","));
+    }
     return (
       <Link href={`/work-orders?${params.toString()}`} className="budget-drill" title="Показать заказ-наряды">
         {formatRub(value)}

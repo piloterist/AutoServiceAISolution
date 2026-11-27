@@ -35,6 +35,7 @@ type SearchParams = {
   budget_month?: string;
   budget_year_to?: string;
   budget_month_to?: string;
+  workshop_ids?: string;
   workshop_id?: string;
   // Arriving from the Planner's bell (контроль заявок): only the repair requests of the
   // user's цех with an overdue call (server-side), the overdue rows painted pink.
@@ -95,6 +96,7 @@ export default async function WorkOrdersPage({
                 month: Number(params.budget_month),
                 yearTo: Number(params.budget_year_to) || undefined,
                 monthTo: Number(params.budget_month_to) || undefined,
+                workshopIds: params.workshop_ids?.split(",").filter(Boolean),
               }
             : undefined
         }

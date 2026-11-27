@@ -306,6 +306,7 @@ def fact_order_filters(
     now: datetime | None = None,
     year_to: int | None = None,
     month_to: int | None = None,
+    workshop_ids: list[uuid.UUID] | None = None,
 ) -> list:
     """Условия отбора заказ-нарядов ячейки «Выручка факт страховые» (kind="insurance") или
     «Выручка факт основные» (kind="main"), «Выручка общая» (kind="all") или «Без оплат»
@@ -317,8 +318,13 @@ def fact_order_filters(
         raise ValueError(f"Unknown kind: {kind}")
     now = now or datetime.now(UTC)
     app_settings = get_app_settings(db)
-    if workshop_id is not None:
-        source_departments = _mapped_source_departments(db, workshop_id=workshop_id)
+    # Цех (workshop_id) или набор цехов (workshop_ids - «Вся компания» при скрытых подразделениях);
+    # ни того, ни другого - все цеха.
+    scope_ids = [workshop_id] if workshop_id is not None else (workshop_ids or None)
+    if scope_ids is not None:
+        source_departments = sorted(
+            {d for w in scope_ids for d in _mapped_source_departments(db, workshop_id=w)}
+        )
     else:
         source_departments = []
         for workshop_ in db.scalars(select(Workshop)):
@@ -345,7 +351,7 @@ def fact_order_filters(
     # plus the split insurance orders that give it a share (whole company: nothing changes).
     shared_ids: list[uuid.UUID] = []
     split_ids: list[uuid.UUID] = []
-    if app_settings.allocate_external and workshop_id is not None and kind != "main":
+    if app_settings.allocate_external and scope_ids is not None and kind != "main":
         split = insurance_allocation.split_insurance_orders(
             db,
             period_start=period_start,
@@ -356,7 +362,7 @@ def fact_order_filters(
             insurance_types=insurance_types,
         )
         split_ids = list(split)
-        shared_ids = [i for i, shares in split.items() if any(w == workshop_id for w, _ in shares)]
+        shared_ids = [i for i, shares in split.items() if any(w in scope_ids for w, _ in shares)]
     filters = _closed_revenue_filters(
         source_departments=None if split_ids else source_departments,
         period_start=period_start,

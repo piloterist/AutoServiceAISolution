@@ -90,6 +90,18 @@ def _split_departments(departments: str | None) -> list[str] | None:
     return [d.strip() for d in departments.split(",") if d.strip()]
 
 
+def _parse_uuid_list(value: str | None) -> list[UUID] | None:
+    """«uuid,uuid,...» -> list; None when the param is absent; 422 on a malformed id."""
+    if not value:
+        return None
+    try:
+        return [UUID(part.strip()) for part in value.split(",") if part.strip()] or None
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail="workshop_ids: invalid UUID"
+        ) from exc
+
+
 @router.get("/work-orders", response_model=WorkOrderListResponse)
 def get_work_orders(
     date_from: datetime | None = Query(default=None),
@@ -117,6 +129,11 @@ def get_work_orders(
     budget_month: int | None = Query(default=None, ge=1, le=12),
     budget_year_to: int | None = Query(default=None, description="Конец периода (столбец ИТОГО)"),
     budget_month_to: int | None = Query(default=None, ge=1, le=12),
+    workshop_ids: str | None = Query(
+        default=None,
+        description="С budget_revenue: только эти цеха (UUID через запятую) - «Вся компания» "
+        "при скрытых подразделениях; без workshop_id и workshop_ids - все цеха",
+    ),
     workshop_id: UUID | None = Query(
         default=None,
         description="Scopes only_receivables (like Cockpit's own filter) and only_request_issues "
@@ -178,6 +195,7 @@ def get_work_orders(
             workshop_id=workshop_id,
             year_to=budget_year_to,
             month_to=budget_month_to,
+            workshop_ids=_parse_uuid_list(workshop_ids),
         )
 
     items, total = list_work_orders(

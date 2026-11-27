@@ -517,6 +517,7 @@ export function getWorkOrders(
       month: number;
       yearTo?: number;
       monthTo?: number;
+      workshopIds?: string[];
     };
     workshopId?: string;
     /** Also list the repair requests (Заявки на ремонт) - the work orders list page. */
@@ -545,6 +546,7 @@ export function getWorkOrders(
       budget_year_to: params?.budgetRevenue?.yearTo ? String(params.budgetRevenue.yearTo) : "",
       budget_month_to: params?.budgetRevenue?.monthTo ? String(params.budgetRevenue.monthTo) : "",
       workshop_id: params?.workshopId ?? "",
+      workshop_ids: params?.budgetRevenue?.workshopIds?.join(",") ?? "",
       include_requests: params?.includeRequests ? "true" : "",
       only_request_issues: params?.onlyRequestIssues ? "true" : "",
       limit: params?.limit ? String(params.limit) : "",

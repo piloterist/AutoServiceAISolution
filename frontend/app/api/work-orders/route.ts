@@ -17,7 +17,8 @@ function budgetRevenue(params: URLSearchParams) {
   if (!isBudgetRevenueKind(kind) || !year || !month) return undefined;
   const yearTo = Number(params.get("budget_year_to")) || undefined;
   const monthTo = Number(params.get("budget_month_to")) || undefined;
-  return { kind, year, month, yearTo, monthTo } as const;
+  const workshopIds = params.get("workshop_ids")?.split(",").filter(Boolean);
+  return { kind, year, month, yearTo, monthTo, workshopIds } as const;
 }
 
 export async function GET(request: NextRequest) {

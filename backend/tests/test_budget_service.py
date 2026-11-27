@@ -704,3 +704,42 @@ def test_paid_and_unpaid_come_from_linked_payments_else_from_1c(
     september = budget_service.get_budget_year(db_session, 2026, now=NOW)[0].months[8]
     assert september.revenue_paid == Decimal("4500")  # 4000 linked + 500 from 1C
     assert september.revenue_unpaid == Decimal("2500")  # 1000 + 1500
+
+
+def test_fact_order_filters_by_a_set_of_workshops_for_the_hidden_company_total(
+    db_session: Session, workshop: Workshop, department: Department
+) -> None:
+    """«Вся компания» при скрытых подразделениях: клик ведёт только на ЗН видимых цехов
+    (workshop_ids), а без набора - как раньше, на все цеха."""
+    body = Workshop(
+        department_id=department.id,
+        workshop_type="Кузовной",
+        posts_count=2,
+        start_time="08:00:00",
+        end_time="20:00:00",
+        working_days=[0, 1, 2, 3, 4],
+    )
+    db_session.add(body)
+    db_session.flush()
+    db_session.add(WorkshopSourceDepartment(workshop_id=body.id, source_department="Кузовной цех"))
+    closed = datetime(2026, 9, 15, 10, 0, 0, tzinfo=UTC)
+    mech_order = _work_order(
+        closed_date=closed, amount=Decimal("100"), repair_type="Текущий", department=MECHANICAL_DEPT
+    )
+    body_order = _work_order(
+        closed_date=closed, amount=Decimal("200"), repair_type="Текущий", department="Кузовной цех"
+    )
+    db_session.add_all([mech_order, body_order])
+    db_session.commit()
+
+    def ids(**kw) -> set:
+        filters = budget_service.fact_order_filters(
+            db_session, year=2026, month=9, kind="main", now=NOW, **kw
+        )
+        return set(db_session.scalars(select(WorkOrder.id).where(*filters)))
+
+    assert ids() == {mech_order.id, body_order.id}  # всё: нет набора - вся компания
+    assert ids(workshop_ids=[body.id]) == {body_order.id}  # слесарный скрыт
+    assert ids(workshop_ids=[workshop.id]) == {mech_order.id}
+    assert ids(workshop_ids=[workshop.id, body.id]) == {mech_order.id, body_order.id}
+    assert ids(workshop_id=workshop.id) == {mech_order.id}  # один цех - как раньше
