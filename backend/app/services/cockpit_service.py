@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta, timezone
 from decimal import ROUND_CEILING, Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -309,7 +309,15 @@ def _has_unpaid_individual_closed_orders(db: Session, *, now: datetime) -> bool:
                 WorkOrder.amount > 0,
                 WorkOrder.closed_date >= window_start,
                 WorkOrder.closed_date <= now,
-                or_(WorkOrder.payment_percent.is_(None), WorkOrder.payment_percent < 100),
+                # Same rule as the list's «% оплаты» (schemas.work_order.effective_payment_percent):
+                # by paid_amount when there is one, else the percent 1C sent.
+                or_(
+                    WorkOrder.paid_amount < WorkOrder.amount,
+                    and_(
+                        WorkOrder.paid_amount.is_(None),
+                        or_(WorkOrder.payment_percent.is_(None), WorkOrder.payment_percent < 100),
+                    ),
+                ),
             )
         )
         .scalars()

@@ -9,7 +9,17 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+
+
+def effective_payment_percent(
+    paid_amount: Decimal | None, amount: Decimal | None, source_percent: Decimal | None
+) -> Decimal | None:
+    """«% оплаты» ЗН (product ask, 2026-11-27): от суммы оплаты, привязанной к заказ-наряду
+    (paid_amount / amount), а если суммы оплаты нет - тот процент, что прислала 1С."""
+    if paid_amount is not None and amount:
+        return (Decimal(paid_amount) / Decimal(amount) * 100).quantize(Decimal("0.01"))
+    return source_percent
 
 
 class WorkOrderListItem(BaseModel):
@@ -52,6 +62,7 @@ class WorkOrderListItem(BaseModel):
     deal_amount: Decimal | None
     debt_amount: Decimal | None
     paid_amount: Decimal | None
+    # See effective_payment_percent: paid_amount / amount, else the percent 1C sent.
     payment_percent: Decimal | None
     # Whether this ЗН has any Планировщик record (WorkshopJob or BodyCar,
     # either цех) - see services/planner_service.scheduled_work_order_ids.
@@ -85,6 +96,13 @@ class WorkOrderListItem(BaseModel):
     request_disqualified: bool = False
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="after")
+    def _payment_percent_from_paid_amount(self):
+        self.payment_percent = effective_payment_percent(
+            self.paid_amount, self.amount, self.payment_percent
+        )
+        return self
 
 
 class WorkOrderListResponse(BaseModel):
