@@ -12,7 +12,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, delete, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from app.core.config import get_settings
 from app.models.work_order import WorkOrder
@@ -203,9 +203,14 @@ def list_work_orders(
         select(func.count()).select_from(base_query.subquery()), execution_options=options
     ).scalar_one()
 
+    # raw_payload (сырой JSON из 1С, ~1.5 КБ на ЗН) списку не нужен - не читаем его из базы:
+    # без этого полная загрузка списка тянула ~15 МБ лишних данных.
     items = (
         db.execute(
-            base_query.order_by(WorkOrder.document_date.desc()).limit(limit).offset(offset),
+            base_query.options(defer(WorkOrder.raw_payload))
+            .order_by(WorkOrder.document_date.desc())
+            .limit(limit)
+            .offset(offset),
             execution_options=options,
         )
         .scalars()
